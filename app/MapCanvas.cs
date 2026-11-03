@@ -1,0 +1,240 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using System.Windows.Forms;
+
+namespace SoD2MapViewer;
+
+/// <summary>Top-down (world X/Y) canvas with pan & zoom for map objects.</summary>
+public sealed class MapCanvas : Control
+{
+    public IReadOnlyList<MapObject> Objects = Array.Empty<MapObject>();
+    private float _zoom = 1f;               // pixels per world unit (world unit = UE cm)
+    private PointF _center = new(0, 0);     // world coords at control center
+    private int _selected = -1;
+    private int _hover = -1;
+    private bool _panning;
+    private Point _panStart;
+    private PointF _panStartCenter;
+
+    public event Action<int>? SelectionChanged; // index of selected object, -1 = none
+
+    private static readonly Color[] Palette =
+    {
+        Color.FromArgb(120, 190, 255), Color.FromArgb(255, 160, 100), Color.FromArgb(150, 255, 160),
+        Color.FromArgb(255, 240, 120), Color.FromArgb(220, 160, 255), Color.FromArgb(120, 255, 255),
+        Color.FromArgb(255, 130, 170), Color.FromArgb(180, 220, 255), Color.FromArgb(230, 230, 230),
+        Color.FromArgb(160, 255, 200), Color.FromArgb(255, 200, 150), Color.FromArgb(200, 200, 255),
+    };
+
+    public MapCanvas()
+    {
+        DoubleBuffered = true;
+        BackColor = Color.FromArgb(24, 26, 32);
+        Cursor = Cursors.Cross;
+    }
+
+    public void SetObjects(IReadOnlyList<MapObject> objects)
+    {
+        Objects = objects;
+        _selected = -1;
+        _hover = -1;
+        FitToObjects();
+        Invalidate();
+    }
+
+    public void SelectIndex(int index, bool centerOnSelection = true)
+    {
+        _selected = index;
+        if (centerOnSelection && _selected >= 0 && _selected < Objects.Count)
+        {
+            var o = Objects[_selected];
+            _center = new PointF(o.X, o.Y);
+        }
+        Invalidate();
+    }
+
+    public IReadOnlyDictionary<string, Color> Legend()
+    {
+        return Objects
+            .GroupBy(o => ClassCategory.From(o.ClassName))
+            .ToDictionary(w => w.Key, w => ColorFor(w.Key));
+    }
+
+    private static Color ColorFor(string category)
+    {
+        var idx = category.Aggregate(0, (h, s) => h * 31 + s);
+        if (idx < 0) idx = -idx;
+        return Palette[idx % Palette.Length];
+    }
+
+    public static Color GetPaletteColor(string category) => ColorFor(category);
+
+    private void FitToObjects()
+    {
+        if (Objects.Count == 0) return;
+        float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+        foreach (var o in Objects)
+        {
+            if (!o.HasTransform) continue;
+            if (o.X < minX) minX = o.X;
+            if (o.Y < minY) minY = o.Y;
+            if (o.X > maxX) maxX = o.X;
+            if (o.Y > maxY) maxY = o.Y;
+        }
+        if (minX > maxX) return;
+        _center = new PointF((minX + maxX) / 2f, (minY + maxY) / 2f);
+        float span = MathF.Max(maxX - minX, maxY - minY);
+        if (span <= 0) span = 1000;
+        _zoom = MathF.Min(Width, Height) / span * 0.9f;
+        if (!float.IsFinite(_zoom) || _zoom <= 0) _zoom = 0.01f;
+    }
+
+    private static float ClampF(float v, float min, float max) => v < min ? min : (v > max ? max : v);
+
+    private PointF WorldToScreen(float x, float y) => new(
+        Width / 2f + (x - _center.X) * _zoom,
+        Height / 2f - (y - _center.Y) * _zoom); // Y up
+
+    private PointF ScreenToWorld(float sx, float sy) => new(
+        _center.X + (sx - Width / 2f) / _zoom,
+        _center.Y - (sy - Height / 2f) / _zoom);
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+        // grid隧道 in 10 m steps
+        const float gridStep = 1000f; // 10 meters in cm
+        if (_zoom > 0.002f)
+        {
+            var tl = ScreenToWorld(0, 0);
+            var br = ScreenToWorld(Width, Height);
+            var x0 = MathF.Floor(tl.X / gridStep) * gridStep;
+            var y0 = MathF.Floor(br.Y / gridStep) * gridStep;
+            using var gridPen = new Pen(Color.FromArgb(34, 38, 46));
+            for (float x = x0; x < br.X; x += gridStep)
+                g.DrawLine(gridPen, WorldToScreen(x, 0).X, 0, WorldToScreen(x, 0).X, Height);
+            for (float y = y0; y < tl.Y; y += gridStep)
+                g.DrawLine(gridPen, 0, WorldToScreen(0, y).Y, Width, WorldToScreen(0, y).Y);
+        }
+
+        var dot = ClampF(0.2f * _zoom, 2.5f, 14f);
+        for (int i = 0; i < Objects.Count; i++)
+        {
+            var o = Objects[i];
+            if (!o.HasTransform) continue;
+            var p = WorldToScreen(o.X, o.Y);
+            if (p.X < -30 || p.Y < -30 || p.X > Width + 30 || p.Y > Height + 30) continue;
+
+            var col = ColorFor(ClassCategory.From(o.ClassName));
+            if (i == _hover || i == _selected)
+                col = Color.FromArgb(255, col);
+            using var b = new SolidBrush(col);
+            var size = dot;
+            if (i == _selected) size = dot * 2f + 4f;
+            else if (i == _hover) size = dot * 1.5f + 2f;
+            g.FillRectangle(b, p.X - size / 2, p.Y - size / 2, size, size);
+
+            if (i == _selected)
+            {
+                using var hl = new Pen(Color.White, 2f);
+                g.DrawEllipse(hl, p.X - size, p.Y - size, size * 2, size * 2);
+            }
+        }
+
+        using var hudFont = new Font("Segoe UI", 8.5f);
+        using var hudBrush = new SolidBrush(Color.FromArgb(150, 200, 210));
+        g.DrawString(
+            $"zoom {_zoom:0.000} px/cm   center [{_center.X / 100:0.#} m / {_center.Y / 100:0.#} m]   " +
+            $"hover: {(_hover >= 0 ? Objects[_hover].Name : "-")}",
+            hudFont, hudBrush, new PointF(8, Height - 24));
+    }
+
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        base.OnMouseWheel(e);
+        var factor = e.Delta > 0 ? 1.25f : 0.8f;
+        var before = ScreenToWorld(e.X, e.Y);
+        _zoom = ClampF(_zoom * factor, 1e-6f, 50f);
+        var after = ScreenToWorld(e.X, e.Y);
+        _center = new PointF(_center.X + before.X - after.X, _center.Y + before.Y - after.Y);
+        Invalidate();
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        if (e.Button == MouseButtons.Left)
+        {
+            _panning = true;
+            _panStart = e.Location;
+            _panStartCenter = _center;
+        }
+        else if (e.Button == MouseButtons.Right && _hover >= 0)
+        {
+            var o = Objects[_hover];
+            var cm = new ContextMenuStrip();
+            cm.Items.Add("Copy location (cm)", null, (s, ev) => Clipboard.SetText($"{o.X:0},{o.Y:0},{o.Z:0}"));
+            cm.Items.Add("Copy location (m)", null, (s, ev) => Clipboard.SetText($"{o.X / 100:0.##},{o.Y / 100:0.##},{o.Z / 100:0.##}"));
+            cm.Show(this, e.Location);
+        }
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (e.Button == MouseButtons.Left)
+        {
+            _panning = false;
+            if (Math.Abs(e.X - _panStart.X) < 3 && Math.Abs(e.Y - _panStart.Y) < 3)
+            {
+                int best = -1;
+                float bestDist = 20 * 20;
+                for (int i = 0; i < Objects.Count; i++)
+                {
+                    var o = Objects[i];
+                    if (!o.HasTransform) continue;
+                    var p = WorldToScreen(o.X, o.Y);
+                    float d = (p.X - e.X) * (p.X - e.X) + (p.Y - e.Y) * (p.Y - e.Y);
+                    if (d < bestDist) { bestDist = d; best = i; }
+                }
+                _selected = best;
+                SelectionChanged?.Invoke(best);
+                Invalidate();
+            }
+        }
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        if (_panning)
+        {
+            float dx = (_panStart.X - e.X) / _zoom;
+            float dy = (e.Y - _panStart.Y) / _zoom;
+            _center = new PointF(_panStartCenter.X + dx, _panStartCenter.Y + dy);
+        }
+        int hover = -1;
+        float bd = 14 * 14;
+        for (int i = 0; i < Objects.Count; i++)
+        {
+            var o = Objects[i];
+            if (!o.HasTransform) continue;
+            var p = WorldToScreen(o.X, o.Y);
+            float d = (p.X - e.X) * (p.X - e.X) + (p.Y - e.Y) * (p.Y - e.Y);
+            if (d < bd) { bd = d; hover = i; }
+        }
+        _hover = hover;
+        Invalidate();
+    }
+}
+
