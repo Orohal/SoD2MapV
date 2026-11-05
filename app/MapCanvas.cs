@@ -20,6 +20,9 @@ public sealed class MapCanvas : Control
 
     public event Action<int>? SelectionChanged; // index of selected object, -1 = none
 
+    private readonly Dictionary<string, Brush> _brushCache = new();
+    private readonly ToolTip _tip = new() { InitialDelay = 300, ReshowDelay = 100 };
+
     private static readonly Color[] Palette =
     {
         Color.FromArgb(120, 190, 255), Color.FromArgb(255, 160, 100), Color.FromArgb(150, 255, 160),
@@ -44,6 +47,13 @@ public sealed class MapCanvas : Control
         Invalidate();
     }
 
+    /// <summary>Re-fits the view so all objects are visible.</summary>
+    public void Fit()
+    {
+        FitToObjects();
+        Invalidate();
+    }
+
     public void SelectIndex(int index, bool centerOnSelection = true)
     {
         _selected = index;
@@ -60,6 +70,16 @@ public sealed class MapCanvas : Control
         return Objects
             .GroupBy(o => ClassCategory.From(o.ClassName))
             .ToDictionary(w => w.Key, w => ColorFor(w.Key));
+    }
+
+    private Brush BrushFor(string category)
+    {
+        if (!_brushCache.TryGetValue(category, out var b))
+        {
+            b = new SolidBrush(ColorFor(category));
+            _brushCache[category] = b;
+        }
+        return b;
     }
 
     private static Color ColorFor(string category)
@@ -112,7 +132,7 @@ public sealed class MapCanvas : Control
         var g = e.Graphics;
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-        // grid隧道 in 10 m steps
+        // grid lines in 10 m steps
         const float gridStep = 1000f; // 10 meters in cm
         if (_zoom > 0.002f)
         {
@@ -135,10 +155,11 @@ public sealed class MapCanvas : Control
             var p = WorldToScreen(o.X, o.Y);
             if (p.X < -30 || p.Y < -30 || p.X > Width + 30 || p.Y > Height + 30) continue;
 
-            var col = ColorFor(ClassCategory.From(o.ClassName));
+            var cat = ClassCategory.From(o.ClassName);
+            var col = ColorFor(cat);
             if (i == _hover || i == _selected)
                 col = Color.FromArgb(255, col);
-            using var b = new SolidBrush(col);
+            var b = BrushFor(cat);
             var size = dot;
             if (i == _selected) size = dot * 2f + 4f;
             else if (i == _hover) size = dot * 1.5f + 2f;
@@ -155,19 +176,30 @@ public sealed class MapCanvas : Control
         using var hudBrush = new SolidBrush(Color.FromArgb(150, 200, 210));
         g.DrawString(
             $"zoom {_zoom:0.000} px/cm   center [{_center.X / 100:0.#} m / {_center.Y / 100:0.#} m]   " +
-            $"hover: {(_hover >= 0 ? Objects[_hover].Name : "-")}",
+            $"hover: {(_hover >= 0 ? Objects[_hover].Name : "-")}   (wheel/double-click: zoom, drag: pan, F: fit)",
             hudFont, hudBrush, new PointF(8, Height - 24));
+    }
+
+    protected override void OnDoubleClick(EventArgs e)
+    {
+        base.OnDoubleClick(e);
+        var p = PointToClient(Cursor.Position);
+        ZoomAt(p.X, p.Y, 3f);
+    }
+
+    private void ZoomAt(int sx, int sy, float factor)
+    {
+        var before = ScreenToWorld(sx, sy);
+        _zoom = ClampF(_zoom * factor, 1e-6f, 50f);
+        var after = ScreenToWorld(sx, sy);
+        _center = new PointF(_center.X + before.X - after.X, _center.Y + before.Y - after.Y);
+        Invalidate();
     }
 
     protected override void OnMouseWheel(MouseEventArgs e)
     {
         base.OnMouseWheel(e);
-        var factor = e.Delta > 0 ? 1.25f : 0.8f;
-        var before = ScreenToWorld(e.X, e.Y);
-        _zoom = ClampF(_zoom * factor, 1e-6f, 50f);
-        var after = ScreenToWorld(e.X, e.Y);
-        _center = new PointF(_center.X + before.X - after.X, _center.Y + before.Y - after.Y);
-        Invalidate();
+        ZoomAt(e.X, e.Y, e.Delta > 0 ? 1.25f : 0.8f);
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -222,6 +254,10 @@ public sealed class MapCanvas : Control
             float dx = (_panStart.X - e.X) / _zoom;
             float dy = (e.Y - _panStart.Y) / _zoom;
             _center = new PointF(_panStartCenter.X + dx, _panStartCenter.Y + dy);
+            _hover = -1;
+            _tip.SetToolTip(this, "");
+            Invalidate();
+            return;
         }
         int hover = -1;
         float bd = 14 * 14;
@@ -233,8 +269,15 @@ public sealed class MapCanvas : Control
             float d = (p.X - e.X) * (p.X - e.X) + (p.Y - e.Y) * (p.Y - e.Y);
             if (d < bd) { bd = d; hover = i; }
         }
-        _hover = hover;
+        if (hover != _hover)
+        {
+            _hover = hover;
+            _tip.SetToolTip(this, hover >= 0 ? Describe(Objects[hover]) : "");
+        }
         Invalidate();
     }
+
+    private static string Describe(MapObject o) =>
+        $"{o.Name}\n{o.ClassName}\n{o.X / 100:0.#}, {o.Y / 100:0.#} m  (Z {o.Z / 100:0.#} m)";
 }
 

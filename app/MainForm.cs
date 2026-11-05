@@ -24,22 +24,39 @@ public sealed class MainForm : Form
     private MapModel? _map;
     private readonly BindingSource _source = new();
     private List<MapObject> _visible = new();
+    private readonly TextBox _mapFilter;
 
     public MainForm()
     {
-        Text = "State of Decay 2 — Map Viewer (v0.1)";
+        Text = "State of Decay 2 — Map Viewer (v0.2)";
         Size = new Size(1500, 950);
         StartPosition = FormStartPosition.CenterScreen;
         WindowState = FormWindowState.Maximized;
+        KeyPreview = true;
+        KeyDown += (s, e) =>
+        {
+            if (e.KeyCode == Keys.F && ActiveControl is not TextBox)
+            {
+                _canvas.Fit();
+                e.Handled = true;
+            }
+        };
 
-        // left: map list + legend
+        // left: map filter + map list + legend
         var left = new Panel { Dock = DockStyle.Left, Width = 360 };
         _mapList = new ListBox { Dock = DockStyle.Fill, Font = new Font("Consolas", 9f) };
         _mapList.SelectedIndexChanged += MapListSelected;
         _legendHost = new Panel { Dock = DockStyle.Bottom, Height = 180, BackColor = Color.FromArgb(32, 34, 40) };
+        _mapFilter = new TextBox
+        {
+            Dock = DockStyle.Top,
+            PlaceholderText = "filter maps (name contains...)",
+        };
+        _mapFilter.TextChanged += (s, e) => ApplyMapFilter();
 
         left.Controls.Add(_mapList);
         left.Controls.Add(_legendHost);
+        left.Controls.Add(_mapFilter);
 
         // right: grid (top) + canvas (bottom)
         var right = new SplitContainer
@@ -125,11 +142,7 @@ public sealed class MainForm : Form
             return;
         }
         SetStatus($"mounted paks: {res.MountedPaks}, files: {res.TotalFiles:N0}, maps found: {res.MapCount}");
-        _mapList.BeginUpdate();
-        _mapList.Items.Clear();
-        foreach (var m in _loader.MapPaths)
-            _mapList.Items.Add(m);
-        _mapList.EndUpdate();
+        ApplyMapFilter();
 
         if (res.NeedsKey)
         {
@@ -143,6 +156,20 @@ public sealed class MainForm : Form
                     _loader.SubmitAesKey(guid, dlg.KeyHex);
             }
         }
+    }
+
+    private void ApplyMapFilter()
+    {
+        var f = _mapFilter.Text?.Trim() ?? "";
+        _mapList.BeginUpdate();
+        _mapList.Items.Clear();
+        foreach (var m in _loader.MapPaths)
+        {
+            if (f.Length == 0 || m.Contains(f, StringComparison.OrdinalIgnoreCase))
+                _mapList.Items.Add(m);
+        }
+        _mapList.EndUpdate();
+        SetStatus($"maps shown: {_mapList.Items.Count:N0} / {_loader.MapPaths.Count:N0}");
     }
 
     private void PickGameDir()
