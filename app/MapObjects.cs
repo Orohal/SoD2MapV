@@ -23,6 +23,13 @@ public sealed class MapObject
     public float SZ { get; set; }
 
     public bool HasTransform { get; set; }
+
+    // internal bookkeeping for the patcher (fields on purpose: not bound to the grid)
+    public int ExportIndex = -1;          // actor export index in the package's ExportMap
+    public int ComponentExportIndex = -1; // root component export index (-1 = none/import)
+    public long ComponentSerialOffset;    // byte range of the component's serialized data
+    public long ComponentSerialSize;      // (package-absolute, per CUE4Parse FObjectExport)
+
     public override string ToString() => $"{Name} ({ClassName})";
 }
 

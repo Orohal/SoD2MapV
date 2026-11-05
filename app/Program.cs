@@ -31,6 +31,23 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--patchtest")
+        {
+            try
+            {
+                return Smoke.PatchTest(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "StateOfDecay2/Content/maps/trumbull_valley/trumbull_valley/trumbull_valley_x0_y0.umap",
+                    args.Length > 3 ? args[3] : "",
+                    args.Length > 4 ? float.Parse(args[4]) : 1000f,
+                    args.Length > 5 ? float.Parse(args[5]) : 0f);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--smoke")
         {
             try

@@ -81,6 +81,16 @@ public sealed class MapLoader
     public void SubmitAesKey(string guid, string key)
         => Provider.SubmitKey(new FGuid(guid), new FAesKey(key));
 
+    /// <summary>Full decoded bytes of a pak entry (.umap = uasset+uexp in one file for SoD2).</summary>
+    public byte[] ReadMapBytes(string mapPath)
+    {
+        if (Provider[mapPath] is FPakEntry pe && Lz4Linked.NeedsLinkedDecode(pe))
+            return Lz4Linked.Decode(Provider, pe);
+        var f = Provider[mapPath];
+        using var ar = f.CreateReader();
+        return ar.ReadBytes((int)f.Size);
+    }
+
     /// <summary>Parses a cooked map into a flat object list (positions of actors via root components).</summary>
     public async Task<MapModel> LoadMapAsync(string mapPath)
     {
@@ -116,8 +126,9 @@ public sealed class MapLoader
             }
             model.TotalExports = exports.Length;
 
-            foreach (var e in exports)
+            for (var ei = 0; ei < exports.Length; ei++)
             {
+                var e = exports[ei];
                 if (e == null) continue;
                 string className = e.ExportType;
 
@@ -132,13 +143,20 @@ public sealed class MapLoader
                 {
                     Name = e.Name,
                     ClassName = className,
+                    ExportIndex = ei,
                 };
 
                 UObject? comp = null;
                 if (rootIdx != null && !rootIdx.IsNull)
                 {
                     if (rootIdx.IsExport)
+                    {
                         comp = package.GetExport(rootIdx.Index);
+                        obj.ComponentExportIndex = rootIdx.Index;
+                        var cexp = ((Package)package).ExportMap[rootIdx.Index];
+                        obj.ComponentSerialOffset = cexp.SerialOffset;
+                        obj.ComponentSerialSize = cexp.SerialSize;
+                    }
                     else if (rootIdx.IsImport)
                         comp = package.FindObject(rootIdx)?.Value; // rarely: root comp outside map package
                 }
@@ -168,7 +186,7 @@ public sealed class MapLoader
         }).ConfigureAwait(false);
     }
 
-    private static bool TryGetComponentTransform(UObject comp, out FTransform tf)
+    public static bool TryGetComponentTransform(UObject comp, out FTransform tf)
     {
         tf = FTransform.Identity;
         if (comp.TryGet<FTransform>("Transform", out var t))
