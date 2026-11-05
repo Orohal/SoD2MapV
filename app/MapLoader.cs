@@ -11,6 +11,8 @@ using CUE4Parse.UE4.Assets.Exports;
 using CUE4Parse.UE4.Objects.Core.Math;
 using CUE4Parse.UE4.Objects.Core.Misc;
 using CUE4Parse.UE4.Objects.UObject;
+using CUE4Parse.UE4.Pak.Objects;
+using CUE4Parse.UE4.Readers;
 using CUE4Parse.UE4.Versions;
 
 namespace SoD2MapViewer;
@@ -91,7 +93,18 @@ public sealed class MapLoader
             UObject[] exports;
             try
             {
-                package = Provider.LoadPackage(mapPath);
+                // SoD2's LZ4 entries use linked blocks (backrefs into the previous block's output),
+                // which CUE4Parse cannot decode; decode ourselves and hand the bytes to a Package.
+                if (Provider[mapPath] is FPakEntry pe && Lz4Linked.NeedsLinkedDecode(pe))
+                {
+                    var data = Lz4Linked.Decode(Provider, pe);
+                    var uasset = new FByteArchive(mapPath, data, Provider.Versions);
+                    package = new Package(uasset, null, null, null, Provider, useLazySerialization: true);
+                }
+                else
+                {
+                    package = Provider.LoadPackage(mapPath);
+                }
                 exports = package.GetExports().ToArray();
             }
             catch (Exception e)
