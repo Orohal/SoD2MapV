@@ -20,6 +20,18 @@ public sealed class MapCanvas : Control
 
     public event Action<int>? SelectionChanged; // index of selected object, -1 = none
 
+    /// <summary>Fired after a drag moved an object: (index, oldX, oldY). Editing only.</summary>
+    public event Action<int, float, float>? ObjectMoved;
+
+    /// <summary>When true, dragging an object moves it instead of panning the view.</summary>
+    public bool EditingEnabled;
+
+    private bool _dragging;
+    private int _dragIndex = -1;
+    private bool _dragMoved;
+    private PointF _dragGrabOffset; // world offset mouse -> object at drag start
+    private float _dragOldX, _dragOldY;
+
     private readonly Dictionary<string, Brush> _brushCache = new();
     private readonly ToolTip _tip = new() { InitialDelay = 300, ReshowDelay = 100 };
 
@@ -207,6 +219,19 @@ public sealed class MapCanvas : Control
         base.OnMouseDown(e);
         if (e.Button == MouseButtons.Left)
         {
+            if (EditingEnabled && PickObject(e.Location) is int hit && hit >= 0)
+            {
+                var o = Objects[hit];
+                var w = ScreenToWorld(e.X, e.Y);
+                _dragging = true;
+                _dragMoved = false;
+                _dragIndex = hit;
+                _dragOldX = o.X;
+                _dragOldY = o.Y;
+                _dragGrabOffset = new PointF(o.X - w.X, o.Y - w.Y);
+                Cursor = Cursors.SizeAll;
+                return;
+            }
             _panning = true;
             _panStart = e.Location;
             _panStartCenter = _center;
@@ -221,24 +246,48 @@ public sealed class MapCanvas : Control
         }
     }
 
+    /// <summary>Nearest object within pick radius (screen px), or -1.</summary>
+    private int PickObject(Point p)
+    {
+        int best = -1;
+        float bd = 14 * 14;
+        for (int i = 0; i < Objects.Count; i++)
+        {
+            var o = Objects[i];
+            if (!o.HasTransform) continue;
+            var s = WorldToScreen(o.X, o.Y);
+            float d = (s.X - p.X) * (s.X - p.X) + (s.Y - p.Y) * (s.Y - p.Y);
+            if (d < bd) { bd = d; best = i; }
+        }
+        return best;
+    }
+
     protected override void OnMouseUp(MouseEventArgs e)
     {
         base.OnMouseUp(e);
         if (e.Button == MouseButtons.Left)
         {
+            if (_dragging)
+            {
+                _dragging = false;
+                Cursor = Cursors.Cross;
+                if (_dragMoved)
+                {
+                    ObjectMoved?.Invoke(_dragIndex, _dragOldX, _dragOldY);
+                }
+                else
+                {
+                    // click without move on a grabbed object = select it
+                    _selected = _dragIndex;
+                    SelectionChanged?.Invoke(_dragIndex);
+                    Invalidate();
+                }
+                return;
+            }
             _panning = false;
             if (Math.Abs(e.X - _panStart.X) < 3 && Math.Abs(e.Y - _panStart.Y) < 3)
             {
-                int best = -1;
-                float bestDist = 20 * 20;
-                for (int i = 0; i < Objects.Count; i++)
-                {
-                    var o = Objects[i];
-                    if (!o.HasTransform) continue;
-                    var p = WorldToScreen(o.X, o.Y);
-                    float d = (p.X - e.X) * (p.X - e.X) + (p.Y - e.Y) * (p.Y - e.Y);
-                    if (d < bestDist) { bestDist = d; best = i; }
-                }
+                int best = PickObject(e.Location);
                 _selected = best;
                 SelectionChanged?.Invoke(best);
                 Invalidate();
@@ -249,6 +298,22 @@ public sealed class MapCanvas : Control
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+        if (_dragging)
+        {
+            var w = ScreenToWorld(e.X, e.Y);
+            var o = Objects[_dragIndex];
+            var nx = w.X + _dragGrabOffset.X;
+            var ny = w.Y + _dragGrabOffset.Y;
+            if (MathF.Abs(nx - o.X) > 0.01f || MathF.Abs(ny - o.Y) > 0.01f)
+            {
+                o.X = nx;
+                o.Y = ny;
+                _dragMoved = true;
+                _tip.SetToolTip(this, Describe(o) + "\n(release to drop, Ctrl+Z to undo)");
+            }
+            Invalidate();
+            return;
+        }
         if (_panning)
         {
             float dx = (_panStart.X - e.X) / _zoom;
@@ -259,16 +324,9 @@ public sealed class MapCanvas : Control
             Invalidate();
             return;
         }
-        int hover = -1;
-        float bd = 14 * 14;
-        for (int i = 0; i < Objects.Count; i++)
-        {
-            var o = Objects[i];
-            if (!o.HasTransform) continue;
-            var p = WorldToScreen(o.X, o.Y);
-            float d = (p.X - e.X) * (p.X - e.X) + (p.Y - e.Y) * (p.Y - e.Y);
-            if (d < bd) { bd = d; hover = i; }
-        }
+        int hover = PickObject(e.Location);
+        if (EditingEnabled)
+            Cursor = hover >= 0 ? Cursors.SizeAll : Cursors.Cross;
         if (hover != _hover)
         {
             _hover = hover;

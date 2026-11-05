@@ -7,15 +7,22 @@ namespace SoD2MapViewer;
 /// <summary>An object placed in a cooked .umap level (phase 1: position + metadata from static parsing).</summary>
 public sealed class MapObject
 {
-    public string Name;
-    public string ClassName;      // actor class name (e.g. "StaticMeshActor")
-    public string ComponentClass; // root component class (e.g. "StaticMeshComponent")
-    public string MeshPath;       // static mesh asset path when resolvable
-    public float X, Y, Z;         // translation in UE centimeters
-    public float QX, QY, QZ, QW;  // rotation quaternion
-    public float SX, SY, SZ;      // scale
+    public string Name { get; set; } = "";
+    public string ClassName { get; set; } = "";      // actor class name (e.g. "StaticMeshActor")
+    public string ComponentClass { get; set; } = ""; // root component class (e.g. "StaticMeshComponent")
+    public string MeshPath { get; set; } = "";       // static mesh asset path when resolvable
+    public float X { get; set; }                     // translation in UE centimeters
+    public float Y { get; set; }
+    public float Z { get; set; }
+    public float QX { get; set; }                    // rotation quaternion
+    public float QY { get; set; }
+    public float QZ { get; set; }
+    public float QW { get; set; }
+    public float SX { get; set; }                    // scale
+    public float SY { get; set; }
+    public float SZ { get; set; }
 
-    public bool HasTransform;
+    public bool HasTransform { get; set; }
     public override string ToString() => $"{Name} ({ClassName})";
 }
 

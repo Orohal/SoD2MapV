@@ -25,6 +25,8 @@ public sealed class MainForm : Form
     private readonly BindingSource _source = new();
     private List<MapObject> _visible = new();
     private readonly TextBox _mapFilter;
+    private readonly CheckBox _chkEdit;
+    private readonly Stack<(int Idx, float X, float Y)> _undo = new();
 
     public MainForm()
     {
@@ -38,6 +40,11 @@ public sealed class MainForm : Form
             if (e.KeyCode == Keys.F && ActiveControl is not TextBox)
             {
                 _canvas.Fit();
+                e.Handled = true;
+            }
+            else if (e.Control && e.KeyCode == Keys.Z && ActiveControl is not TextBox)
+            {
+                UndoLastMove();
                 e.Handled = true;
             }
         };
@@ -85,6 +92,7 @@ public sealed class MainForm : Form
         _grid.SelectionChanged += GridSelection;
         _canvas = new MapCanvas { Dock = DockStyle.Fill };
         _canvas.SelectionChanged += CanvasSelection;
+        _canvas.ObjectMoved += CanvasObjectMoved;
         right.Panel1.Controls.Add(_grid);
         right.Panel2.Controls.Add(_canvas);
 
@@ -95,7 +103,14 @@ public sealed class MainForm : Form
         var labelMap = new Label { Left = 160, Top = 24, AutoSize = true, Text = "Object filter:", ForeColor = Color.Gainsboro };
         _search = new TextBox { Left = 250, Top = 20, Width = 320, PlaceholderText = "name/class/mesh contains..." };
         _search.TextChanged += (s, e) => ApplyFilter();
-        top.Controls.AddRange(new Control[] { btnOpen, labelMap, _search });
+        _chkEdit = new CheckBox
+        {
+            Left = 590, Top = 22, AutoSize = true,
+            Text = "Enable editing (drag objects)",
+            ForeColor = Color.Gainsboro,
+        };
+        _chkEdit.CheckedChanged += (s, e) => _canvas.EditingEnabled = _chkEdit.Checked;
+        top.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit });
 
         _status = new TextBox
         {
@@ -197,6 +212,7 @@ public sealed class MainForm : Form
     private void SetMap(MapModel model)
     {
         _map = model;
+        _undo.Clear();
         var ok = model.Error == null;
         SetStatus(
             $"map: {Path.GetFileName(model.Path)}  |  exports: {model.TotalExports:N0}  objects: {model.Objects.Count:N0}  " +
@@ -284,6 +300,32 @@ public sealed class MainForm : Form
             cm.Width = 320;
         foreach (string col in new[] { "X", "Y", "Z", "SX", "SY", "SZ", "QX", "QY", "QZ", "QW" })
             if (_grid.Columns[col] != null) _grid.Columns[col]!.DefaultCellStyle.Format = "0.##";
+    }
+
+    private void CanvasObjectMoved(int idx, float oldX, float oldY)
+    {
+        if (idx < 0 || idx >= _visible.Count) return;
+        _undo.Push((idx, oldX, oldY));
+        _source.ResetItem(idx); // force the grid row to re-read the moved object
+        var o = _visible[idx];
+        SetStatus($"moved {o.Name}: ({oldX / 100:0.##}, {oldY / 100:0.##}) m -> ({o.X / 100:0.##}, {o.Y / 100:0.##}) m   |   undo: {_undo.Count}  (Ctrl+Z)");
+    }
+
+    private void UndoLastMove()
+    {
+        if (_undo.Count == 0)
+        {
+            SetStatus("nothing to undo");
+            return;
+        }
+        var (idx, x, y) = _undo.Pop();
+        if (idx < 0 || idx >= _visible.Count) return;
+        var o = _visible[idx];
+        o.X = x;
+        o.Y = y;
+        _source.ResetItem(idx);
+        _canvas.Invalidate();
+        SetStatus($"undo: {o.Name} back to ({x / 100:0.##}, {y / 100:0.##}) m   |   undo: {_undo.Count}");
     }
 
     private void CanvasSelection(int idx)
