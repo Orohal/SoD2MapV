@@ -5,9 +5,9 @@ Ein nativer Windows-Map-Viewer für **State of Decay 2** (Unreal Engine 4), geba
 > **Hinweis:** Diese App ist die **Vorarbeit für einen Map-Editor**. Aktuelle Phase ist ein reiner **Viewer** (nur Lesen). Geplante Phasen:
 >
 > 1. ✅ **Viewer** — PAKs lesen, Maps listen, 2D-Top-Down-Ansicht mit Objekten
-> 2. ⏳ **Positions-Editor MVP** — Objektverschiebung in der Karte
-> 3. ⏳ **Voller Editor** — weiteres Bearbeiten von Map-Inhalten
-> 4. ⏳ **Mod-Repacking** — geänderte Maps als eigene `.pak` verpacken
+> 2. ✅ **Positions-Editor MVP** — Objekte verschieben (Drag & Drop, Undo) + Export als Mod-`.pak`
+> 3. ⏳ **Voller Editor** — weiteres Bearbeiten von Map-Inhalten (Rotation, Scale, …)
+> 4. ◐ **Mod-Repacking** — eigener SoD2-`.pak`-Writer ist verifiziert; Feinschliff folgt
 
 ## Features
 
@@ -36,13 +36,15 @@ dotnet build app/SoD2MapViewer.csproj -c Release
 
 ## Nutzung
 
-### GUI (Viewer)
+### GUI (Viewer / Editor MVP)
 
-Einfach starten und über **Open** das Spielverzeichnis wählen (z. B. `D:\Games\State of Decay 2\StateOfDecay2`):
+Einfach starten und über **Choose game folder** das Spielverzeichnis wählen (z. B. `D:\Games\State of Decay 2\StateOfDecay2`):
 
 ```sh
 dotnet app/bin/Release/net10.0-windows/SoD2MapViewer.dll
 ```
+
+**Editor MVP:** Checkbox *Enable editing* aktivieren → Objekt auf der Karte greifen und verschieben (Ctrl+Z = Undo) → **Export mod .pak…** schreibt alle Änderungen als eigene `.pak`. Diese in `StateOfDecay2\Content\Paks\` kopieren — das `_P`-Suffix sorgt dafür, dass das Spiel dem Mod-Pak den Vorzug gibt.
 
 ### Headless-Modi
 

@@ -29,6 +29,7 @@ public sealed class MapObject
     public int ComponentExportIndex = -1; // root component export index (-1 = none/import)
     public long ComponentSerialOffset;    // byte range of the component's serialized data
     public long ComponentSerialSize;      // (package-absolute, per CUE4Parse FObjectExport)
+    public bool Edited;                   // position changed since load (export candidate)
 
     public override string ToString() => $"{Name} ({ClassName})";
 }

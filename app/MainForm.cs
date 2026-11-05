@@ -110,7 +110,9 @@ public sealed class MainForm : Form
             ForeColor = Color.Gainsboro,
         };
         _chkEdit.CheckedChanged += (s, e) => _canvas.EditingEnabled = _chkEdit.Checked;
-        top.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit });
+        var btnExport = new Button { Left = 590 + _chkEdit.Width + 12, Top = 20, Text = "Export mod .pak...", AutoSize = true };
+        btnExport.Click += (s, e) => ExportModPak();
+        top.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit, btnExport });
 
         _status = new TextBox
         {
@@ -306,14 +308,105 @@ public sealed class MainForm : Form
     {
         if (idx < 0 || idx >= _visible.Count) return;
         _undo.Push((idx, oldX, oldY));
-        _source.ResetItem(idx); // force the grid row to re-read the moved object
         var o = _visible[idx];
+        o.Edited = true;
+        _source.ResetItem(idx); // force the grid row to re-read the moved object
         SetStatus($"moved {o.Name}: ({oldX / 100:0.##}, {oldY / 100:0.##}) m -> ({o.X / 100:0.##}, {o.Y / 100:0.##}) m   |   undo: {_undo.Count}  (Ctrl+Z)");
     }
 
-    private void UndoLastMove()
+    private void ExportModPak()
     {
-        if (_undo.Count == 0)
+        if (_map == null || _map.Error != null)
+        {
+            MessageBox.Show(this, "Load a map first.", "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        var edited = _map.Objects.Where(o => o.Edited).ToList();
+        if (edited.Count == 0)
+        {
+            MessageBox.Show(this, "No objects were moved. Enable editing, drag an object, then export.",
+                "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        byte[] data;
+        try
+        {
+            data = _loader.ReadMapBytes(_map.Path);
+        }
+        catch (Exception e)
+        {
+            MessageBox.Show(this, "Failed to read map bytes:\n" + e.Message, "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        foreach (var o in edited)
+        {
+            var r = UmapPatcher.PatchLocation(data, o, o.X, o.Y);
+            if (r.Error.Length > 0)
+            {
+                MessageBox.Show(this, $"Failed to patch {o.Name}:\n{r.Error}", "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+        }
+
+        string mountPoint, rel;
+        try
+        {
+            var pe = _loader.Provider[_map.Path] as CUE4Parse.UE4.Pak.Objects.FPakEntry
+                ?? throw new InvalidOperationException("map is not inside a pak");
+            var mp = ((CUE4Parse.UE4.Pak.PakFileReader)pe.Vfs).MountPoint;
+            mountPoint = mp.StartsWith("../") ? mp : "../../../" + mp;
+            rel = StripMount(_map.Path, mp);
+        }
+        catch (Exception e)
+        {
+            MessageBox.Show(this, "Failed to resolve pak mount point:\n" + e.Message, "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        var mapName = Path.GetFileNameWithoutExtension(_map.Path);
+        using var dlg = new SaveFileDialog
+        {
+            Title = "Save mod pak",
+            Filter = "PAK archive (*.pak)|*.pak",
+            FileName = $"mod_{mapName}_P.pak",
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+
+        try
+        {
+            PakWriter.Write(dlg.FileName, mountPoint, new[] { new PakWriter.Entry { Path = rel, Data = data } });
+        }
+        catch (Exception e)
+        {
+            MessageBox.Show(this, "Failed to write pak:\n" + e.Message, "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        SetStatus($"exported {edited.Count:N0} object(s) -> {dlg.FileName}");
+        MessageBox.Show(this,
+            $"Mod pak written:\n{dlg.FileName}\n\n" +
+            $"Objects moved: {edited.Count:N0}\n\n" +
+            "To use it in the game, copy the file into the game's Paks folder:\n" +
+            "StateOfDecay2\\Content\\Paks\\\n\n" +
+            "The '_P' suffix makes the game prefer this pak over the original map.",
+            "Export complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private static string StripMount(string fullPath, string mountPoint)
+    {
+        var m = mountPoint.Replace('\\', '/');
+        while (m.StartsWith("../")) m = m[3..];
+        var fp = fullPath.Replace('\\', '/');
+        if (m.Length > 0 && fp.StartsWith(m, StringComparison.OrdinalIgnoreCase))
+            return fp[m.Length..];
+        var idx = fp.IndexOf("Content/", StringComparison.OrdinalIgnoreCase);
+        return idx >= 0 ? fp[(idx + "Content/".Length)..] : fp;
+    }
+
+    private void UndoLastMove()
+    {        if (_undo.Count == 0)
         {
             SetStatus("nothing to undo");
             return;
