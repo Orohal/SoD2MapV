@@ -129,4 +129,75 @@ internal static class Smoke
         Console.WriteLine(ok ? "[verify] OK" : "[verify] MISMATCH");
         return ok ? 0 : 6;
     }
+
+    /// <summary>Full MVP roundtrip: patch a map, write it into a new .pak, mount that pak fresh and verify.</summary>
+    public static int PakTest(string gameDir, string mapPath, string namePart, float dx, float dy)
+    {
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(s => Console.WriteLine("[init] " + s))).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+
+        var model = loader.LoadMapAsync(mapPath).GetAwaiter().GetResult();
+        if (model.Error != null) { Console.Error.WriteLine("parse error: " + model.Error); return 2; }
+        var obj = model.Objects.FirstOrDefault(o => o.HasTransform && o.Name.Contains(namePart, StringComparison.OrdinalIgnoreCase));
+        if (obj == null) { Console.Error.WriteLine($"no object matching '{namePart}' with transform"); return 3; }
+        Console.WriteLine($"[patch] target: {obj.Name} at {obj.X:0.##},{obj.Y:0.##},{obj.Z:0.##}");
+
+        var data = loader.ReadMapBytes(mapPath);
+        var patch = UmapPatcher.PatchLocation(data, obj, obj.X + dx, obj.Y + dy);
+        if (patch.Error.Length > 0) { Console.Error.WriteLine("[patch] FAILED: " + patch.Error); return 4; }
+        Console.WriteLine($"[patch] {patch.Hits} hit(s), new pos ({obj.X + dx:0.##}, {obj.Y + dy:0.##})");
+
+        // write the mod pak
+        var entry = loader.Provider[mapPath] as CUE4Parse.UE4.Pak.Objects.FPakEntry
+            ?? throw new InvalidOperationException("not a pak entry");
+        var mountPoint = ((CUE4Parse.UE4.Pak.PakFileReader)entry.Vfs).MountPoint;
+        // CUE4Parse validated the mount point (stripped the leading "../../.."); the pak format
+        // expects the raw form, and ValidateMountPoint treats anything else as "strange" (root).
+        var writeMount = mountPoint.StartsWith("../") ? mountPoint : "../../../" + mountPoint;
+        var rel = StripMount(mapPath, mountPoint);
+        Console.WriteLine($"[pak]   mountPoint='{writeMount}' rel='{rel}'");
+
+        var outDir = Path.Combine(Path.GetTempPath(), "sod2mapv_paktest");
+        Directory.CreateDirectory(outDir);
+        var outPak = Path.Combine(outDir, "pakchunk999-WindowsNoEditor_P.pak");
+        var wr = PakWriter.Write(outPak, writeMount, new[] { new PakWriter.Entry { Path = rel, Data = data } });
+        Console.WriteLine($"[pak]   wrote {outPak}: {wr.FileSize:N0} bytes, index [{wr.IndexOffset:N0} +{wr.IndexSize:N0}], {wr.Entries.Count} entry");
+
+        // fresh provider over ONLY the mod pak
+        var versions = new CUE4Parse.UE4.Versions.VersionContainer(CUE4Parse.UE4.Versions.EGame.GAME_StateOfDecay2);
+        var prov = new CUE4Parse.FileProvider.DefaultFileProvider(outDir, SearchOption.AllDirectories, versions, StringComparer.OrdinalIgnoreCase);
+        prov.Initialize();
+        var mounted = prov.Mount();
+        Console.WriteLine($"[mount] paks={mounted} files={prov.Files.Count}");
+        var actual = string.Join("; ", prov.Files.Keys.Take(3));
+        Console.WriteLine($"[mount] paths: {actual}");
+        if (!prov.Files.ContainsKey(mapPath)) { Console.Error.WriteLine("[mount] map path missing from mod pak index"); return 5; }
+
+        var pkg2 = prov.LoadPackage(mapPath);
+        var exports2 = pkg2.GetExports().ToArray();
+        var again = exports2.FirstOrDefault(e => e != null && e.Name == obj.Name);
+        if (again == null) { Console.Error.WriteLine("[verify] object not found in mod pak"); return 6; }
+        if (!again.TryGet<FPackageIndex>("RootComponent", out var ri) || ri == null || !ri.IsExport)
+        { Console.Error.WriteLine("[verify] root component missing"); return 6; }
+        var comp = pkg2.GetExport(ri.Index);
+        if (!MapLoader.TryGetComponentTransform(comp, out var tf))
+        { Console.Error.WriteLine("[verify] transform missing"); return 6; }
+        Console.WriteLine($"[verify] mod pak: {again.Name} at {tf.Translation.X:0.##},{tf.Translation.Y:0.##},{tf.Translation.Z:0.##}");
+        var ok = MathF.Abs((float)tf.Translation.X - (obj.X + dx)) < 0.5f
+              && MathF.Abs((float)tf.Translation.Y - (obj.Y + dy)) < 0.5f;
+        Console.WriteLine(ok ? "[verify] OK - mod pak roundtrip complete" : "[verify] MISMATCH");
+        return ok ? 0 : 7;
+    }
+
+    private static string StripMount(string fullPath, string mountPoint)
+    {
+        var m = mountPoint.Replace('\\', '/');
+        while (m.StartsWith("../")) m = m[3..];
+        var fp = fullPath.Replace('\\', '/');
+        if (m.Length > 0 && fp.StartsWith(m, StringComparison.OrdinalIgnoreCase))
+            return fp[m.Length..];
+        var idx = fp.IndexOf("Content/", StringComparison.OrdinalIgnoreCase);
+        return idx >= 0 ? fp[(idx + "Content/".Length)..] : fp;
+    }
 }

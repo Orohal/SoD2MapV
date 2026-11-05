@@ -48,6 +48,23 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--paktest")
+        {
+            try
+            {
+                return Smoke.PakTest(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "StateOfDecay2/Content/maps/amethyst_tiled_region_map/amethyst_region_map.umap",
+                    args.Length > 3 ? args[3] : "MapTravelVolume_1",
+                    args.Length > 4 ? float.Parse(args[4]) : 1000f,
+                    args.Length > 5 ? float.Parse(args[5]) : 0f);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--smoke")
         {
             try
