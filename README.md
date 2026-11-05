@@ -73,4 +73,4 @@ SoD2MapViewer.exe --diag "D:\Games\State of Decay 2\StateOfDecay2" "StateOfDecay
 
 ## Lizenz
 
-Noch keine Lizenz vergeben. Alle Markenrechte an *State of Decay 2* liegen bei Undead Labs / Microsoft.
+MIT — siehe [LICENSE](LICENSE). Alle Markenrechte an *State of Decay 2* liegen bei Undead Labs / Microsoft.
