@@ -209,8 +209,14 @@ internal static class Smoke
         return ok ? 0 : 6;
     }
 
-    /// <summary>Full MVP roundtrip: patch a map, write it into a new .pak, mount that pak fresh and verify.</summary>
-    public static int PakTest(string gameDir, string mapPath, string namePart, float dx, float dy)
+    /// <summary>A single object move: name fragment plus cm offsets (dz optional, null keeps Z).</summary>
+    public sealed record MoveSpec(string NamePart, float Dx, float Dy, float? Dz);
+
+    /// <summary>
+    /// Full MVP roundtrip: patch one or more objects, write them into a new .pak,
+    /// mount that pak fresh and verify every moved object.
+    /// </summary>
+    public static int PakTest(string gameDir, string mapPath, MoveSpec[] moves)
     {
         var loader = new MapLoader();
         var res = loader.InitializeAsync(gameDir, new Progress<string>(s => Console.WriteLine("[init] " + s))).GetAwaiter().GetResult();
@@ -218,14 +224,21 @@ internal static class Smoke
 
         var model = loader.LoadMapAsync(mapPath).GetAwaiter().GetResult();
         if (model.Error != null) { Console.Error.WriteLine("parse error: " + model.Error); return 2; }
-        var obj = model.Objects.FirstOrDefault(o => o.HasTransform && o.Name.Contains(namePart, StringComparison.OrdinalIgnoreCase));
-        if (obj == null) { Console.Error.WriteLine($"no object matching '{namePart}' with transform"); return 3; }
-        Console.WriteLine($"[patch] target: {obj.Name} at {obj.X:0.##},{obj.Y:0.##},{obj.Z:0.##}");
 
         var data = loader.ReadMapBytes(mapPath);
-        var patch = UmapPatcher.PatchLocation(data, obj, obj.X + dx, obj.Y + dy);
-        if (patch.Error.Length > 0) { Console.Error.WriteLine("[patch] FAILED: " + patch.Error); return 4; }
-        Console.WriteLine($"[patch] {patch.Hits} hit(s), new pos ({obj.X + dx:0.##}, {obj.Y + dy:0.##})");
+        var moved = new List<(MapObject obj, float nx, float ny, float nz)>();
+        foreach (var m in moves)
+        {
+            var obj = model.Objects.FirstOrDefault(o => o.HasTransform && o.Name.Equals(m.NamePart, StringComparison.OrdinalIgnoreCase))
+                   ?? model.Objects.FirstOrDefault(o => o.HasTransform && o.Name.Contains(m.NamePart, StringComparison.OrdinalIgnoreCase));
+            if (obj == null) { Console.Error.WriteLine($"no object matching '{m.NamePart}' with transform"); return 3; }
+            var (nx, ny, nz) = (obj.X + m.Dx, obj.Y + m.Dy, obj.Z + (m.Dz ?? 0));
+            Console.WriteLine($"[patch] target: {obj.Name} at {obj.X:0.##},{obj.Y:0.##},{obj.Z:0.##} -> ({nx:0.##}, {ny:0.##}, {nz:0.##})");
+            var patch = UmapPatcher.PatchLocation(data, obj, nx, ny, m.Dz.HasValue ? nz : null);
+            if (patch.Error.Length > 0) { Console.Error.WriteLine($"[patch] FAILED for {obj.Name}: " + patch.Error); return 4; }
+            Console.WriteLine($"[patch] {patch.Hits} hit(s)");
+            moved.Add((obj, nx, ny, nz));
+        }
 
         // write the mod pak
         var entry = loader.Provider[mapPath] as CUE4Parse.UE4.Pak.Objects.FPakEntry
@@ -255,17 +268,23 @@ internal static class Smoke
 
         var pkg2 = prov.LoadPackage(mapPath);
         var exports2 = pkg2.GetExports().ToArray();
-        var again = exports2.FirstOrDefault(e => e != null && e.Name == obj.Name);
-        if (again == null) { Console.Error.WriteLine("[verify] object not found in mod pak"); return 6; }
-        if (!again.TryGet<FPackageIndex>("RootComponent", out var ri) || ri == null || !ri.IsExport)
-        { Console.Error.WriteLine("[verify] root component missing"); return 6; }
-        var comp = pkg2.GetExport(ri.Index);
-        if (!MapLoader.TryGetComponentTransform(comp, out var tf))
-        { Console.Error.WriteLine("[verify] transform missing"); return 6; }
-        Console.WriteLine($"[verify] mod pak: {again.Name} at {tf.Translation.X:0.##},{tf.Translation.Y:0.##},{tf.Translation.Z:0.##}");
-        var ok = MathF.Abs((float)tf.Translation.X - (obj.X + dx)) < 0.5f
-              && MathF.Abs((float)tf.Translation.Y - (obj.Y + dy)) < 0.5f;
-        Console.WriteLine(ok ? "[verify] OK - mod pak roundtrip complete" : "[verify] MISMATCH");
+        var ok = true;
+        foreach (var (obj, nx, ny, nz) in moved)
+        {
+            var again = exports2.FirstOrDefault(e => e != null && e.Name == obj.Name);
+            if (again == null) { Console.Error.WriteLine($"[verify] {obj.Name}: not found in mod pak"); ok = false; continue; }
+            if (!again.TryGet<FPackageIndex>("RootComponent", out var ri) || ri == null || !ri.IsExport)
+            { Console.Error.WriteLine($"[verify] {obj.Name}: root component missing"); ok = false; continue; }
+            var comp = pkg2.GetExport(ri.Index);
+            if (!MapLoader.TryGetComponentTransform(comp, out var tf))
+            { Console.Error.WriteLine($"[verify] {obj.Name}: transform missing"); ok = false; continue; }
+            var vOk = MathF.Abs((float)tf.Translation.X - nx) < 0.5f
+                   && MathF.Abs((float)tf.Translation.Y - ny) < 0.5f
+                   && MathF.Abs((float)tf.Translation.Z - nz) < 0.5f;
+            Console.WriteLine($"[verify] {again.Name} at {tf.Translation.X:0.##},{tf.Translation.Y:0.##},{tf.Translation.Z:0.##}  {(vOk ? "OK" : "MISMATCH")}");
+            if (!vOk) ok = false;
+        }
+        Console.WriteLine(ok ? "[verify] OK - mod pak roundtrip complete" : "[verify] FAILED");
         return ok ? 0 : 7;
     }
 

@@ -137,12 +137,24 @@ internal static class Program
         {
             try
             {
+                // args: <gameDir> <mapPath> (<namePart> <dx> <dy> [<dz>])+  — offsets in cm, invariant culture
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                var moves = new List<Smoke.MoveSpec>();
+                var i = 3;
+                while (i < args.Length)
+                {
+                    var name = args[i++];
+                    var dx = float.Parse(args[i++], ci);
+                    var dy = float.Parse(args[i++], ci);
+                    float? dz = null;
+                    if (i < args.Length && float.TryParse(args[i], System.Globalization.NumberStyles.Float, ci, out var z)) { dz = z; i++; }
+                    moves.Add(new Smoke.MoveSpec(name, dx, dy, dz));
+                }
+                if (moves.Count == 0) { Console.Error.WriteLine("usage: --paktest <gameDir> <mapPath> (<name> <dx> <dy> [<dz>])+"); return 2; }
                 return Smoke.PakTest(
                     args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
                     args.Length > 2 ? args[2] : "StateOfDecay2/Content/maps/amethyst_tiled_region_map/amethyst_region_map.umap",
-                    args.Length > 3 ? args[3] : "MapTravelVolume_1",
-                    args.Length > 4 ? float.Parse(args[4]) : 1000f,
-                    args.Length > 5 ? float.Parse(args[5]) : 0f);
+                    moves.ToArray());
             }
             catch (Exception e)
             {

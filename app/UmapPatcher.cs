@@ -19,8 +19,8 @@ public static class UmapPatcher
         public string Error = "";
     }
 
-    /// <summary>Rewrites the component's location (X, Y) in <paramref name="data"/>; Z is kept.</summary>
-    public static PatchResult PatchLocation(byte[] data, MapObject obj, float newX, float newY)
+    /// <summary>Rewrites the component's location (X, Y, and Z when given) in <paramref name="data"/>.</summary>
+    public static PatchResult PatchLocation(byte[] data, MapObject obj, float newX, float newY, float? newZ = null)
     {
         var res = new PatchResult();
         if (!obj.HasTransform) { res.Error = "object has no transform"; return res; }
@@ -53,6 +53,7 @@ public static class UmapPatcher
 
         BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(0, 4), newX);
         BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(4, 4), newY);
+        if (newZ.HasValue) BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(8, 4), newZ.Value);
         foreach (var h in hits)
             Array.Copy(pattern, 0, data, h, pattern.Length);
 
