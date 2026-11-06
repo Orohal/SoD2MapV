@@ -58,6 +58,19 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--saveprops")
+        {
+            try
+            {
+                return Savegame.SaveProps(
+                    args.Length > 1 ? args[1] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--files")
         {
             try

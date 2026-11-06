@@ -1,36 +1,61 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using CUE4Parse.UE4.Objects.Core.Math;
 
 namespace SoD2MapViewer;
 
-/// <summary>Top-down (world X/Y) canvas with pan & zoom for map objects.</summary>
-public sealed class MapCanvas : Control
-{
-    public IReadOnlyList<MapObject> Objects = Array.Empty<MapObject>();
-    private float _zoom = 1f;               // pixels per world unit (world unit = UE cm)
-    private PointF _center = new(0, 0);     // world coords at control center
-    private int _selected = -1;
-    private int _hover = -1;
-    private bool _panning;
-    private Point _panStart;
-    private PointF _panStartCenter;
+    /// <summary>Top-down (world X/Y) canvas with pan & zoom for map objects.</summary>
+    public sealed class MapCanvas : Control
+    {
+        public IReadOnlyList<MapObject> Objects = Array.Empty<MapObject>();
+        private float _zoom = 1f;               // pixels per world unit (world unit = UE cm)
+        private PointF _center = new(0, 0);     // world coords at control center
+        private int _selected = -1;
+        private int _hover = -1;
+        private bool _panning;
+        private Point _panStart;
+        private PointF _panStartCenter;
 
-    public event Action<int>? SelectionChanged; // index of selected object, -1 = none
+        /// <summary>Current edit mode: Move (position), Rotate (yaw), Scale (uniform).</summary>
+        public enum EditMode { Move, Rotate, Scale }
 
-    /// <summary>Fired after a drag moved an object: (index, oldX, oldY). Editing only.</summary>
-    public event Action<int, float, float>? ObjectMoved;
+        /// <summary>Current edit mode.</summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public EditMode Mode { get; set; } = EditMode.Move;
 
-    /// <summary>When true, dragging an object moves it instead of panning the view.</summary>
-    public bool EditingEnabled;
+        public event Action<int>? SelectionChanged; // index of selected object, -1 = none
 
-    private bool _dragging;
-    private int _dragIndex = -1;
-    private bool _dragMoved;
-    private PointF _dragGrabOffset; // world offset mouse -> object at drag start
-    private float _dragOldX, _dragOldY;
+        /// <summary>Fired after a drag moved an object: (index, oldX, oldY). Editing only.</summary>
+        public event Action<int, float, float>? ObjectMoved;
+
+        /// <summary>Fired after a drag rotated an object: (index, oldQX, oldQY, oldQZ, oldQW). Editing only.</summary>
+        public event Action<int, float, float, float, float>? ObjectRotated;
+
+        /// <summary>Fired after a drag scaled an object: (index, oldSX, oldSY, oldSZ). Editing only.</summary>
+        public event Action<int, float, float, float>? ObjectScaled;
+
+        /// <summary>Fired when the selected object is deleted: (index). Editing only.</summary>
+        public event Action<int>? ObjectDeleted;
+
+        /// <summary>When true, dragging an object edits it instead of panning the view.</summary>
+        public bool EditingEnabled;
+
+        private bool _dragging;
+        private int _dragIndex = -1;
+        private bool _dragMoved;
+        private PointF _dragGrabOffset; // world offset mouse -> object at drag start
+        private float _dragOldX, _dragOldY;
+
+        // rotate / scale drag state
+        private float _dragOldQX, _dragOldQY, _dragOldQZ, _dragOldQW;
+        private float _dragOldSX, _dragOldSY, _dragOldSZ;
+        private Point _dragStartScreen;
+        private float _dragStartYaw;
+        private float _dragStartDist;
 
     private readonly Dictionary<string, Brush> _brushCache = new();
     private readonly ToolTip _tip = new() { InitialDelay = 300, ReshowDelay = 100 };
@@ -75,6 +100,16 @@ public sealed class MapCanvas : Control
             _center = new PointF(o.X, o.Y);
         }
         Invalidate();
+    }
+
+    /// <summary>Marks the selected object as deleted (flag only; canvas updates on next paint).</summary>
+    public void DeleteSelected()
+    {
+        if (!EditingEnabled) return;
+        if (_selected < 0 || _selected >= Objects.Count) return;
+        Objects[_selected].Deleted = true;
+        Invalidate();
+        ObjectDeleted?.Invoke(_selected);
     }
 
     public IReadOnlyDictionary<string, Color> Legend()
@@ -171,24 +206,52 @@ public sealed class MapCanvas : Control
             var col = ColorFor(cat);
             if (i == _hover || i == _selected)
                 col = Color.FromArgb(255, col);
+            if (o.Deleted)
+                col = Color.FromArgb(120, 120, 120); // grayed out for deleted
             var b = BrushFor(cat);
             var size = dot;
             if (i == _selected) size = dot * 2f + 4f;
             else if (i == _hover) size = dot * 1.5f + 2f;
             g.FillRectangle(b, p.X - size / 2, p.Y - size / 2, size, size);
 
-            if (i == _selected)
+            if (o.Deleted)
+            {
+                using var strike = new Pen(Color.Red, 2f);
+                g.DrawLine(strike, p.X - size / 2 - 2, p.Y, p.X + size / 2 + 2, p.Y);
+                g.DrawLine(strike, p.X - 2, p.Y - size / 2 - 2, p.X + 2, p.Y + size / 2 + 2);
+            }
+
+            // selection highlight + edit-mode visualizations
+            if (i == _selected && EditingEnabled && !o.Deleted)
             {
                 using var hl = new Pen(Color.White, 2f);
                 g.DrawEllipse(hl, p.X - size, p.Y - size, size * 2, size * 2);
+
+                if (Mode == EditMode.Rotate)
+                {
+                    // yaw arrow pointing in the object's forward direction
+                    float yaw = YawFromQuat(o.QX, o.QY, o.QZ, o.QW);
+                    float arrowLen = MathF.Max(dot * 3f, 12f);
+                    var end = new PointF(p.X + MathF.Cos(yaw) * arrowLen, p.Y - MathF.Sin(yaw) * arrowLen);
+                    using var arr = new Pen(Color.Yellow, 2f);
+                    g.DrawLine(arr, p.X, p.Y, end.X, end.Y);
+                    g.FillEllipse(new SolidBrush(Color.Yellow), end.X - 3, end.Y - 3, 6, 6);
+                }
+                else if (Mode == EditMode.Scale)
+                {
+                    // scale indicator: square around the object sized by average scale
+                    float avgScale = (o.SX + o.SY + o.SZ) / 3f;
+                    float s = MathF.Max(dot * avgScale * 1.5f, 8f);
+                    using var sq = new Pen(Color.Cyan, 1.5f);
+                    g.DrawRectangle(sq, p.X - s / 2, p.Y - s / 2, s, s);
+                }
             }
         }
 
         using var hudFont = new Font("Segoe UI", 8.5f);
         using var hudBrush = new SolidBrush(Color.FromArgb(150, 200, 210));
         g.DrawString(
-            $"zoom {_zoom:0.000} px/cm   center [{_center.X / 100:0.#} m / {_center.Y / 100:0.#} m]   " +
-            $"hover: {(_hover >= 0 ? Objects[_hover].Name : "-")}   (wheel/double-click: zoom, drag: pan, F: fit)",
+            $"zoom {_zoom:0.000} px/cm   center [{_center.X / 100:0.#} m / {_center.Y / 100:0.#} m]   mode={Mode}   hover: {(_hover >= 0 ? Objects[_hover].Name : "-")}   (wheel/double-click: zoom, drag: pan, F: fit)",
             hudFont, hudBrush, new PointF(8, Height - 24));
     }
 
@@ -226,9 +289,23 @@ public sealed class MapCanvas : Control
                 _dragging = true;
                 _dragMoved = false;
                 _dragIndex = hit;
+                _dragStartScreen = e.Location;
+                _dragGrabOffset = new PointF(o.X - w.X, o.Y - w.Y);
                 _dragOldX = o.X;
                 _dragOldY = o.Y;
-                _dragGrabOffset = new PointF(o.X - w.X, o.Y - w.Y);
+                _dragOldQX = o.QX; _dragOldQY = o.QY; _dragOldQZ = o.QZ; _dragOldQW = o.QW;
+                _dragOldSX = o.SX; _dragOldSY = o.SY; _dragOldSZ = o.SZ;
+
+                if (Mode == EditMode.Rotate)
+                {
+                    _dragStartYaw = YawFromQuat(o.QX, o.QY, o.QZ, o.QW);
+                }
+                else if (Mode == EditMode.Scale)
+                {
+                    var selPos = WorldToScreen(o.X, o.Y);
+                    _dragStartDist = (float)MathF.Sqrt((e.X - selPos.X) * (e.X - selPos.X) + (e.Y - selPos.Y) * (e.Y - selPos.Y));
+                }
+
                 Cursor = Cursors.SizeAll;
                 return;
             }
@@ -242,6 +319,12 @@ public sealed class MapCanvas : Control
             var cm = new ContextMenuStrip();
             cm.Items.Add("Copy location (cm)", null, (s, ev) => Clipboard.SetText($"{o.X:0},{o.Y:0},{o.Z:0}"));
             cm.Items.Add("Copy location (m)", null, (s, ev) => Clipboard.SetText($"{o.X / 100:0.##},{o.Y / 100:0.##},{o.Z / 100:0.##}"));
+            cm.Items.Add("-");
+            cm.Items.Add("Mode: Move (M)", null, (s, ev) => { Mode = EditMode.Move; Invalidate(); });
+            cm.Items.Add("Mode: Rotate (R)", null, (s, ev) => { Mode = EditMode.Rotate; Invalidate(); });
+            cm.Items.Add("Mode: Scale (S)", null, (s, ev) => { Mode = EditMode.Scale; Invalidate(); });
+            cm.Items.Add("-");
+            cm.Items.Add("Delete object (Del)", null, (s, ev) => DeleteSelected());
             cm.Show(this, e.Location);
         }
     }
@@ -273,7 +356,13 @@ public sealed class MapCanvas : Control
                 Cursor = Cursors.Cross;
                 if (_dragMoved)
                 {
-                    ObjectMoved?.Invoke(_dragIndex, _dragOldX, _dragOldY);
+                    var o = Objects[_dragIndex];
+                    if (Mode == EditMode.Move)
+                        ObjectMoved?.Invoke(_dragIndex, _dragOldX, _dragOldY);
+                    else if (Mode == EditMode.Rotate)
+                        ObjectRotated?.Invoke(_dragIndex, _dragOldQX, _dragOldQY, _dragOldQZ, _dragOldQW);
+                    else if (Mode == EditMode.Scale)
+                        ObjectScaled?.Invoke(_dragIndex, _dragOldSX, _dragOldSY, _dragOldSZ);
                 }
                 else
                 {
@@ -302,14 +391,48 @@ public sealed class MapCanvas : Control
         {
             var w = ScreenToWorld(e.X, e.Y);
             var o = Objects[_dragIndex];
-            var nx = w.X + _dragGrabOffset.X;
-            var ny = w.Y + _dragGrabOffset.Y;
-            if (MathF.Abs(nx - o.X) > 0.01f || MathF.Abs(ny - o.Y) > 0.01f)
+
+            if (Mode == EditMode.Move)
             {
-                o.X = nx;
-                o.Y = ny;
-                _dragMoved = true;
-                _tip.SetToolTip(this, Describe(o) + "\n(release to drop, Ctrl+Z to undo)");
+                var nx = w.X + _dragGrabOffset.X;
+                var ny = w.Y + _dragGrabOffset.Y;
+                if (MathF.Abs(nx - o.X) > 0.01f || MathF.Abs(ny - o.Y) > 0.01f)
+                {
+                    o.X = nx;
+                    o.Y = ny;
+                    _dragMoved = true;
+                    _tip.SetToolTip(this, Describe(o) + "\n(release to drop, Ctrl+Z to undo)");
+                }
+            }
+            else if (Mode == EditMode.Rotate)
+            {
+                float dx = e.X - _dragStartScreen.X;
+                float dy = e.Y - _dragStartScreen.Y;
+                float sensitivity = 0.005f; // rad per pixel
+                float newYaw = _dragStartYaw + dx * sensitivity - dy * sensitivity;
+                var q = QuatFromYaw(newYaw);
+                if (MathF.Abs(q.X - o.QX) > 0.0001f || MathF.Abs(q.Y - o.QY) > 0.0001f ||
+                    MathF.Abs(q.Z - o.QZ) > 0.0001f || MathF.Abs(q.W - o.QW) > 0.0001f)
+                {
+                    o.QX = q.X; o.QY = q.Y; o.QZ = q.Z; o.QW = q.W;
+                    _dragMoved = true;
+                    _tip.SetToolTip(this, Describe(o) + $"\nyaw={newYaw * 180f / MathF.PI:0.#}°  (release to drop, Ctrl+Z to undo)");
+                }
+            }
+            else if (Mode == EditMode.Scale)
+            {
+                var selPos = WorldToScreen(o.X, o.Y);
+                float curDist = (float)MathF.Sqrt((e.X - selPos.X) * (e.X - selPos.X) + (e.Y - selPos.Y) * (e.Y - selPos.Y));
+                float factor = curDist / MathF.Max(_dragStartDist, 1f);
+                float nsx = _dragOldSX * factor;
+                float nsy = _dragOldSY * factor;
+                float nsz = _dragOldSZ * factor;
+                if (MathF.Abs(nsx - o.SX) > 0.001f || MathF.Abs(nsy - o.SY) > 0.001f || MathF.Abs(nsz - o.SZ) > 0.001f)
+                {
+                    o.SX = nsx; o.SY = nsy; o.SZ = nsz;
+                    _dragMoved = true;
+                    _tip.SetToolTip(this, Describe(o) + $"\nscale={o.SX:0.##}  (release to drop, Ctrl+Z to undo)");
+                }
             }
             Invalidate();
             return;
@@ -337,5 +460,16 @@ public sealed class MapCanvas : Control
 
     private static string Describe(MapObject o) =>
         $"{o.Name}\n{o.ClassName}\n{o.X / 100:0.#}, {o.Y / 100:0.#} m  (Z {o.Z / 100:0.#} m)";
+
+    /// <summary>Extract yaw (Z-rotation) from a quaternion.</summary>
+    private static float YawFromQuat(float x, float y, float z, float w)
+        => MathF.Atan2(2f * (w * y + x * z), 1f - 2f * (y * y + z * z));
+
+    /// <summary>Create a quaternion from a pure yaw angle (Z-rotation).</summary>
+    private static FQuat QuatFromYaw(float yaw)
+    {
+        float h = yaw * 0.5f;
+        return new FQuat(0f, 0f, MathF.Sin(h), MathF.Cos(h));
+    }
 }
 
