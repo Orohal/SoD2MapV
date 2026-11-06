@@ -94,37 +94,41 @@ public sealed class MapLoader
     /// <summary>Parses a cooked map into a flat object list (positions of actors via root components).</summary>
     public async Task<MapModel> LoadMapAsync(string mapPath)
     {
-        return await Task.Run(() =>
-        {
-            var model = new MapModel { Path = mapPath };
-            var sw = Stopwatch.StartNew();
+        return await Task.Run(() => ParseMap(Provider, mapPath)).ConfigureAwait(false);
+    }
 
-            IPackage? package = null;
-            UObject[] exports;
-            try
+    /// <summary>Static parse core — works on any provider (game dir, baseline wrap pak, ...).</summary>
+    public static MapModel ParseMap(DefaultFileProvider provider, string mapPath)
+    {
+        var model = new MapModel { Path = mapPath };
+        var sw = Stopwatch.StartNew();
+
+        IPackage? package = null;
+        UObject[] exports;
+        try
+        {
+            // SoD2's LZ4 entries use linked blocks (backrefs into the previous block's output),
+            // which CUE4Parse cannot decode; decode ourselves and hand the bytes to a Package.
+            if (provider[mapPath] is FPakEntry pe && Lz4Linked.NeedsLinkedDecode(pe))
             {
-                // SoD2's LZ4 entries use linked blocks (backrefs into the previous block's output),
-                // which CUE4Parse cannot decode; decode ourselves and hand the bytes to a Package.
-                if (Provider[mapPath] is FPakEntry pe && Lz4Linked.NeedsLinkedDecode(pe))
-                {
-                    var data = Lz4Linked.Decode(Provider, pe);
-                    var uasset = new FByteArchive(mapPath, data, Provider.Versions);
-                    package = new Package(uasset, null, null, null, Provider, useLazySerialization: true);
-                }
-                else
-                {
-                    package = Provider.LoadPackage(mapPath);
-                }
-                exports = package.GetExports().ToArray();
+                var data = Lz4Linked.Decode(provider, pe);
+                var uasset = new FByteArchive(mapPath, data, provider.Versions);
+                package = new Package(uasset, null, null, null, provider, useLazySerialization: true);
             }
-            catch (Exception e)
+            else
             {
-                model.FailedExports = -1;
-                model.Error = e.Message;
-                model.LoadMs = sw.ElapsedMilliseconds;
-                return model;
+                package = provider.LoadPackage(mapPath);
             }
-            model.TotalExports = exports.Length;
+            exports = package.GetExports().ToArray();
+        }
+        catch (Exception e)
+        {
+            model.FailedExports = -1;
+            model.Error = e.Message;
+            model.LoadMs = sw.ElapsedMilliseconds;
+            return model;
+        }
+        model.TotalExports = exports.Length;
 
             for (var ei = 0; ei < exports.Length; ei++)
             {
@@ -183,7 +187,6 @@ public sealed class MapLoader
 
             model.LoadMs = sw.ElapsedMilliseconds;
             return model;
-        }).ConfigureAwait(false);
     }
 
     public static bool TryGetComponentTransform(UObject comp, out FTransform tf)

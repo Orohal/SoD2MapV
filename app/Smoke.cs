@@ -361,19 +361,77 @@ internal static class Smoke
     public sealed record MoveSpec(string NamePart, float Dx, float Dy, float? Dz);
 
     /// <summary>
-    /// Full MVP roundtrip: patch one or more objects, write them into a new .pak,
-    /// mount that pak fresh and verify every moved object.
+    /// Dumps the raw bytes of a game file (baseline for deterministic patching) and wraps
+    /// them into a standalone pak that can be parsed via --pkg on the wrap directory.
+    /// Run this with the mod pak renamed away, so the ORIGINAL bytes are extracted.
     /// </summary>
-    public static int PakTest(string gameDir, string mapPath, MoveSpec[] moves)
+    public static int ExtractMap(string gameDir, string mapPath, string outFile)
     {
         var loader = new MapLoader();
-        var res = loader.InitializeAsync(gameDir, new Progress<string>(s => Console.WriteLine("[init] " + s))).GetAwaiter().GetResult();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
         if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
-
-        var model = loader.LoadMapAsync(mapPath).GetAwaiter().GetResult();
-        if (model.Error != null) { Console.Error.WriteLine("parse error: " + model.Error); return 2; }
-
         var data = loader.ReadMapBytes(mapPath);
+        File.WriteAllBytes(outFile, data);
+        Console.WriteLine($"[extract] {data.Length:N0} bytes -> {outFile}");
+
+        var rel = mapPath.StartsWith("StateOfDecay2/Content/", StringComparison.OrdinalIgnoreCase)
+            ? mapPath["StateOfDecay2/Content/".Length..] : mapPath;
+        var wrapDir = Path.Combine(Path.GetTempPath(), "sod2mapv_baseline");
+        Directory.CreateDirectory(wrapDir);
+        var wrapPak = Path.Combine(wrapDir, "pakchunk0-WindowsNoEditor.pak");
+        var wr = PakWriter.Write(wrapPak, "../../../StateOfDecay2/Content/", new[] { new PakWriter.Entry { Path = rel, Data = data } });
+        Console.WriteLine($"[extract] wrap pak: {wrapPak} ({wr.FileSize:N0} bytes)");
+        Console.WriteLine($"[extract] inspect originals via: --pkg \"{wrapDir}\" \"{mapPath}\" <filter>");
+        return 0;
+    }
+
+    /// <summary>
+    /// Full roundtrip: patch one or more objects, write them into a new .pak,
+    /// mount that pak fresh and verify every moved object.
+    /// With <paramref name="baseline"/>, patches from those ORIGINAL map bytes instead of
+    /// the currently mounted state (deltas are then relative to the original map).
+    /// </summary>
+    public static int PakTest(string gameDir, string mapPath, MoveSpec[] moves, string? baseline = null)
+    {
+        var versions = new CUE4Parse.UE4.Versions.VersionContainer(CUE4Parse.UE4.Versions.EGame.GAME_StateOfDecay2);
+        byte[] data;
+        MapModel model;
+        var writeMount = "../../../StateOfDecay2/Content/";
+        var rel = mapPath.StartsWith("StateOfDecay2/Content/", StringComparison.OrdinalIgnoreCase)
+            ? mapPath["StateOfDecay2/Content/".Length..] : mapPath;
+
+        if (baseline != null)
+        {
+            data = File.ReadAllBytes(baseline);
+            var wrapDir = Path.Combine(Path.GetTempPath(), "sod2mapv_baseline");
+            Directory.CreateDirectory(wrapDir);
+            var wrapPak = Path.Combine(wrapDir, "pakchunk0-WindowsNoEditor.pak");
+            PakWriter.Write(wrapPak, writeMount, new[] { new PakWriter.Entry { Path = rel, Data = data } });
+            var provW = new CUE4Parse.FileProvider.DefaultFileProvider(wrapDir, SearchOption.AllDirectories, versions, StringComparer.OrdinalIgnoreCase);
+            provW.Initialize();
+            provW.Mount();
+            model = MapLoader.ParseMap(provW, mapPath);
+            if (model.Error != null) { Console.Error.WriteLine("baseline parse error: " + model.Error); return 2; }
+            Console.WriteLine($"[baseline] {baseline}: {model.Objects.Count:N0} objects (ORIGINAL state, deltas relative to this)");
+        }
+        else
+        {
+            var loader = new MapLoader();
+            var res = loader.InitializeAsync(gameDir, new Progress<string>(s => Console.WriteLine("[init] " + s))).GetAwaiter().GetResult();
+            if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+
+            model = loader.LoadMapAsync(mapPath).GetAwaiter().GetResult();
+            if (model.Error != null) { Console.Error.WriteLine("parse error: " + model.Error); return 2; }
+            data = loader.ReadMapBytes(mapPath);
+            var entry = loader.Provider[mapPath] as CUE4Parse.UE4.Pak.Objects.FPakEntry
+                ?? throw new InvalidOperationException("not a pak entry");
+            var mountPoint = ((CUE4Parse.UE4.Pak.PakFileReader)entry.Vfs).MountPoint;
+            // CUE4Parse validated the mount point (stripped the leading "../../.."); the pak format
+            // expects the raw form, and ValidateMountPoint treats anything else as "strange" (root).
+            writeMount = mountPoint.StartsWith("../") ? mountPoint : "../../../" + mountPoint;
+            rel = StripMount(mapPath, mountPoint);
+        }
+
         var moved = new List<(MapObject obj, float nx, float ny, float nz)>();
         foreach (var m in moves)
         {
@@ -389,13 +447,6 @@ internal static class Smoke
         }
 
         // write the mod pak
-        var entry = loader.Provider[mapPath] as CUE4Parse.UE4.Pak.Objects.FPakEntry
-            ?? throw new InvalidOperationException("not a pak entry");
-        var mountPoint = ((CUE4Parse.UE4.Pak.PakFileReader)entry.Vfs).MountPoint;
-        // CUE4Parse validated the mount point (stripped the leading "../../.."); the pak format
-        // expects the raw form, and ValidateMountPoint treats anything else as "strange" (root).
-        var writeMount = mountPoint.StartsWith("../") ? mountPoint : "../../../" + mountPoint;
-        var rel = StripMount(mapPath, mountPoint);
         Console.WriteLine($"[pak]   mountPoint='{writeMount}' rel='{rel}'");
 
         var outDir = Path.Combine(Path.GetTempPath(), "sod2mapv_paktest");
@@ -405,7 +456,6 @@ internal static class Smoke
         Console.WriteLine($"[pak]   wrote {outPak}: {wr.FileSize:N0} bytes, index [{wr.IndexOffset:N0} +{wr.IndexSize:N0}], {wr.Entries.Count} entry");
 
         // fresh provider over ONLY the mod pak
-        var versions = new CUE4Parse.UE4.Versions.VersionContainer(CUE4Parse.UE4.Versions.EGame.GAME_StateOfDecay2);
         var prov = new CUE4Parse.FileProvider.DefaultFileProvider(outDir, SearchOption.AllDirectories, versions, StringComparer.OrdinalIgnoreCase);
         prov.Initialize();
         var mounted = prov.Mount();

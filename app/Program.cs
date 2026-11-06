@@ -178,28 +178,51 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--extract")
+        {
+            try
+            {
+                return Smoke.ExtractMap(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "",
+                    args.Length > 3 ? args[3] : Path.Combine(Path.GetTempPath(), "sod2mapv_baseline.umap.bin"));
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--paktest")
         {
             try
             {
-                // args: <gameDir> <mapPath> (<namePart> <dx> <dy> [<dz>])+  — offsets in cm, invariant culture
+                // args: <gameDir> <mapPath> [--baseline <file>] (<namePart> <dx> <dy> [<dz>])+  — offsets in cm, invariant culture
                 var ci = System.Globalization.CultureInfo.InvariantCulture;
-                var moves = new List<Smoke.MoveSpec>();
-                var i = 3;
-                while (i < args.Length)
+                string? baseline = null;
+                var rest = new List<string>();
+                for (var i = 3; i < args.Length; i++)
                 {
-                    var name = args[i++];
-                    var dx = float.Parse(args[i++], ci);
-                    var dy = float.Parse(args[i++], ci);
+                    if (args[i] == "--baseline" && i + 1 < args.Length) { baseline = args[++i]; continue; }
+                    rest.Add(args[i]);
+                }
+                var moves = new List<Smoke.MoveSpec>();
+                var i2 = 0;
+                while (i2 < rest.Count)
+                {
+                    var name = rest[i2++];
+                    var dx = float.Parse(rest[i2++], ci);
+                    var dy = float.Parse(rest[i2++], ci);
                     float? dz = null;
-                    if (i < args.Length && float.TryParse(args[i], System.Globalization.NumberStyles.Float, ci, out var z)) { dz = z; i++; }
+                    if (i2 < rest.Count && float.TryParse(rest[i2], System.Globalization.NumberStyles.Float, ci, out var z)) { dz = z; i2++; }
                     moves.Add(new Smoke.MoveSpec(name, dx, dy, dz));
                 }
-                if (moves.Count == 0) { Console.Error.WriteLine("usage: --paktest <gameDir> <mapPath> (<name> <dx> <dy> [<dz>])+"); return 2; }
+                if (moves.Count == 0) { Console.Error.WriteLine("usage: --paktest <gameDir> <mapPath> [--baseline <file>] (<name> <dx> <dy> [<dz>])+"); return 2; }
                 return Smoke.PakTest(
                     args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
                     args.Length > 2 ? args[2] : "StateOfDecay2/Content/maps/amethyst_tiled_region_map/amethyst_region_map.umap",
-                    moves.ToArray());
+                    moves.ToArray(),
+                    baseline);
             }
             catch (Exception e)
             {
