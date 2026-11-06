@@ -40,7 +40,8 @@ public sealed class MainForm : Form
     public MainForm()
     {
         Text = "State of Decay 2 — Map Viewer (v0.2)";
-        Size = new Size(1500, 950);
+        Size = new Size(1400, 900);
+        MinimumSize = new Size(900, 600);
         StartPosition = FormStartPosition.CenterScreen;
         WindowState = FormWindowState.Maximized;
         KeyPreview = true;
@@ -66,7 +67,7 @@ public sealed class MainForm : Form
         };
 
         // left: map filter + map list + legend
-        var left = new Panel { Dock = DockStyle.Left, Width = 360 };
+        var left = new Panel { Dock = DockStyle.Fill };
         _mapList = new ListBox { Dock = DockStyle.Fill, Font = new Font("Consolas", 9f) };
         _mapList.SelectedIndexChanged += MapListSelected;
         _legendHost = new Panel { Dock = DockStyle.Bottom, Height = 180, BackColor = Color.FromArgb(32, 34, 40) };
@@ -86,7 +87,7 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
-            SplitterDistance = 420,
+            IsSplitterFixed = false,
         };
         _grid = new DataGridView
         {
@@ -115,23 +116,44 @@ public sealed class MainForm : Form
         right.Panel1.Controls.Add(_grid);
         right.Panel2.Controls.Add(_canvas);
 
-        // top toolbar (added last so it docks above fill panel)
+        // outer splitter: left panel (maps) | right area (grid + canvas)
+        var outer = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical,
+            IsSplitterFixed = false,
+        };
+        outer.Panel1.Controls.Add(left);
+        outer.Panel2.Controls.Add(right);
+
+        // top toolbar (responsive flow layout, no absolute positioning -> no overlaps)
         var top = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = Color.FromArgb(38, 40, 48) };
-        var btnOpen = new Button { Left = 8, Top = 20, Text = "Choose game folder...", AutoSize = true };
+        var flow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoSize = false,
+            Padding = new Padding(8, 8, 8, 8),
+            BackColor = Color.Transparent,
+        };
+        var btnOpen = new Button { Text = "Choose game folder...", AutoSize = true, Height = 30, Margin = new Padding(0, 0, 12, 0) };
         btnOpen.Click += (s, e) => PickGameDir();
-        var labelMap = new Label { Left = 160, Top = 24, AutoSize = true, Text = "Object filter:", ForeColor = Color.Gainsboro };
-        _search = new TextBox { Left = 250, Top = 20, Width = 320, PlaceholderText = "name/class/mesh contains..." };
+        var labelMap = new Label { AutoSize = true, Text = "Object filter:", ForeColor = Color.Gainsboro, Margin = new Padding(0, 8, 4, 0) };
+        _search = new TextBox { Width = 320, PlaceholderText = "name/class/mesh contains...", Height = 30, Margin = new Padding(0, 0, 12, 0) };
         _search.TextChanged += (s, e) => ApplyFilter();
         _chkEdit = new CheckBox
         {
-            Left = 590, Top = 22, AutoSize = true,
             Text = "Enable editing (drag objects)",
             ForeColor = Color.Gainsboro,
+            Height = 30,
+            Margin = new Padding(0, 0, 12, 0),
         };
         _chkEdit.CheckedChanged += (s, e) => _canvas.EditingEnabled = _chkEdit.Checked;
-        var btnExport = new Button { Left = 590 + _chkEdit.Width + 12, Top = 20, Text = "Export mod .pak...", AutoSize = true };
+        var btnExport = new Button { Text = "Export mod .pak...", AutoSize = true, Height = 30 };
         btnExport.Click += (s, e) => ExportModPak();
-        top.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit, btnExport });
+        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit, btnExport });
+        top.Controls.Add(flow);
 
         _status = new TextBox
         {
@@ -143,10 +165,31 @@ public sealed class MainForm : Form
             ForeColor = Color.LightGray,
         };
 
-        Controls.Add(right);
+        Controls.Add(outer);
         Controls.Add(_status);
         Controls.Add(top);
-        Controls.Add(left);
+
+        // Set splitter distances once the form's actual size is known
+        Load += (s, e) =>
+        {
+            // inner: grid vs canvas height
+            right.Panel1MinSize = 200;
+            right.Panel2MinSize = 300;
+            var innerAvail = right.Height - right.SplitterWidth;
+            var innerMin = right.Panel1MinSize;
+            var innerMax = innerAvail - right.Panel2MinSize;
+            if (innerMax < innerMin) innerMax = innerMin;
+            right.SplitterDistance = Math.Clamp(420, innerMin, innerMax);
+
+            // outer: left panel width
+            outer.Panel1MinSize = 250;
+            outer.Panel2MinSize = 400;
+            var outerAvail = outer.Width - outer.SplitterWidth;
+            var omin = outer.Panel1MinSize;
+            var omax = outerAvail - outer.Panel2MinSize;
+            if (omax < omin) omax = omin;
+            outer.SplitterDistance = Math.Clamp(360, omin, omax);
+        };
 
         BeginInitGame();
     }
@@ -411,6 +454,16 @@ public sealed class MainForm : Form
 
         foreach (var o in edited)
         {
+            if (o.Deleted)
+            {
+                var r = UmapPatcher.PatchErase(data, o);
+                if (r.Error.Length > 0)
+                {
+                    MessageBox.Show(this, $"Failed to erase {o.Name}:\n{r.Error}", "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                continue;
+            }
             if (o.Edited)
             {
                 var r = UmapPatcher.PatchLocation(data, o, o.X, o.Y, o.Z);
@@ -435,15 +488,6 @@ public sealed class MainForm : Form
                 if (r.Error.Length > 0)
                 {
                     MessageBox.Show(this, $"Failed to patch scale {o.Name}:\n{r.Error}", "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
-            }
-            if (o.Deleted)
-            {
-                var r = UmapPatcher.PatchErase(data, o);
-                if (r.Error.Length > 0)
-                {
-                    MessageBox.Show(this, $"Failed to erase {o.Name}:\n{r.Error}", "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
             }
@@ -476,21 +520,25 @@ public sealed class MainForm : Form
         try
         {
             PakWriter.Write(dlg.FileName, mountPoint, new[] { new PakWriter.Entry { Path = rel, Data = data } });
+
+            // reset edit flags so re-export doesn't re-patch the same objects
+            foreach (var o in _map.Objects)
+                o.Edited = o.EditedRotation = o.EditedScale = o.Deleted = false;
+
+            SetStatus($"exported {edited.Count:N0} object(s) -> {dlg.FileName}");
+            MessageBox.Show(this,
+                $"Mod pak written:\n{dlg.FileName}\n\n" +
+                $"Objects modified: {edited.Count:N0}\n\n" +
+                "To use it in the game, copy the file into the game's Paks folder:\n" +
+                "StateOfDecay2\\Content\\Paks\\\n\n" +
+                "The '_P' suffix makes the game prefer this pak over the original map.",
+                "Export complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception e)
         {
             MessageBox.Show(this, "Failed to write pak:\n" + e.Message, "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
-
-        SetStatus($"exported {edited.Count:N0} object(s) -> {dlg.FileName}");
-        MessageBox.Show(this,
-            $"Mod pak written:\n{dlg.FileName}\n\n" +
-            $"Objects modified: {edited.Count:N0}\n\n" +
-            "To use it in the game, copy the file into the game's Paks folder:\n" +
-            "StateOfDecay2\\Content\\Paks\\\n\n" +
-            "The '_P' suffix makes the game prefer this pak over the original map.",
-            "Export complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private static string StripMount(string fullPath, string mountPoint)

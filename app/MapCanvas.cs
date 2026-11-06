@@ -208,11 +208,12 @@ namespace SoD2MapViewer;
                 col = Color.FromArgb(255, col);
             if (o.Deleted)
                 col = Color.FromArgb(120, 120, 120); // grayed out for deleted
-            var b = BrushFor(cat);
+            var b = new SolidBrush(col);
             var size = dot;
             if (i == _selected) size = dot * 2f + 4f;
             else if (i == _hover) size = dot * 1.5f + 2f;
-            g.FillRectangle(b, p.X - size / 2, p.Y - size / 2, size, size);
+            using (b)
+                g.FillRectangle(b, p.X - size / 2, p.Y - size / 2, size, size);
 
             if (o.Deleted)
             {
