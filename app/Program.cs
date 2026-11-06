@@ -101,6 +101,51 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--props")
+        {
+            try
+            {
+                return Smoke.DumpProps(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "",
+                    args.Length > 3 ? args[3] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--strings")
+        {
+            try
+            {
+                return Smoke.Strings(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "",
+                    args.Length > 3 ? args[3] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--pkg")
+        {
+            try
+            {
+                return Smoke.DumpPackage(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "",
+                    args.Length > 3 ? args[3] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--list")
         {
             try

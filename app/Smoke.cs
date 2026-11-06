@@ -6,6 +6,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using CUE4Parse.UE4.Assets;
 using CUE4Parse.UE4.Assets.Exports;
+using CUE4Parse.UE4.Assets.Objects;
+using CUE4Parse.UE4.Assets.Objects.Properties;
 using CUE4Parse.UE4.Objects.UObject;
 using CUE4Parse.UE4.Readers;
 
@@ -106,6 +108,152 @@ internal static class Smoke
         foreach (var m in loader.MapPaths)
             if (filter.Length == 0 || m.Contains(filter, StringComparison.OrdinalIgnoreCase))
                 Console.WriteLine(m);
+        return 0;
+    }
+
+    /// <summary>Dumps all properties of exports whose name/class matches the filter (recursive, shallow).</summary>
+    public static int DumpProps(string gameDir, string path, string filter)
+    {
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+
+        var pkg = loader.Provider.LoadPackage(path);
+        if (pkg == null) { Console.Error.WriteLine("package not found: " + path); return 3; }
+        var exports = pkg.GetExports().ToArray();
+
+        foreach (var e in exports)
+        {
+            if (e == null) continue;
+            var nameText = e.Name;
+            var className = e.ExportType ?? "?";
+            if (filter.Length > 0
+                && !nameText.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                && !className.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                continue;
+            Console.WriteLine($"=== {nameText} ({className}) ===");
+            foreach (var p in e.Properties)
+                DumpTag(p, "  ");
+        }
+        return 0;
+    }
+
+    private static void DumpTag(FPropertyTag p, string indent)
+        => DumpTagType(p.Tag, $"{indent}{p.Name.Text} ({p.PropertyType.Text})");
+
+    private static void DumpTagType(FPropertyTagType? tag, string head)
+    {
+        switch (tag)
+        {
+            case BoolProperty b: Console.WriteLine($"{head} = {b.Value}"); break;
+            case ByteProperty by: Console.WriteLine($"{head} = {by.Value}"); break;
+            case DoubleProperty d: Console.WriteLine($"{head} = {d.Value}"); break;
+            case FloatProperty f: Console.WriteLine($"{head} = {f.Value}"); break;
+            case IntProperty i: Console.WriteLine($"{head} = {i.Value}"); break;
+            case Int64Property i64: Console.WriteLine($"{head} = {i64.Value}"); break;
+            case UInt32Property u: Console.WriteLine($"{head} = {u.Value}"); break;
+            case StrProperty s: Console.WriteLine($"{head} = \"{s.Value}\""); break;
+            case NameProperty n: Console.WriteLine($"{head} = {n.Value.Text}"); break;
+            case EnumProperty en: Console.WriteLine($"{head} = {en.Value.Text}"); break;
+            case ObjectProperty o: Console.WriteLine($"{head} = {o.Value?.Name}"); break;
+            case ArrayProperty a:
+                Console.WriteLine($"{head}[{a.Value?.Properties?.Count ?? 0}]");
+                if (a.Value != null)
+                    foreach (var el in a.Value.Properties)
+                        DumpTagType(el, head + "  ");
+                break;
+            case StructProperty st:
+                if (st.Value?.StructType is FStructFallback fb)
+                {
+                    Console.WriteLine($"{head} <struct>");
+                    foreach (var sp in fb.Properties)
+                        DumpTagType(sp.Tag, $"{head}  {sp.Name.Text} ({sp.PropertyType.Text})");
+                }
+                else
+                    Console.WriteLine($"{head} = {st.Value?.StructType}");
+                break;
+            case MapProperty m:
+                Console.WriteLine($"{head} <map: {m.Value?.Properties?.Count ?? 0} entries>");
+                break;
+            case null:
+                Console.WriteLine($"{head} = <null>"); break;
+            default:
+                Console.WriteLine($"{head} <{tag.GetType().Name}>"); break;
+        }
+    }
+
+    /// <summary>Extracts printable ASCII strings (>=5 chars) from a raw game file — quick look into uasset name tables.</summary>
+    public static int Strings(string gameDir, string path, string filter)
+    {
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+        var data = loader.ReadMapBytes(path); // works for any pak file, not just umaps
+        var sb = new System.Text.StringBuilder();
+        var strs = new List<string>();
+        foreach (var b in data)
+        {
+            if (b >= 32 && b < 127) sb.Append((char)b);
+            else { if (sb.Length >= 5) strs.Add(sb.ToString()); sb.Clear(); }
+        }
+        if (sb.Length >= 5) strs.Add(sb.ToString());
+        var shown = 0;
+        foreach (var s in strs)
+        {
+            if (filter.Length > 0 && !s.Contains(filter, StringComparison.OrdinalIgnoreCase)) continue;
+            Console.WriteLine(s);
+            shown++;
+        }
+        Console.WriteLine($"[strings] {shown} string(s) shown, {strs.Count} total, {data.Length:N0} bytes");
+        return 0;
+    }
+
+    /// <summary>
+    /// Dumps the exports of an arbitrary package (uasset/umap) with their transforms,
+    /// including rotation quaternions — needed to inspect prefabs (e.g. base parking spots).
+    /// </summary>
+    public static int DumpPackage(string gameDir, string path, string filter)
+    {
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+
+        var pkg = loader.Provider.LoadPackage(path);
+        if (pkg == null) { Console.Error.WriteLine("package not found: " + path); return 3; }
+        var exports = pkg.GetExports().ToArray();
+        Console.WriteLine($"[pkg] {path}: {exports.Length} exports");
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+
+        var shown = 0;
+        foreach (var e in exports)
+        {
+            if (e == null) continue;
+            var className = e.ExportType ?? "?";
+            var nameText = e.Name;
+
+            // transform lives on the actor's root component, or directly on components
+            UObject comp = e;
+            if (e.TryGet<FPackageIndex>("RootComponent", out var ri) && ri != null && ri.IsExport)
+                comp = pkg.GetExport(ri.Index) ?? e;
+
+            var hasTf = MapLoader.TryGetComponentTransform(comp, out var tf);
+            if (filter.Length > 0
+                && !nameText.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                && !className.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (hasTf)
+            {
+                Console.WriteLine(string.Create(ci,
+                    $"  {nameText,-44} {className,-26} at {tf.Translation.X}, {tf.Translation.Y}, {tf.Translation.Z}  rot=({tf.Rotation.X}, {tf.Rotation.Y}, {tf.Rotation.Z}, {tf.Rotation.W})  scale=({tf.Scale3D.X}, {tf.Scale3D.Y}, {tf.Scale3D.Z})"));
+            }
+            else
+            {
+                Console.WriteLine($"  {nameText,-44} {className,-26} (no transform)");
+            }
+            shown++;
+        }
+        Console.WriteLine($"[pkg] {shown} export(s) shown");
         return 0;
     }
 
