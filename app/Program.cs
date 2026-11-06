@@ -72,6 +72,34 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--where")
+        {
+            try
+            {
+                return Smoke.Where(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--dupscan")
+        {
+            try
+            {
+                return Smoke.DupScan(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--maps")
         {
             try

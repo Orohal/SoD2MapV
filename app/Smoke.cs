@@ -208,6 +208,59 @@ internal static class Smoke
         return 0;
     }
 
+    /// <summary>Scans every game pak's index for entries matching a substring — finds duplicate copies across paks.</summary>
+    public static int DupScan(string gameDir, string nameSubstring)
+    {
+        var paksDir = Path.Combine(gameDir, "Content", "Paks");
+        if (!Directory.Exists(paksDir)) paksDir = Path.Combine(gameDir, "StateOfDecay2", "Content", "Paks");
+        var files = Directory.GetFiles(paksDir, "*.pak").OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToArray();
+        Console.WriteLine($"[dupscan] {files.Length} pak file(s) in {paksDir}");
+        var versions = new CUE4Parse.UE4.Versions.VersionContainer(CUE4Parse.UE4.Versions.EGame.GAME_StateOfDecay2);
+        var total = 0;
+        foreach (var pak in files)
+        {
+            try
+            {
+                using var reader = new CUE4Parse.UE4.Pak.PakFileReader(pak, versions);
+                reader.Mount(StringComparer.OrdinalIgnoreCase);
+                var hits = reader.Files.Keys
+                    .Where(k => k.Contains(nameSubstring, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+                Console.WriteLine($"[dupscan] {Path.GetFileName(pak)}: files={reader.Files.Count:N0} dirIndex={reader.HasDirectoryIndex} hits={hits.Length}");
+                if (reader.Files.Count > 0 && hits.Length > 0)
+                {
+                    foreach (var h in hits)
+                        Console.WriteLine($"    {h}  ({reader.Files[h].Size:N0} B)");
+                    total += hits.Length;
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"[dupscan] {Path.GetFileName(pak)}: ERROR {e.Message}");
+            }
+        }
+        Console.WriteLine($"[dupscan] {total} matching entr(ies) total");
+        return 0;
+    }
+
+    /// <summary>Prints which pak file contains the given game path.</summary>
+    public static int Where(string gameDir, string path)
+    {
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+        if (loader.Provider[path] is CUE4Parse.UE4.Pak.Objects.FPakEntry pe)
+        {
+            var vfs = (CUE4Parse.UE4.Pak.PakFileReader)pe.Vfs;
+            Console.WriteLine($"[where] {path}");
+            Console.WriteLine($"  -> pak: {vfs.Path}");
+            Console.WriteLine($"  -> mount point: {vfs.MountPoint}  entry offset {pe.Offset:N0}, {pe.Size:N0} bytes");
+            return 0;
+        }
+        Console.Error.WriteLine($"[where] not found: {path}");
+        return 3;
+    }
+
     /// <summary>
     /// Dumps the exports of an arbitrary package (uasset/umap) with their transforms,
     /// including rotation quaternions — needed to inspect prefabs (e.g. base parking spots).
@@ -218,38 +271,28 @@ internal static class Smoke
         var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
         if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
 
-        var pkg = loader.Provider.LoadPackage(path);
-        if (pkg == null) { Console.Error.WriteLine("package not found: " + path); return 3; }
-        var exports = pkg.GetExports().ToArray();
-        Console.WriteLine($"[pkg] {path}: {exports.Length} exports");
+        var model = MapLoader.ParseMap(loader.Provider, path);
+        if (model.Error != null) { Console.Error.WriteLine("parse error: " + model.Error); return 2; }
+        Console.WriteLine($"[pkg] {path}: {model.TotalExports} exports, {model.Objects.Count} objects");
         var ci = System.Globalization.CultureInfo.InvariantCulture;
 
         var shown = 0;
-        foreach (var e in exports)
+        foreach (var o in model.Objects)
         {
-            if (e == null) continue;
-            var className = e.ExportType ?? "?";
-            var nameText = e.Name;
-
-            // transform lives on the actor's root component, or directly on components
-            UObject comp = e;
-            if (e.TryGet<FPackageIndex>("RootComponent", out var ri) && ri != null && ri.IsExport)
-                comp = pkg.GetExport(ri.Index) ?? e;
-
-            var hasTf = MapLoader.TryGetComponentTransform(comp, out var tf);
             if (filter.Length > 0
-                && !nameText.Contains(filter, StringComparison.OrdinalIgnoreCase)
-                && !className.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                && !o.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                && !o.ClassName.Contains(filter, StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            if (hasTf)
+            if (o.HasTransform)
             {
-                Console.WriteLine(string.Create(ci,
-                    $"  {nameText,-44} {className,-26} at {tf.Translation.X}, {tf.Translation.Y}, {tf.Translation.Z}  rot=({tf.Rotation.X}, {tf.Rotation.Y}, {tf.Rotation.Z}, {tf.Rotation.W})  scale=({tf.Scale3D.X}, {tf.Scale3D.Y}, {tf.Scale3D.Z})"));
+                var mesh = o.MeshPath.Length > 0 ? FormattableString.Invariant($"  mesh={o.MeshPath}") : "";
+                Console.WriteLine(FormattableString.Invariant(
+                    $"  {o.Name,-44} {o.ClassName,-26} at {o.X}, {o.Y}, {o.Z}  rot=({o.QX}, {o.QY}, {o.QZ}, {o.QW})  scale=({o.SX}, {o.SY}, {o.SZ}){mesh}"));
             }
             else
             {
-                Console.WriteLine($"  {nameText,-44} {className,-26} (no transform)");
+                Console.WriteLine($"  {o.Name,-44} {o.ClassName,-26} (no transform)");
             }
             shown++;
         }
