@@ -2,11 +2,11 @@
 
 Ein nativer Windows-Map-Viewer für **State of Decay 2** (Unreal Engine 4), gebaut mit C# / WinForms und [CUE4Parse](https://github.com/FabianFG/CUE4Parse).
 
-> **Hinweis:** Diese App ist die **Vorarbeit für einen Map-Editor**. Aktuelle Phase ist ein reiner **Viewer** (nur Lesen). Geplante Phasen:
+> **Hinweis:** Diese App ist die **Vorarbeit für einen Map-Editor**. Geplante Phasen:
 >
 > 1. ✅ **Viewer** — PAKs lesen, Maps listen, 2D-Top-Down-Ansicht mit Objekten
 > 2. ✅ **Positions-Editor MVP** — Objekte verschieben (Drag & Drop, Undo) + Export als Mod-`.pak`
-> 3. ⏳ **Voller Editor** — weiteres Bearbeiten von Map-Inhalten (Rotation, Scale, …)
+> 3. ✅ **Voller Editor** — Rotation, Scale, Delete (Markieren + Null-Überschreiben) + Undo
 > 4. ◐ **Mod-Repacking** — eigener SoD2-`.pak`-Writer ist verifiziert; Feinschliff folgt
 
 ## Features
@@ -16,6 +16,7 @@ Ein nativer Windows-Map-Viewer für **State of Decay 2** (Unreal Engine 4), geba
 - Parst die gekochten Karten und extrahiert Actor-Positionen (über `RootComponent` → `Transform`)
 - 2D-Top-Down-Ansicht der Karte mit Objekten (WinForms, native GUI)
 - Headless-Modi für Tests und Diagnose (siehe unten)
+- **Editor (Phase 3):** Objekte verschieben (Move), rotieren (Rotate), skalieren (Scale) und löschen (Delete) per Drag & Drop, alle Änderungen per Undo rückgängig, Export als Mod-`.pak` mit allen Modifikationen
 
 ## Kompatibilitäts-Fix: LZ4 „Linked Blocks"
 
@@ -44,7 +45,21 @@ Einfach starten und über **Choose game folder** das Spielverzeichnis wählen (z
 dotnet app/bin/Release/net10.0-windows/SoD2MapViewer.dll
 ```
 
-**Editor MVP:** Checkbox *Enable editing* aktivieren → Objekt auf der Karte greifen und verschieben (Ctrl+Z = Undo) → **Export mod .pak…** schreibt alle Änderungen als eigene `.pak`. Diese in `StateOfDecay2\Content\Paks\` kopieren — das `_P`-Suffix sorgt dafür, dass das Spiel dem Mod-Pak den Vorzug gibt.
+**Editor MVP:** Checkbox *Enable editing* aktivieren → Objekt auf der Karte greifen und bearbeiten:
+
+| Taste | Aktion |
+|-------|--------|
+| Drag | Objekt verschieben (Move-Modus) |
+| `M` | Modus: Move (Position) |
+| `R` | Modus: Rotate (Yaw-Drehung, gelber Pfeil) |
+| `S` | Modus: Scale (uniform, cyaner Rahmen) |
+| `Entf` | Objekt als gelöscht markieren (rote Durchstreichung) |
+| `Ctrl+Z` | Undo letzte Änderung (Pos / Rot / Scale / Delete) |
+| `F` | View auf alle Objekte zoomen (Fit) |
+| Doppelklick | Zoomen auf Cursor-Position |
+| Rechtsklick | Kontextmenü (Location kopieren, Modus wechseln, Delete) |
+
+**Export mod .pak…** schreibt alle Änderungen (Position, Rotation, Scale, Delete) als eigene `.pak`. Gelöschte Objekte haben ihre Komponentendaten mit Nullen überschrieben. Die `.pak` in `StateOfDecay2\Content\Paks\` kopieren — das `_P`-Suffix sorgt dafür, dass das Spiel dem Mod-Pak den Vorzug gibt.
 
 ### Headless-Modi
 
@@ -71,7 +86,8 @@ SoD2MapViewer.exe --diag "D:\Games\State of Decay 2\StateOfDecay2" "StateOfDecay
 ## Repo-Status
 
 - Vorheriger Stand: `v0.1` (Viewer-Grundlage, 481/888 Karten)
-- Aktueller Stand: **alle 888 Karten lesbar** (LZ4-Linked-Blocks-Fix)
+- Aktueller Stand: **alle 888 Karten lesbar** (LZ4-Linked-Blocks-Fix), **Phase 3 (Voller Editor) abgeschlossen** (Rotation, Scale, Delete, Undo, Export)
+- Release `v0.3.1` auf GitHub (selbstständige Windows-EXE, .NET 10 Runtime inklusive)
 
 ## Lizenz
 
