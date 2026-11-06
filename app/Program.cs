@@ -31,6 +31,91 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--savescan")
+        {
+            try
+            {
+                return Savegame.ScanTransforms(
+                    args.Length > 1 ? args[1] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--save")
+        {
+            try
+            {
+                return Savegame.Dump(
+                    args.Length > 1 ? args[1] : "",
+                    args.Length > 2 ? args[2] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--files")
+        {
+            try
+            {
+                return Smoke.ListFiles(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--maps")
+        {
+            try
+            {
+                return Smoke.ListMaps(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--find")
+        {
+            try
+            {
+                return Smoke.FindObjects(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "",
+                    args.Length > 3 ? args[3] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--list")
+        {
+            try
+            {
+                return Smoke.ListObjects(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "StateOfDecay2/Content/maps/amethyst_tiled_region_map/amethyst_region_map.umap",
+                    args.Length > 3 ? args[3] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--patchtest")
         {
             try

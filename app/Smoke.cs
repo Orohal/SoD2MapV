@@ -85,6 +85,85 @@ internal static class Smoke
         return 0;
     }
 
+    /// <summary>Lists game file paths matching a filter.</summary>
+    public static int ListFiles(string gameDir, string filter)
+    {
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+        foreach (var key in loader.Provider.Files.Keys)
+            if (filter.Length == 0 || key.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                Console.WriteLine(key);
+        return 0;
+    }
+
+    /// <summary>Lists map paths matching a filter.</summary>
+    public static int ListMaps(string gameDir, string filter)
+    {
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+        foreach (var m in loader.MapPaths)
+            if (filter.Length == 0 || m.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                Console.WriteLine(m);
+        return 0;
+    }
+
+    /// <summary>Scans maps for objects whose name/class/mesh matches a substring; mapFilter restricts which maps.</summary>
+    public static int FindObjects(string gameDir, string filter, string mapFilter)
+    {
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+        var paths = loader.MapPaths
+            .Where(m => mapFilter.Length == 0 || m.Contains(mapFilter, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var total = paths.Count;
+        var hits = 0;
+        for (var i = 0; i < total; i++)
+        {
+            var path = paths[i];
+            MapModel model;
+            try { model = loader.LoadMapAsync(path).GetAwaiter().GetResult(); }
+            catch { continue; }
+            if (i % 25 == 0) Console.Error.WriteLine($"[find] {i}/{total} ...");
+            foreach (var o in model.Objects)
+            {
+                if (!o.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                    && !o.ClassName.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                    && !o.MeshPath.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                hits++;
+                Console.WriteLine($"{Path.GetFileName(path)}  |  {o.Name}  ({o.ClassName})  at {o.X / 100:0.#},{o.Y / 100:0.#},{o.Z / 100:0.#} m  mesh={o.MeshPath}");
+            }
+        }
+        Console.WriteLine($"[find] {hits} match(es) for '{filter}' across {total} maps");
+        return 0;
+    }
+
+    /// <summary>Lists objects of one map (name/class/position/mesh), optionally filtered.</summary>
+    public static int ListObjects(string gameDir, string mapPath, string filter)
+    {
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(s => Console.WriteLine("[init] " + s))).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+        var model = loader.LoadMapAsync(mapPath).GetAwaiter().GetResult();
+        if (model.Error != null) { Console.Error.WriteLine("parse error: " + model.Error); return 2; }
+        Console.WriteLine($"[list] {mapPath}: {model.Objects.Count:N0} objects, {model.Objects.Count(o => o.HasTransform):N0} with transform");
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        foreach (var o in model.Objects)
+        {
+            if (!o.HasTransform) continue;
+            if (filter.Length > 0
+                && !o.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                && !o.ClassName.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                && !o.MeshPath.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                continue;
+            Console.WriteLine($"  {o.Name,-44} {o.ClassName,-26} at {(o.X / 100.0).ToString("0.##", ci),9},{(o.Y / 100.0).ToString("0.##", ci),9},{(o.Z / 100.0).ToString("0.##", ci),8} m  mesh={o.MeshPath}");
+        }
+        return 0;
+    }
+
     /// <summary>End-to-end patch test: locate an object, patch its X/Y in the decoded bytes, re-parse and verify.</summary>
     public static int PatchTest(string gameDir, string mapPath, string namePart, float dx, float dy)
     {

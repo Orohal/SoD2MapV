@@ -59,6 +59,16 @@ public static class Lz4Linked
         return whole;
     }
 
+    /// <summary>Decodes one standalone LZ4 block (no dictionary, e.g. a SoD2 savegame body).</summary>
+    public static byte[] DecodeSingleBlock(byte[] src, int uncompressedLen)
+    {
+        var dst = new byte[uncompressedLen];
+        var written = DecodeBlock(src, src.Length, dst, 0, uncompressedLen, null);
+        if (written != uncompressedLen)
+            throw new InvalidDataException($"LZ4 decode failed ({written}/{uncompressedLen} bytes)");
+        return dst;
+    }
+
     /// <summary>LZ4 block decode with an external dictionary. Returns bytes written, or -1 on malformed input.</summary>
     private static int DecodeBlock(byte[] src, int srcLen, byte[] dst, int dstOffset, int dstLimit, byte[]? dict)
     {
