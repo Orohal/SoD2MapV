@@ -1,4 +1,4 @@
-# SoD2MapV — State of Decay 2 Map Viewer
+# SoD2MapV — State of Decay 2 Map Viewer und Editor
 
 Ein nativer Windows-Map-Viewer für **State of Decay 2** (Unreal Engine 4), gebaut mit C# / WinForms und [CUE4Parse](https://github.com/FabianFG/CUE4Parse).
 
