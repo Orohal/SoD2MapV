@@ -112,11 +112,14 @@ SoD2MapViewer.exe --saveinject <save.sav> <out.sav> <classIndex> <x> <y> <z> [ya
 
 - Vorheriger Stand: `v0.1` (Viewer-Grundlage, 481/888 Karten)
 - Aktueller Stand: **alle 888 Karten lesbar** (LZ4-Linked-Blocks-Fix), **Phase 3 (Voller Editor) abgeschlossen** (Rotation, Scale, Delete, Undo, Export)
-- Release `v0.3.2` auf GitHub (selbstständige Windows-EXE, .NET 10 Runtime inklusive)
+- Release `v0.3.3` auf GitHub (selbstständige Windows-EXE, .NET 10 Runtime inklusive)
 - Testmap-Generator (`--genmap`/`--testmap`/`--umapsum`): generiert flache 200×200-m-Testkarte (`sod2_testmap`) als Pak `pakchunk997-WindowsNoEditor_P.pak` — Viewer-Test ohne Spielinhalte
 - Bugfixes: Komponenten-Transforms waren um einen Export verschoben zugeordnet (`FPackageIndex` ist 1-based) — jeder Actor zeigte die Position der Komponente seines **Nachbars**; `QuatFromRotator` folgte nicht der UE-Konvention (`FRotator::Quaternion()`). Beide gefixt und per Testmap + Referenz-Koordinaten verifiziert.
 - GUI: Objekt-Grid zeigt X/Y/Z jetzt in Metern (vorher rohe UE-Zentimeter)
 - Savegame-Injektion (`--saveprops`/`--saveinject`): VehicleSaveCollection wird rekursiv gefunden (nestet unter `MapSaveCollection` → `MapSaves` → …); `--saveinject` klont einen bestehenden Fahrzeugintrag, patcht Klasse/Position/Yaw und korrigiert Count/Größen aller Ahnen inkl. der validierten `hsize`-Felder der Struct-Arrays. 4× Military Truck (Klasse 5) auf P1–P4 in `SaveGame_Vanilla_1.sav` injiziert und verifiziert (28 Einträge, alle 13 Props intakt)
+- Savegame-Parser: `SetProperty` unterstützt (Layout `[name][type][size i64][flag][daten]`, Nested-Parse mit Leaf-Fallback) — `SiteCollection`/`MapSiteSaves` (439 Sites × 10 Props) parst jetzt vollständig
+- `--saveprops <gvas> [index|"" <node> [guids]]`: rekursiver Dump eines beliebigen Knotens per Name; Sondermodus `SiteCollection … guids` listet alle Site-GUIDs + OutpostId
+- `--umapdecode`: `*Guids`-Arrays (From/ToGuids von PrefabActors) werden vollständig als GUID-Liste ausgegeben
 
 ## Lizenz
 

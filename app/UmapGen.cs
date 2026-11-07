@@ -196,6 +196,21 @@ public static class UmapGen
             var valueHex = valueLen <= 64 ? BitConverter.ToString(data, pos, valueLen).Replace("-", " ") : BitConverter.ToString(data, pos, 64).Replace("-", " ") + " …";
             Console.WriteLine(FormattableString.Invariant(
                 $"  0x{tagStart:X}: '{N(nameIdx)}'{(nameNum != 0 ? $"_{nameNum}" : "")} : {type}{extra} size={valueLen} ai={arrayIndex} value=[{valueHex}]"));
+            // full GUID dump for *Guids arrays (header-once: [count i32][total i64][wrapped header][count × 16 B])
+            if (N(nameIdx).EndsWith("Guids") && type == "ArrayProperty")
+            {
+                var p = pos;
+                var cnt = BitConverter.ToInt32(data, p); p += 4;
+                p += 8;                                  // wrapped header total size (i64)
+                // skip wrapped header: [name FString][type FString][size i64][struct type FString]
+                int FS(int o) { var l = BitConverter.ToInt32(data, o); return 4 + l; }
+                p += FS(p); p += FS(p); p += 8; p += FS(p);
+                for (var i = 0; i < cnt && p + 16 <= pos + valueLen; i++)
+                {
+                    Console.WriteLine($"      {N(nameIdx)}[{i}] = {BitConverter.ToString(data, p, 16).Replace("-", "")}");
+                    p += 16;
+                }
+            }
             pos += valueLen;
         }
         Console.WriteLine($"  end=0x{pos:X} (serial end=0x{end:X}, {(pos == end ? "EXACT" : $"DIFF {(long)pos - end}")})");

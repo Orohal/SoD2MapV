@@ -318,6 +318,48 @@ public static class Savegame
                 break;
             }
 
+            case "SetProperty":
+            {
+                q++;                                             // 1 flag byte directly after the size field
+                node.DataStart = q;
+                var end = q + (int)size;
+                var ok = false;
+                if (size > 0)
+                {
+                    try
+                    {
+                        var w = q;
+                        var elems = new List<GvasNode>();
+                        while (w < end)
+                        {
+                            var startW = w;
+                            var elem = new GvasNode { Name = $"[{elems.Count}]", Type = "StructProperty", HeaderStart = w, DataStart = w };
+                            var first = true;
+                            while (true)
+                            {
+                                var child = ParseProperty(d, w, depth + 1, out w);
+                                if (child == null) { if (first) { w = startW - 1; } break; }
+                                first = false;
+                                elem.Children.Add(child);
+                            }
+                            if (w < startW) break;               // empty element list -> raw data
+                            elem.DataEnd = w;
+                            elems.Add(elem);
+                        }
+                        if (w == end && elems.Count > 0)
+                        {
+                            node.Children.AddRange(elems);
+                            ok = true;
+                        }
+                    }
+                    catch { }
+                }
+                if (!ok) node.Children.Clear();                  // leaf: raw value of `size` bytes
+                node.DataEnd = end;
+                q = end;
+                break;
+            }
+
             case "ArrayProperty":
             {
                 var (tag, q2) = ReadFString(d, q);
@@ -522,10 +564,43 @@ public static class Savegame
     }
 
     /// <summary>Parses a decompressed GVAS properties block into a tree and prints the vehicle subtree.</summary>
-    public static int SaveProps(string gvasPath, int dumpEntry = -1)
+    public static int SaveProps(string gvasPath, int dumpEntry = -1, string? dumpNodeName = null, string? args4 = null)
     {
         var data = File.ReadAllBytes(gvasPath);
         var root = ParseRoot(data, out var pos);
+        if (dumpNodeName != null)
+        {
+            var node = FindNamedStatic(root, dumpNodeName);
+            if (node == null) { Console.WriteLine($"[saveprops] no node named '{dumpNodeName}'"); return 3; }
+            Console.WriteLine($"[saveprops] node '{dumpNodeName}' ({node.Type}) '{node.StructType}' size={node.Size:N0}:");
+            // special mode: SiteCollection -> list every element's Guid + OutpostId
+            if (dumpNodeName == "SiteCollection" && args4 == "guids")
+            {
+                var n = 0;
+                var elems = node.Children.Count > 0 && node.Children[0].Children.Count > 0 && node.Children[0].Name != "Guid"
+                    ? node.Children.SelectMany(c => c.Children).ToList()
+                    : node.Children;
+                foreach (var elem in elems)
+                {
+                    var guid = elem.Children.FirstOrDefault(c => c.Name == "Guid");
+                    var opid = elem.Children.FirstOrDefault(c => c.Name == "OutpostId");
+                    var lvl = elem.Children.FirstOrDefault(c => c.Name == "ScoutedLevel");
+                    if (guid == null) continue;
+                    var gb = data[guid.DataStart..guid.DataEnd];
+                    var hex = Convert.ToHexString(gb);
+                    var opRaw = opid != null ? Convert.ToHexString(data[opid.DataStart..opid.DataEnd]) : "";
+                    Console.WriteLine($"  [{n}] guid={hex} outpostId={opRaw} scouted={(lvl != null ? (data[lvl.DataStart]).ToString() : "?")}");
+                    n++;
+                }
+                Console.WriteLine($"[saveprops] {n} site guids");
+                return 0;
+            }
+            var kids = node.Children.Count > 50 ? node.Children.Take(3).ToList() : node.Children;
+            if (kids.Count < node.Children.Count)
+                Console.WriteLine($"[saveprops] (showing first {kids.Count} of {node.Children.Count} children)");
+            foreach (var k in kids) DumpNode(data, k, 1);
+            return 0;
+        }
         Console.WriteLine($"[saveprops] parsed to 0x{pos:X} of 0x{data.Length:X} — top-level props: {root.Children.Count}");
         foreach (var c in root.Children)
             Console.WriteLine($"  {c.Name} ({c.Type}) size={c.Size:N0} children={c.Children.Count} @0x{c.HeaderStart:X}");
@@ -556,6 +631,37 @@ public static class Savegame
                 if (classes.StructType == "NameProperty" && p + 4 <= classes.DataEnd)
                 { var n = BitConverter.ToInt32(data, p); p += 4; if (n != 0) num = $" ({n})"; }
                 Console.WriteLine($"  class[{i}] = {s}{num}");
+            }
+        }
+
+        // structure context: MapSaves[0] children and VehicleCollection children
+        var mapSaves = FindNamedStatic(root, "MapSaves");
+        if (mapSaves?.Children.Count > 0)
+        {
+            Console.WriteLine($"[saveprops] MapSaves[0] children ({mapSaves.Children[0].Children.Count}):");
+            foreach (var c in mapSaves.Children[0].Children)
+                Console.WriteLine($"  {c.Name} ({c.Type}) size={c.Size:N0} children={c.Children.Count}");
+        }
+        if (coll != null)
+        {
+            Console.WriteLine("[saveprops] VehicleCollection children:");
+            foreach (var c in coll.Children)
+                Console.WriteLine($"  {c.Name} ({c.Type}) count={c.Count} size={c.Size:N0}");
+            var def = coll.Children.FirstOrDefault(c => c.Name == "DefaultVehicleSaves");
+            var defE = def?.Children.FirstOrDefault();
+            if (defE != null)
+            {
+                var dCls = defE.Children.FirstOrDefault(c => c.Name == "VehicleClassIndex");
+                var dTf = defE.Children.FirstOrDefault(c => c.Name == "Transform");
+                var dTr = dTf?.Children.FirstOrDefault(c => c.Name == "Translation");
+                var dGuid = defE.Children.FirstOrDefault(c => c.Name == "VehicleGuid");
+                var dGuidText = dGuid != null && dGuid.DataEnd - dGuid.DataStart == 16
+                    ? new Guid(BitConverter.ToInt32(data, dGuid.DataStart), BitConverter.ToInt16(data, dGuid.DataStart + 4),
+                        BitConverter.ToInt16(data, dGuid.DataStart + 6), data.Skip(dGuid.DataStart + 8).Take(8).ToArray()).ToString("N")
+                    : "(none)";
+                Console.WriteLine($"[saveprops] DefaultVehicleSaves[0]: class={(dCls != null ? BitConverter.ToInt32(data, dCls.DataStart) : -1)}" +
+                    (dTr != null ? FormattableString.Invariant($" at ({BitConverter.ToSingle(data, dTr.DataStart) / 100:0.#}, {BitConverter.ToSingle(data, dTr.DataStart + 4) / 100:0.#}, {BitConverter.ToSingle(data, dTr.DataStart + 8) / 100:0.#}) m") : "") +
+                    $" guid={dGuidText}");
             }
         }
 

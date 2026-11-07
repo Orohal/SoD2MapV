@@ -64,7 +64,9 @@ internal static class Program
             {
                 return Savegame.SaveProps(
                     args.Length > 1 ? args[1] : "",
-                    args.Length > 2 ? int.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture) : -1);
+                    args.Length > 2 && int.TryParse(args[2], out var di) ? di : -1,
+                    args.Length > 3 ? args[3] : null,
+                    args.Length > 4 ? args[4] : null);
             }
             catch (Exception e)
             {
