@@ -9,6 +9,7 @@ Ein nativer Windows-Map-Viewer für **State of Decay 2** (Unreal Engine 4), geba
 > 3. ✅ **Voller Editor** — Rotation, Scale, Delete (Markieren + Null-Überschreiben) + Undo
 > 4. ◐ **Mod-Repacking** — eigener SoD2-`.pak`-Writer ist verifiziert; Feinschliff folgt
 > 5. ⏳ **Aufhören, schreiend im Kreis zu laufen, weil hier noch 1000 Fehler sind!**
+<script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="Orohal" data-color="#FFDD00" data-emoji=""  data-font="Cookie" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff" ></script>
 
 ## Features
 
