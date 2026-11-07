@@ -102,8 +102,10 @@ SoD2MapViewer.exe --testmap <file.umap> ["D:\Games\State of Decay 2\StateOfDecay
 
 - Vorheriger Stand: `v0.1` (Viewer-Grundlage, 481/888 Karten)
 - Aktueller Stand: **alle 888 Karten lesbar** (LZ4-Linked-Blocks-Fix), **Phase 3 (Voller Editor) abgeschlossen** (Rotation, Scale, Delete, Undo, Export)
-- Release `v0.3.1` auf GitHub (selbstständige Windows-EXE, .NET 10 Runtime inklusive)
+- Release `v0.3.2` auf GitHub (selbstständige Windows-EXE, .NET 10 Runtime inklusive)
+- Testmap-Generator (`--genmap`/`--testmap`/`--umapsum`): generiert flache 200×200-m-Testkarte (`sod2_testmap`) als Pak `pakchunk997-WindowsNoEditor_P.pak` — Viewer-Test ohne Spielinhalte
 - Bugfixes: Komponenten-Transforms waren um einen Export verschoben zugeordnet (`FPackageIndex` ist 1-based) — jeder Actor zeigte die Position der Komponente seines **Nachbars**; `QuatFromRotator` folgte nicht der UE-Konvention (`FRotator::Quaternion()`). Beide gefixt und per Testmap + Referenz-Koordinaten verifiziert.
+- GUI: Objekt-Grid zeigt X/Y/Z jetzt in Metern (vorher rohe UE-Zentimeter)
 
 ## Lizenz
 

@@ -107,6 +107,16 @@ public sealed class MainForm : Form
             EnableHeadersVisualStyles = false,
         };
         _grid.SelectionChanged += GridSelection;
+        // X/Y/Z are stored in UE centimeters; display them in meters (like canvas/tooltip/copy)
+        _grid.CellFormatting += (s, e) =>
+        {
+            if (e.ColumnIndex < 0 || e.RowIndex < 0) return;
+            var prop = _grid.Columns[e.ColumnIndex].DataPropertyName;
+            if (prop is "X" or "Y" or "Z" && e.Value != null)
+            {
+                try { e.Value = Convert.ToSingle(e.Value) / 100f; } catch { }
+            }
+        };
         _canvas = new MapCanvas { Dock = DockStyle.Fill };
         _canvas.SelectionChanged += CanvasSelection;
         _canvas.ObjectMoved += CanvasObjectMoved;
@@ -364,6 +374,8 @@ public sealed class MainForm : Form
             cm.Width = 320;
         foreach (string col in new[] { "X", "Y", "Z", "SX", "SY", "SZ", "QX", "QY", "QZ", "QW" })
             if (_grid.Columns[col] != null) _grid.Columns[col]!.DefaultCellStyle.Format = "0.##";
+        foreach (string col in new[] { "X", "Y", "Z" })
+            if (_grid.Columns[col] is DataGridViewTextBoxColumn cm2) cm2.HeaderText = col + " (m)";
     }
 
     private void CanvasObjectMoved(int idx, float oldX, float oldY)
