@@ -87,6 +87,16 @@ SoD2MapViewer.exe --genmap <out.umap>
 # Testmap end-to-end validieren (Pak bauen → ParseMap → Transform-Check gegen Sollwerte);
 # mit gameDir wird sie zusätzlich als pakchunk997-WindowsNoEditor_P.pak installiert (Datei löschen zum Revert)
 SoD2MapViewer.exe --testmap <file.umap> ["D:\Games\State of Decay 2\StateOfDecay2"]
+
+# Dekomprimierten Savegame-Block parsen: Top-Level-Props, VehicleSaveCollection (Klassen-Liste,
+# alle Fahrzeuge mit Klasse/Position/GUID); optional Props eines Eintrags rekursiv dumpen
+SoD2MapViewer.exe --saveprops <file.gvas> [entryIndex]
+
+# Fahrzeug in die VehicleSaveCollection injizieren: klont einen bestehenden Eintrag und patcht
+# VehicleClassIndex + Transform (Rotation aus Yaw, Translation). Schreibt <out>, Eingabe bleibt
+# unverändert; Original-Footer wird kopiert, Größen/Counts aller Ahnen werden korrigiert.
+# Koordinaten in UE-cm (x/y/z), yaw in Grad, templateIndex = zu klonender Eintrag (Standard 0)
+SoD2MapViewer.exe --saveinject <save.sav> <out.sav> <classIndex> <x> <y> <z> [yaw] [templateIndex]
 ```
 
 ## Technik
@@ -106,6 +116,7 @@ SoD2MapViewer.exe --testmap <file.umap> ["D:\Games\State of Decay 2\StateOfDecay
 - Testmap-Generator (`--genmap`/`--testmap`/`--umapsum`): generiert flache 200×200-m-Testkarte (`sod2_testmap`) als Pak `pakchunk997-WindowsNoEditor_P.pak` — Viewer-Test ohne Spielinhalte
 - Bugfixes: Komponenten-Transforms waren um einen Export verschoben zugeordnet (`FPackageIndex` ist 1-based) — jeder Actor zeigte die Position der Komponente seines **Nachbars**; `QuatFromRotator` folgte nicht der UE-Konvention (`FRotator::Quaternion()`). Beide gefixt und per Testmap + Referenz-Koordinaten verifiziert.
 - GUI: Objekt-Grid zeigt X/Y/Z jetzt in Metern (vorher rohe UE-Zentimeter)
+- Savegame-Injektion (`--saveprops`/`--saveinject`): VehicleSaveCollection wird rekursiv gefunden (nestet unter `MapSaveCollection` → `MapSaves` → …); `--saveinject` klont einen bestehenden Fahrzeugintrag, patcht Klasse/Position/Yaw und korrigiert Count/Größen aller Ahnen inkl. der validierten `hsize`-Felder der Struct-Arrays. 4× Military Truck (Klasse 5) auf P1–P4 in `SaveGame_Vanilla_1.sav` injiziert und verifiziert (28 Einträge, alle 13 Props intakt)
 
 ## Lizenz
 

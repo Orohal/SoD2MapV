@@ -25,7 +25,7 @@ public static class Savegame
         }
         var compressedLen = BitConverter.ToInt32(bytes, 0x25d);
         var uncompressedLen = BitConverter.ToInt32(bytes, 0x261);
-        if (compressedLen <= 0 || uncompressedLen < compressedLen || HeaderEnd + compressedLen + FooterSize != bytes.Length)
+        if (compressedLen <= 0 || HeaderEnd + compressedLen + FooterSize != bytes.Length)
         {
             Console.Error.WriteLine($"implausible header: compressed={compressedLen} uncompressed={uncompressedLen} fileSize={bytes.Length}");
             return 2;
@@ -305,6 +305,8 @@ public static class Savegame
                 catch (Exception) { nestedOk = false; }
                 if (!nestedOk)
                 {
+                    if (Environment.GetEnvironmentVariable("SOD2_TRACE") == "1")
+                        Console.Error.WriteLine($"    [struct '{name}' ({st}) @0x{start:X}] nested mismatch: size={size}, nested 0x{nestedStart:X}..0x{nestedEnd:X} = {nestedEnd - nestedStart} (delta {nestedEnd - nestedStart - size})");
                     // leaf struct (Guid, DateTime, Vector, Quat, ...): raw value of `size` bytes
                     node.Children.Clear();
                     if (q + size > d.Length)
@@ -520,41 +522,43 @@ public static class Savegame
     }
 
     /// <summary>Parses a decompressed GVAS properties block into a tree and prints the vehicle subtree.</summary>
-    public static int SaveProps(string gvasPath)
+    public static int SaveProps(string gvasPath, int dumpEntry = -1)
     {
         var data = File.ReadAllBytes(gvasPath);
-        var root = new GvasNode { Name = "<root>", Type = "root", DataStart = 0 };
-        var pos = 0;                                             // block starts directly with the first property
-        try
-        {
-            while (pos < data.Length)
-            {
-                var child = ParseProperty(data, pos, 0, out pos);
-                if (child == null) { Console.WriteLine($"[saveprops] top-level None at 0x{pos:X} (block end {data.Length})"); break; }
-                root.Children.Add(child);
-            }
-        }
-        catch (FormatException e)
-        {
-            Console.Error.WriteLine($"[saveprops] parse error: {e.Message}");
-            var m = System.Text.RegularExpressions.Regex.Match(e.Message, @"0x([0-9A-Fa-f]+)");
-            if (m.Success)
-            {
-                var off = Convert.ToInt32(m.Groups[1].Value, 16);
-                HexDump(data, Math.Max(0, off - 48), Math.Min(data.Length, off + 48));
-            }
-            return 2;
-        }
+        var root = ParseRoot(data, out var pos);
         Console.WriteLine($"[saveprops] parsed to 0x{pos:X} of 0x{data.Length:X} — top-level props: {root.Children.Count}");
         foreach (var c in root.Children)
             Console.WriteLine($"  {c.Name} ({c.Type}) size={c.Size:N0} children={c.Children.Count} @0x{c.HeaderStart:X}");
 
-        // locate VehicleCollection -> VehicleSaves
-        var coll = root.Children.FirstOrDefault(c => c.Name == "VehicleCollection");
-        var saves = (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaves"))
-                    ?? root.Children.FirstOrDefault(c => c.Name == "VehicleSaves");
-        if (saves == null) { Console.WriteLine("[saveprops] no VehicleSaves found"); return 3; }
+        // locate VehicleCollection -> VehicleSaveCollection (nested anywhere in the tree,
+        // e.g. under MapSaveCollection; older saves may use the name "VehicleSaves")
+        var coll = FindNamedStatic(root, "VehicleCollection");
+        var saves = (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaveCollection"))
+                    ?? (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaves"))
+                    ?? FindNamedStatic(root, "VehicleSaveCollection")
+                    ?? FindNamedStatic(root, "VehicleSaves");
+        if (saves == null) { Console.WriteLine("[saveprops] no VehicleSaveCollection found"); return 3; }
         Console.WriteLine($"[saveprops] VehicleSaves: {saves.Type} count={saves.Count} layout={saves.Layout} size={saves.Size:N0} @0x{saves.HeaderStart:X} data 0x{saves.DataStart:X}..0x{saves.DataEnd:X}");
+
+        // dump the VehicleClasses array (class index -> vehicle name) when present
+        var classes = FindNamedStatic(root, "VehicleClasses");
+        if (classes != null && classes.Type == "ArrayProperty")
+        {
+            Console.WriteLine($"[saveprops] VehicleClasses: element tag '{classes.StructType}' count={classes.Count} @0x{classes.DataStart:X}");
+            var p = classes.DataStart;
+            for (var i = 0; i < classes.Count && p + 4 <= classes.DataEnd; i++)
+            {
+                var len = BitConverter.ToInt32(data, p); p += 4;
+                string s;
+                if (len < 0) { s = Encoding.Unicode.GetString(data, p, Math.Max(0, -len - 1) * 2); p += -len * 2; }
+                else { s = Encoding.ASCII.GetString(data, p, Math.Max(0, len - 1)); p += len; }
+                var num = "";
+                if (classes.StructType == "NameProperty" && p + 4 <= classes.DataEnd)
+                { var n = BitConverter.ToInt32(data, p); p += 4; if (n != 0) num = $" ({n})"; }
+                Console.WriteLine($"  class[{i}] = {s}{num}");
+            }
+        }
+
         var ci = System.Globalization.CultureInfo.InvariantCulture;
         for (var i = 0; i < saves.Children.Count; i++)
         {
@@ -573,7 +577,277 @@ public static class Savegame
                 : "(no transform)";
             Console.WriteLine(FormattableString.Invariant(
                 $"  [{i,2}] @0x{e.HeaderStart:X}..0x{e.DataEnd:X} class={clsVal,-3} at {t} guid={guidText} props={e.Children.Count}"));
+            if (i == dumpEntry)
+            {
+                DumpNode(data, e, 2);
+            }
         }
+        return 0;
+    }
+
+    /// <summary>Recursive property dump for one node (name, type, struct type, size, offset).</summary>
+    private static void DumpNode(byte[] data, GvasNode n, int depth)
+    {
+        var pad = new string(' ', depth * 2);
+        var st = string.IsNullOrEmpty(n.StructType) ? "" : $"'{n.StructType}' ";
+        var val = "";
+        if (n.DataEnd - n.DataStart == 4 && n.Type is "IntProperty" or "UInt32Property" or "FloatProperty")
+        {
+            val = n.Type == "FloatProperty"
+                ? FormattableString.Invariant($" = {BitConverter.ToSingle(data, n.DataStart):0.####}")
+                : $" = {BitConverter.ToInt32(data, n.DataStart)}";
+        }
+        else if (n.DataEnd - n.DataStart == 8 && n.Type == "DoubleProperty")
+            val = FormattableString.Invariant($" = {BitConverter.ToDouble(data, n.DataStart):0.####}");
+        Console.WriteLine($"{pad}{n.Name} ({n.Type}) {st}size={n.Size} @0x{n.DataStart:X}..0x{n.DataEnd:X}{val}");
+        foreach (var c in n.Children) DumpNode(data, c, depth + 1);
+    }
+
+    /// <summary>Parses the decompressed properties block into a pseudo-root node.</summary>
+    private static GvasNode ParseRoot(byte[] data, out int endPos)
+    {
+        var root = new GvasNode { Name = "<root>", Type = "root", DataStart = 0 };
+        var pos = 0;                                             // block starts directly with the first property
+        while (pos < data.Length)
+        {
+            var child = ParseProperty(data, pos, 0, out pos);
+            if (child == null) break;                            // None terminator
+            root.Children.Add(child);
+        }
+        endPos = pos;
+        return root;
+    }
+
+    private static GvasNode? FindNamedStatic(GvasNode n, string name)
+    {
+        if (n.Name == name) return n;
+        foreach (var c in n.Children)
+        {
+            var r = FindNamedStatic(c, name);
+            if (r != null) return r;
+        }
+        return null;
+    }
+
+    /// <summary>Path from root (exclusive) to the first node with the given name, or null.</summary>
+    private static List<GvasNode>? FindPath(GvasNode n, string name)
+    {
+        if (n.Name == name) return new List<GvasNode>();
+        foreach (var c in n.Children)
+        {
+            var r = FindPath(c, name);
+            if (r != null) { r.Insert(0, c); return r; }
+        }
+        return null;
+    }
+
+    /// <summary>Offset of the 8-byte size field of a property header (name + type headers precede it).</summary>
+    private static int SizeFieldOffset(byte[] d, GvasNode n)
+    {
+        var nameLen = BitConverter.ToInt32(d, n.HeaderStart);
+        var typeLen = BitConverter.ToInt32(d, n.HeaderStart + 4 + nameLen);
+        return n.HeaderStart + 4 + nameLen + 4 + typeLen;
+    }
+
+    /// <summary>
+    /// Encodes src as a valid LZ4 block consisting of one literal run only
+    /// (no matches). Every standard LZ4 block decoder accepts this.
+    /// </summary>
+    private static byte[] Lz4LiteralBlock(byte[] src)
+    {
+        var l = src.Length;
+        using var ms = new MemoryStream(l + 16);
+        if (l < 15)
+        {
+            ms.WriteByte((byte)(l << 4));                        // token: literal length only, no match
+        }
+        else
+        {
+            ms.WriteByte(0xF0);                                  // token: 15 literals + extended count, no match
+            var rem = l - 15;
+            while (rem >= 255) { ms.WriteByte(255); rem -= 255; }
+            ms.WriteByte((byte)rem);
+        }
+        ms.Write(src, 0, l);
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Injects a vehicle into the VehicleSaveCollection of a .sav by cloning an existing
+    /// entry and patching VehicleClassIndex, Transform rotation/translation. Writes outPath;
+    /// the input file is left untouched. The 40-byte footer is copied verbatim.
+    /// </summary>
+    public static int SaveInject(string savPath, string outPath, int classIndex,
+        float x, float y, float z, float yawDeg, int templateIndex = 0)
+    {
+        // ---- load .sav wrapper (same layout checks as Dump) ----
+        var bytes = File.ReadAllBytes(savPath);
+        if (bytes.Length < HeaderEnd + FooterSize || Encoding.ASCII.GetString(bytes, 0, 4) != "GVAS")
+        {
+            Console.Error.WriteLine("[saveinject] not a GVAS savegame (bad signature)");
+            return 2;
+        }
+        var compressedLen = BitConverter.ToInt32(bytes, 0x25d);
+        var uncompressedLen = BitConverter.ToInt32(bytes, 0x261);
+        if (compressedLen <= 0 || HeaderEnd + compressedLen + FooterSize != bytes.Length)
+        {
+            Console.Error.WriteLine($"[saveinject] implausible header: compressed={compressedLen} uncompressed={uncompressedLen} fileSize={bytes.Length}");
+            return 2;
+        }
+        byte[] data;
+        try
+        {
+            var src = new byte[compressedLen];
+            Array.Copy(bytes, HeaderEnd, src, 0, compressedLen);
+            data = Lz4Linked.DecodeSingleBlock(src, uncompressedLen);
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine("[saveinject] LZ4 decode failed: " + e.Message);
+            return 2;
+        }
+
+        // ---- parse + locate ----
+        var root = ParseRoot(data, out _);
+        var coll = FindNamedStatic(root, "VehicleCollection");
+        var saves = (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaveCollection"))
+                    ?? (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaves"))
+                    ?? FindNamedStatic(root, "VehicleSaveCollection")
+                    ?? FindNamedStatic(root, "VehicleSaves");
+        if (saves == null) { Console.Error.WriteLine("[saveinject] no VehicleSaveCollection found"); return 3; }
+        if (saves.Layout != "header-once")
+        { Console.Error.WriteLine($"[saveinject] unexpected array layout '{saves.Layout}'"); return 3; }
+        if (templateIndex < 0 || templateIndex >= saves.Children.Count)
+        { Console.Error.WriteLine($"[saveinject] templateIndex {templateIndex} out of range (0..{saves.Children.Count - 1})"); return 3; }
+        var tpl = saves.Children[templateIndex];
+        var tplCls = tpl.Children.FirstOrDefault(c => c.Name == "VehicleClassIndex");
+        var tplTf = tpl.Children.FirstOrDefault(c => c.Name == "Transform");
+        var tplRot = tplTf?.Children.FirstOrDefault(c => c.Name == "Rotation");
+        var tplTr = tplTf?.Children.FirstOrDefault(c => c.Name == "Translation");
+        if (tplCls == null || tplRot == null || tplTr == null
+            || tplRot.DataEnd - tplRot.DataStart != 16 || tplTr.DataEnd - tplTr.DataStart != 12)
+        {
+            Console.Error.WriteLine("[saveinject] template entry lacks VehicleClassIndex / Transform.Rotation / Transform.Translation");
+            return 3;
+        }
+        if (saves.Children[^1].DataEnd != saves.DataEnd)
+        {
+            Console.Error.WriteLine($"[saveinject] array tail mismatch: last element ends 0x{saves.Children[^1].DataEnd:X}, array ends 0x{saves.DataEnd:X}");
+            return 3;
+        }
+
+        // ---- clone entry bytes and patch ----
+        var entryLen = tpl.DataEnd - tpl.HeaderStart;
+        var entry = new byte[entryLen];
+        Array.Copy(data, tpl.HeaderStart, entry, 0, entryLen);
+        var clsOff = tplCls.DataStart - tpl.HeaderStart;
+        var rotOff = tplRot.DataStart - tpl.HeaderStart;
+        var trOff = tplTr.DataStart - tpl.HeaderStart;
+
+        BitConverter.GetBytes(classIndex).CopyTo(entry, clsOff);
+
+        // yaw-only quaternion from the canonical UE FRotator::Quaternion() formula
+        // (pitch = roll = 0): q = (0, 0, sin(yaw/2), cos(yaw/2))
+        var half = yawDeg * 0.5f * MathF.PI / 180f;
+        BitConverter.GetBytes(MathF.Sin(half)).CopyTo(entry, rotOff + 8);   // q.Z
+        BitConverter.GetBytes(MathF.Cos(half)).CopyTo(entry, rotOff + 12);  // q.W
+        BitConverter.GetBytes(0f).CopyTo(entry, rotOff + 0);                // q.X
+        BitConverter.GetBytes(0f).CopyTo(entry, rotOff + 4);                // q.Y
+
+        BitConverter.GetBytes(x).CopyTo(entry, trOff + 0);
+        BitConverter.GetBytes(y).CopyTo(entry, trOff + 4);
+        BitConverter.GetBytes(z).CopyTo(entry, trOff + 8);
+
+        // ---- splice into the block and fix counts/sizes ----
+        var insertPos = saves.DataEnd;
+        var newData = new byte[data.Length + entryLen];
+        Array.Copy(data, 0, newData, 0, insertPos);
+        Array.Copy(entry, 0, newData, insertPos, entryLen);
+        Array.Copy(data, insertPos, newData, insertPos + entryLen, data.Length - insertPos);
+
+        BitConverter.GetBytes(saves.Count + 1).CopyTo(newData, saves.CountPos);
+
+        // Patch a node's 8-byte size field; only nodes with their own property header have
+        // one. Array elements in the header-once layout are bare property lists whose
+        // HeaderStart points at the first child's header — those must be skipped.
+        static bool HasOwnHeader(byte[] d, GvasNode n)
+        {
+            try
+            {
+                var (hn, _) = ReadFString(d, n.HeaderStart);
+                var (ht, _) = ReadFString(d, n.HeaderStart + 4 + BitConverter.ToInt32(d, n.HeaderStart));
+                return hn == n.Name && ht == n.Type;
+            }
+            catch { return false; }
+        }
+
+        // For a header-once struct array, the wrapped header repeats the total element
+        // byte size — the parser (and likely the game) validates it, so it must grow too.
+        static void PatchArraySizes(byte[] oldData, byte[] newData, GvasNode arr, int delta)
+        {
+            BitConverter.GetBytes(arr.Size + delta).CopyTo(newData, SizeFieldOffset(oldData, arr));
+            var hn = BitConverter.ToInt32(oldData, arr.DataStart);
+            var ht = BitConverter.ToInt32(oldData, arr.DataStart + 4 + hn);
+            var hsizeOff = arr.DataStart + 4 + hn + 4 + ht;
+            var hsize = BitConverter.ToInt64(oldData, hsizeOff);
+            BitConverter.GetBytes(hsize + delta).CopyTo(newData, hsizeOff);
+        }
+
+        PatchArraySizes(data, newData, saves, entryLen);        // the target array itself
+        var path = FindPath(root, "VehicleSaveCollection")
+                   ?? FindPath(root, "VehicleSaves");
+        if (path != null)
+        {
+            foreach (var anc in path)                           // enclosing structs / arrays
+            {
+                if (!HasOwnHeader(data, anc)) continue;
+                if (anc.Type == "ArrayProperty" && anc.Layout == "header-once")
+                    PatchArraySizes(data, newData, anc, entryLen);
+                else
+                    BitConverter.GetBytes(anc.Size + entryLen).CopyTo(newData, SizeFieldOffset(data, anc));
+            }
+        }
+
+        // ---- recompress (pure-literal LZ4 block) and rebuild the file ----
+        var block = Lz4LiteralBlock(newData);
+        var outFile = new byte[HeaderEnd + block.Length + FooterSize];
+        Array.Copy(bytes, 0, outFile, 0, HeaderEnd);
+        BitConverter.GetBytes(block.Length).CopyTo(outFile, 0x25d);
+        BitConverter.GetBytes(newData.Length).CopyTo(outFile, 0x261);
+        Array.Copy(block, 0, outFile, HeaderEnd, block.Length);
+        Array.Copy(bytes, HeaderEnd + compressedLen, outFile, HeaderEnd + block.Length, FooterSize);
+        File.WriteAllBytes(outPath, outFile);
+        Console.WriteLine($"[saveinject] wrote {outPath}: file {outFile.Length:N0} B, block {block.Length:N0} B, props {newData.Length:N0} B");
+
+        // ---- self-check: re-decode and re-parse the written file ----
+        var check = File.ReadAllBytes(outPath);
+        var c2 = BitConverter.ToInt32(check, 0x25d);
+        var u2 = BitConverter.ToInt32(check, 0x261);
+        var src2 = new byte[c2];
+        Array.Copy(check, HeaderEnd, src2, 0, c2);
+        var data2 = Lz4Linked.DecodeSingleBlock(src2, u2);
+        var root2 = ParseRoot(data2, out var end2);
+        if (end2 != data2.Length && end2 + 4 != data2.Length)
+            Console.WriteLine($"[saveinject] WARNING: reparse ended at 0x{end2:X} of 0x{data2.Length:X}");
+        var saves2 = FindNamedStatic(root2, "VehicleSaveCollection") ?? FindNamedStatic(root2, "VehicleSaves");
+        if (saves2 == null || saves2.Count != saves.Count + 1)
+        {
+            Console.Error.WriteLine($"[saveinject] self-check FAILED: reparse count={saves2?.Count.ToString() ?? "<node missing>"} (expected {saves.Count + 1}), layout={saves2?.Layout}, end2=0x{end2:X} of 0x{data2.Length:X}");
+            foreach (var c in root2.Children)
+                Console.Error.WriteLine($"[saveinject]   reparse top: {c.Name} ({c.Type}) size={c.Size} children={c.Children.Count} @0x{c.HeaderStart:X}");
+            if (saves2 != null)
+                Console.Error.WriteLine($"[saveinject]   reparse node: @0x{saves2.HeaderStart:X} data 0x{saves2.DataStart:X}..0x{saves2.DataEnd:X} children={saves2.Children.Count} (original: count={saves.Count} @0x{saves.HeaderStart:X} data 0x{saves.DataStart:X}..0x{saves.DataEnd:X})");
+            return 3;
+        }
+        var last = saves2.Children[^1];
+        var cls2 = last.Children.FirstOrDefault(c2 => c2.Name == "VehicleClassIndex");
+        var tf2 = last.Children.FirstOrDefault(c2 => c2.Name == "Transform");
+        var tr2 = tf2?.Children.FirstOrDefault(c2 => c2.Name == "Translation");
+        var clsVal2 = cls2 != null ? BitConverter.ToInt32(data2, cls2.DataStart) : -1;
+        var at = tr2 != null
+            ? FormattableString.Invariant($"({BitConverter.ToSingle(data2, tr2.DataStart) / 100:0.##}, {BitConverter.ToSingle(data2, tr2.DataStart + 4) / 100:0.##}, {BitConverter.ToSingle(data2, tr2.DataStart + 8) / 100:0.##}) m")
+            : "(no transform)";
+        Console.WriteLine($"[saveinject] self-check OK: count={saves2.Count}, new [{saves2.Count - 1}] class={clsVal2} at {at}");
         return 0;
     }
 }

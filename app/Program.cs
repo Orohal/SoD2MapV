@@ -63,7 +63,29 @@ internal static class Program
             try
             {
                 return Savegame.SaveProps(
-                    args.Length > 1 ? args[1] : "");
+                    args.Length > 1 ? args[1] : "",
+                    args.Length > 2 ? int.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture) : -1);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--saveinject")
+        {
+            try
+            {
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                return Savegame.SaveInject(
+                    args.Length > 1 ? args[1] : "",
+                    args.Length > 2 ? args[2] : "",
+                    args.Length > 3 ? int.Parse(args[3], ci) : 0,
+                    args.Length > 4 ? float.Parse(args[4], ci) : 0f,
+                    args.Length > 5 ? float.Parse(args[5], ci) : 0f,
+                    args.Length > 6 ? float.Parse(args[6], ci) : 0f,
+                    args.Length > 7 ? float.Parse(args[7], ci) : 0f,
+                    args.Length > 8 ? int.Parse(args[8], ci) : 0);
             }
             catch (Exception e)
             {
