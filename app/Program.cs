@@ -85,7 +85,8 @@ internal static class Program
                     args.Length > 5 ? float.Parse(args[5], ci) : 0f,
                     args.Length > 6 ? float.Parse(args[6], ci) : 0f,
                     args.Length > 7 ? float.Parse(args[7], ci) : 0f,
-                    args.Length > 8 ? int.Parse(args[8], ci) : 0);
+                    args.Length > 8 ? int.Parse(args[8], ci) : 0,
+                    args.Length > 9 && args[9] == "1");
             }
             catch (Exception e)
             {

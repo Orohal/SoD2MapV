@@ -678,7 +678,7 @@ public static class Savegame
     /// the input file is left untouched. The 40-byte footer is copied verbatim.
     /// </summary>
     public static int SaveInject(string savPath, string outPath, int classIndex,
-        float x, float y, float z, float yawDeg, int templateIndex = 0)
+        float x, float y, float z, float yawDeg, int templateIndex = 0, bool setGuid = false)
     {
         // ---- load .sav wrapper (same layout checks as Dump) ----
         var bytes = File.ReadAllBytes(savPath);
@@ -758,6 +758,19 @@ public static class Savegame
         BitConverter.GetBytes(y).CopyTo(entry, trOff + 4);
         BitConverter.GetBytes(z).CopyTo(entry, trOff + 8);
 
+        // optionally replace the cloned VehicleGuid with a fresh random one (world vehicles
+        // in live saves carry a GUID + ScoutedLevel::Revealed; GUID=0 entries don't spawn)
+        var guidText = "(kept from template)";
+        if (setGuid)
+        {
+            var tplGuid = tpl.Children.FirstOrDefault(c => c.Name == "VehicleGuid");
+            if (tplGuid == null || tplGuid.DataEnd - tplGuid.DataStart != 16)
+            { Console.Error.WriteLine("[saveinject] template has no 16-byte VehicleGuid"); return 3; }
+            var g = Guid.NewGuid();
+            g.ToByteArray().CopyTo(entry, tplGuid.DataStart - tpl.HeaderStart);
+            guidText = g.ToString("N");
+        }
+
         // ---- splice into the block and fix counts/sizes ----
         var insertPos = saves.DataEnd;
         var newData = new byte[data.Length + entryLen];
@@ -817,7 +830,7 @@ public static class Savegame
         Array.Copy(block, 0, outFile, HeaderEnd, block.Length);
         Array.Copy(bytes, HeaderEnd + compressedLen, outFile, HeaderEnd + block.Length, FooterSize);
         File.WriteAllBytes(outPath, outFile);
-        Console.WriteLine($"[saveinject] wrote {outPath}: file {outFile.Length:N0} B, block {block.Length:N0} B, props {newData.Length:N0} B");
+        Console.WriteLine($"[saveinject] wrote {outPath}: file {outFile.Length:N0} B, block {block.Length:N0} B, props {newData.Length:N0} B, guid={guidText}");
 
         // ---- self-check: re-decode and re-parse the written file ----
         var check = File.ReadAllBytes(outPath);
