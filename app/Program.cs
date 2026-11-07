@@ -96,6 +96,28 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--savedelete")
+        {
+            try
+            {
+                var list = new List<int>();
+                foreach (var part in (args.Length > 3 ? args[3] : "").Split(','))
+                {
+                    if (part.Contains('-'))
+                    {
+                        var r = part.Split('-');
+                        for (var i = int.Parse(r[0]); i <= int.Parse(r[1]); i++) list.Add(i);
+                    }
+                    else if (part.Length > 0) list.Add(int.Parse(part));
+                }
+                return Savegame.SaveDelete(args.Length > 1 ? args[1] : "", args.Length > 2 ? args[2] : "", list.ToArray());
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--umapinfo")
         {
             try

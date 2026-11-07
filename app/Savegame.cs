@@ -969,4 +969,131 @@ public static class Savegame
         Console.WriteLine($"[saveinject] self-check OK: count={saves2.Count}, new [{saves2.Count - 1}] class={clsVal2} at {at}");
         return 0;
     }
+
+    /// <summary>Deletes vehicle entries by index (byte-surgery on the header-once array,
+    /// same count/hsize/ancestor size fixups as SaveInject).</summary>
+    public static int SaveDelete(string savPath, string outPath, int[] indices)
+    {
+        var bytes = File.ReadAllBytes(savPath);
+        if (bytes.Length < HeaderEnd + FooterSize || Encoding.ASCII.GetString(bytes, 0, 4) != "GVAS")
+        { Console.Error.WriteLine("[savedelete] not a GVAS savegame (bad signature)"); return 2; }
+        var compressedLen = BitConverter.ToInt32(bytes, 0x25d);
+        var uncompressedLen = BitConverter.ToInt32(bytes, 0x261);
+        byte[] data;
+        try
+        {
+            var src = new byte[compressedLen];
+            Array.Copy(bytes, HeaderEnd, src, 0, compressedLen);
+            data = Lz4Linked.DecodeSingleBlock(src, uncompressedLen);
+        }
+        catch (Exception e) { Console.Error.WriteLine("[savedelete] LZ4 decode failed: " + e.Message); return 2; }
+
+        var root = ParseRoot(data, out _);
+        var coll = FindNamedStatic(root, "VehicleCollection");
+        var saves = (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaveCollection"))
+                    ?? (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaves"))
+                    ?? FindNamedStatic(root, "VehicleSaveCollection")
+                    ?? FindNamedStatic(root, "VehicleSaves");
+        if (saves == null || saves.Layout != "header-once")
+        { Console.Error.WriteLine("[savedelete] VehicleSaveCollection (header-once) not found"); return 3; }
+
+        var idxSet = new SortedSet<int>(indices);
+        if (idxSet.Count == 0 || idxSet.Min < 0 || idxSet.Max >= saves.Children.Count)
+        { Console.Error.WriteLine($"[savedelete] indices out of range (0..{saves.Children.Count - 1})"); return 3; }
+
+        // keep the byte ranges of the surviving elements, in original order; everything
+        // before the first element (incl. the wrapped array header) and after the array
+        // is copied verbatim.
+        var prefixLen = (int)saves.Children[0].HeaderStart;
+        long removed = 0;
+        var keep = new List<(int Start, int End)>();
+        for (var i = 0; i < saves.Children.Count; i++)
+        {
+            var e = saves.Children[i];
+            if (idxSet.Contains(i)) removed += e.DataEnd - e.HeaderStart;
+            else keep.Add(((int)e.HeaderStart, (int)e.DataEnd));
+        }
+        var newData = new byte[data.Length - removed];
+        Array.Copy(data, 0, newData, 0, prefixLen);
+        var w = prefixLen;
+        foreach (var (s0, e0) in keep) { Array.Copy(data, s0, newData, w, e0 - s0); w += e0 - s0; }
+        Array.Copy(data, (int)saves.DataEnd, newData, w, data.Length - saves.DataEnd);
+
+        var delta = (int)-removed;
+        BitConverter.GetBytes(saves.Count - idxSet.Count).CopyTo(newData, saves.CountPos);
+
+        static bool HasOwnHeader(byte[] d, GvasNode n)
+        {
+            try
+            {
+                var (hn, _) = ReadFString(d, n.HeaderStart);
+                var (ht, _) = ReadFString(d, n.HeaderStart + 4 + BitConverter.ToInt32(d, n.HeaderStart));
+                return hn == n.Name && ht == n.Type;
+            }
+            catch { return false; }
+        }
+        static void PatchArraySizes(byte[] oldData, byte[] newData, GvasNode arr, int dl)
+        {
+            BitConverter.GetBytes(arr.Size + dl).CopyTo(newData, SizeFieldOffset(oldData, arr));
+            var hn = BitConverter.ToInt32(oldData, arr.DataStart);
+            var ht = BitConverter.ToInt32(oldData, arr.DataStart + 4 + hn);
+            var hsizeOff = arr.DataStart + 4 + hn + 4 + ht;
+            var hsize = BitConverter.ToInt64(oldData, hsizeOff);
+            BitConverter.GetBytes(hsize + dl).CopyTo(newData, hsizeOff);
+        }
+
+        PatchArraySizes(data, newData, saves, delta);
+        var path = FindPath(root, "VehicleSaveCollection") ?? FindPath(root, "VehicleSaves");
+        if (path != null)
+        {
+            foreach (var anc in path)
+            {
+                if (!HasOwnHeader(data, anc)) continue;
+                if (anc.Type == "ArrayProperty" && anc.Layout == "header-once")
+                    PatchArraySizes(data, newData, anc, delta);
+                else
+                    BitConverter.GetBytes(anc.Size + delta).CopyTo(newData, SizeFieldOffset(data, anc));
+            }
+        }
+
+        // ---- recompress (pure-literal LZ4 block) and rebuild the file ----
+        var block = Lz4LiteralBlock(newData);
+        var outFile = new byte[HeaderEnd + block.Length + FooterSize];
+        Array.Copy(bytes, 0, outFile, 0, HeaderEnd);
+        BitConverter.GetBytes(block.Length).CopyTo(outFile, 0x25d);
+        BitConverter.GetBytes(newData.Length).CopyTo(outFile, 0x261);
+        Array.Copy(block, 0, outFile, HeaderEnd, block.Length);
+        Array.Copy(bytes, HeaderEnd + compressedLen, outFile, HeaderEnd + block.Length, FooterSize);
+        File.WriteAllBytes(outPath, outFile);
+        Console.WriteLine($"[savedelete] wrote {outPath}: removed [{string.Join(',', idxSet)}] ({removed:N0} B), file {outFile.Length:N0} B");
+
+        // ---- self-check: re-decode and re-parse ----
+        var check = File.ReadAllBytes(outPath);
+        var c2 = BitConverter.ToInt32(check, 0x25d);
+        var u2 = BitConverter.ToInt32(check, 0x261);
+        var src2 = new byte[c2];
+        Array.Copy(check, HeaderEnd, src2, 0, c2);
+        var data2 = Lz4Linked.DecodeSingleBlock(src2, u2);
+        var root2 = ParseRoot(data2, out var end2);
+        if (end2 != data2.Length && end2 + 4 != data2.Length)
+            Console.WriteLine($"[savedelete] WARNING: reparse ended at 0x{end2:X} of 0x{data2.Length:X}");
+        var saves2 = FindNamedStatic(root2, "VehicleSaveCollection") ?? FindNamedStatic(root2, "VehicleSaves");
+        if (saves2 == null || saves2.Count != saves.Count - idxSet.Count)
+        {
+            Console.Error.WriteLine($"[savedelete] self-check FAILED: reparse count={saves2?.Count.ToString() ?? "<missing>"} (expected {saves.Count - idxSet.Count})");
+            return 3;
+        }
+        for (var i = Math.Max(0, saves2.Count - 4); i < saves2.Count; i++)
+        {
+            var e = saves2.Children[i];
+            var cls = e.Children.FirstOrDefault(c => c.Name == "VehicleClassIndex");
+            var tr = e.Children.FirstOrDefault(c => c.Name == "Transform")?.Children.FirstOrDefault(c => c.Name == "Translation");
+            var at = tr != null
+                ? FormattableString.Invariant($"({BitConverter.ToSingle(data2, tr.DataStart) / 100:0.##}, {BitConverter.ToSingle(data2, tr.DataStart + 4) / 100:0.##}, {BitConverter.ToSingle(data2, tr.DataStart + 8) / 100:0.##}) m")
+                : "(no transform)";
+            Console.WriteLine($"[savedelete] kept [{i}] class={(cls != null ? BitConverter.ToInt32(data2, cls.DataStart).ToString() : "?")} at {at}");
+        }
+        Console.WriteLine($"[savedelete] self-check OK: count={saves2.Count}");
+        return 0;
+    }
 }
