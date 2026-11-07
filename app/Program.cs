@@ -71,6 +71,79 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--umapinfo")
+        {
+            try
+            {
+                return UmapGen.UmapInfo(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "",
+                    args.Length > 3 ? args[3] : "",
+                    args.Length > 4 ? long.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture) : 0,
+                    args.Length > 5 ? int.Parse(args[5], System.Globalization.CultureInfo.InvariantCulture) : 0);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--umapdecode")
+        {
+            try
+            {
+                return UmapGen.UmapDecode(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "",
+                    args.Length > 3 ? int.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : 0);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--umapsum")
+        {
+            try
+            {
+                return UmapGen.DumpSummary(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--genmap")
+        {
+            try
+            {
+                return UmapGen.GenMap(args.Length > 1 ? args[1]
+                    : Path.Combine(Path.GetTempPath(), "sod2_testmap.umap"));
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--testmap")
+        {
+            try
+            {
+                return UmapGen.TestMap(args.Length > 1 ? args[1]
+                    : Path.Combine(Path.GetTempPath(), "sod2_testmap.umap"),
+                    args.Length > 2 ? args[2] : null);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--files")
         {
             try

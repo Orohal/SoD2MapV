@@ -155,9 +155,11 @@ public sealed class MapLoader
                 {
                     if (rootIdx.IsExport)
                     {
-                        comp = package.GetExport(rootIdx.Index);
-                        obj.ComponentExportIndex = rootIdx.Index;
-                        var cexp = ((Package)package).ExportMap[rootIdx.Index];
+                        // FPackageIndex is 1-based for exports (raw value = 0-based index + 1);
+                        // using the raw value directly resolved the NEIGHBORING component's transform.
+                        comp = package.GetExport(rootIdx.Index - 1);
+                        obj.ComponentExportIndex = rootIdx.Index - 1;
+                        var cexp = ((Package)package).ExportMap[rootIdx.Index - 1];
                         obj.ComponentSerialOffset = cexp.SerialOffset;
                         obj.ComponentSerialSize = cexp.SerialSize;
                     }
@@ -234,6 +236,7 @@ public sealed class MapLoader
     /// <summary>UE FRotator(pitch, yaw, roll) -> quaternion (engine formula).</summary>
     private static FQuat QuatFromRotator(FRotator rot)
     {
+        // canonical UE FRotator::Quaternion() (half angles, UE axis conventions)
         float pitch = (rot.Pitch * 0.5f) * MathF.PI / 180f;
         float yaw = (rot.Yaw * 0.5f) * MathF.PI / 180f;
         float roll = (rot.Roll * 0.5f) * MathF.PI / 180f;
@@ -242,8 +245,8 @@ public sealed class MapLoader
         float sr = MathF.Sin(roll), cr = MathF.Cos(roll);
         return new FQuat(
             cr * sp * sy - sr * cp * cy,
-            cr * sp * cy + sr * cp * sy,
-            sr * cp * cy - cr * sp * sy,
+            -(cr * sp * cy + sr * cp * sy),
+            cr * cp * sy - sr * sp * cy,
             cr * cp * cy + sr * sp * sy
         );
     }
