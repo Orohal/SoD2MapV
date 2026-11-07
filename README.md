@@ -123,6 +123,15 @@ SoD2MapViewer.exe --saveinject <save.sav> <out.sav> <classIndex> <x> <y> <z> [ya
 - `--saveprops <gvas> [index|"" <node> [guids]]`: rekursiver Dump eines beliebigen Knotens per Name; Sondermodus `SiteCollection … guids` listet alle Site-GUIDs + OutpostId
 - `--umapdecode`: `*Guids`-Arrays (From/ToGuids von PrefabActors) werden vollständig als GUID-Liste ausgegeben
 
+## Virenwarnung / False Positive
+
+Die selbstständige Single-File-EXE (enthält die komplette .NET 10 Runtime) wird von einzelnen
+VirusTotal-Engines als generisch verdächtig gemeldet — ein bekanntes Muster für **unsignte**
+self-contained .NET-Anwendungen („Packer"-Heuristik). Windows Defender meldet: **keine Bedrohung**.
+
+- Wer nicht glauben will, baut selbst: `dotnet build app/SoD2MapViewer.csproj -c Release` (Quellcode in diesem Repo)
+- False-Positive-Meldung an Microsoft: https://www.microsoft.com/wdsi/filesubmission
+
 ## Lizenz
 
 MIT — siehe [LICENSE](LICENSE). Alle Markenrechte an *State of Decay 2* liegen bei Undead Labs / Microsoft.
