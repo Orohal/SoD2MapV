@@ -1,70 +1,62 @@
 # SoD2MapV — State of Decay 2 Map Viewer und Editor
 
-Ein nativer Windows-Map-Viewer für **State of Decay 2** (Unreal Engine 4), gebaut mit C# / WinForms und [CUE4Parse](https://github.com/FabianFG/CUE4Parse).
+Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinForms + [CUE4Parse](https://github.com/FabianFG/CUE4Parse). Liest alle Spielmappen ohne AES-Key, zeigt sie top-down, editiert Objekte und injiziert Fahrzeuge in Live-Savegames.
 
-> **Hinweis:** Diese App ist die **Vorarbeit für einen Map-Editor**. Geplante Phasen:
->
-> 1. ✅ **Viewer** — PAKs lesen, Maps listen, 2D-Top-Down-Ansicht mit Objekten
-> 2. ✅ **Positions-Editor MVP** — Objekte verschieben (Drag & Drop, Undo) + Export als Mod-`.pak`
-> 3. ✅ **Voller Editor** — Rotation, Scale, Delete (Markieren + Null-Überschreiben) + Undo
-> 4. ◐ **Mod-Repacking** — eigener SoD2-`.pak`-Writer ist verifiziert; Feinschliff folgt
-> 5. ⏳ **Aufhören, schreiend im Kreis zu laufen, weil hier noch 1000 Fehler sind!**
-<br>
 <a href="https://www.buymeacoffee.com/Orohal" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+
+**Aktueller Stand: [v0.4.0](https://github.com/Orohal/SoD2MapV/releases/latest)** — Viewer + Voll-Editor + Fahrzeug-Injektion (GUI/CLI) + echte Karte als Hintergrund. Details: [Repo-Status](#repo-status) (eingeklappt).
 
 ## Features
 
-- Mountet **alle 35 `.pak`-Archive** des Spiels — **ohne AES-Key** (die PAKs sind nicht verschlüsselt)
-- Findet und listet **888 `.umap`-Karten** aus den gemounteten Archiven
-- Parst die gekochten Karten und extrahiert Actor-Positionen (über `RootComponent` → `Transform`)
-- 2D-Top-Down-Ansicht der Karte mit Objekten (WinForms, native GUI)
-- Headless-Modi für Tests und Diagnose (siehe unten)
-- **Editor (Phase 3):** Objekte verschieben (Move), rotieren (Rotate), skalieren (Scale) und löschen (Delete) per Drag & Drop, alle Änderungen per Undo rückgängig, Export als Mod-`.pak` mit allen Modifikationen
+- **888 Karten** aus allen 35 PAKs, fehlerfrei lesbar (eigener LZ4-Linked-Blocks-Decoder)
+- **2D-Top-Down-Viewer**: Objekte mit Positionen; Grid, Suchfilter, Legende
+- **Voller Editor**: verschieben / rotieren / skalieren / löschen per Drag & Drop, Undo, Export als Mod-`.pak`
+- **Echte Karte als Hintergrund** (Trumbull Valley): öffentliche WeMod/Wand-Kacheln, pixelgenau in Weltkoordinaten projiziert, kein manuelles Align nötig
+- **Fahrzeug-Injektion in Live-Savegames**: Rechtsklick auf der Karte → Position → Fahrzeug in Save schreiben; per-Save-Kalibrierung, Auto-Backup, Spiel-läuft-Check
+- Headless-CLI für alle Funktionen (siehe unten)
 
-## Kompatibilitäts-Fix: LZ4 „Linked Blocks"
+## Voraussetzungen & Build
 
-State of Decay 2 komprimiert seine Pak-Einträge mit LZ4 in einer **verlinkten Block-Variante**: Rückverweisen innerhalb eines 64-KB-Blocks dürfen in die unkomprimierte Ausgabe des *Vorgängerblocks* zeigen. CUE4Parse dekodiert jeden Block isoliert und schlägt bei solchen Einträgen fehl (betroffen waren u. a. alle großen Weltkarten wie Trumbull Valley).
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (Windows), SoD2-Installation
+- Fertige EXEs: [Releases](https://github.com/Orohal/SoD2MapV/releases) (self-contained + framework-dependent)
+- Bauen: `dotnet build app/SoD2MapViewer.csproj -c Release`
 
-Diese App bringt deshalb einen eigenen Decoder mit (`Lz4Linked.cs`), der alle Blöcke sequenziell mit einem rollierenden 64-KB-Dictionary dekodiert. Damit parsen **alle 888 Karten fehlerfrei** (`--smoke-all: ok=888 failed=0`).
+## Nutzung (GUI)
 
-## Voraussetzungen
-
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (Windows)
-- Eine State of Decay 2-Installation (Pfad wird in der GUI gewählt bzw. per CLI übergeben)
-
-## Build
-
-```sh
-dotnet build app/SoD2MapViewer.csproj -c Release
-```
-
-## Nutzung
-
-### GUI (Viewer / Editor MVP)
-
-Einfach starten und über **Choose game folder** das Spielverzeichnis wählen (z. B. `D:\Games\State of Decay 2\StateOfDecay2`):
+Starten → **Choose game folder** → Karte links wählen:
 
 ```sh
 dotnet app/bin/Release/net10.0-windows/SoD2MapViewer.dll
 ```
 
-**Editor MVP:** Checkbox *Enable editing* aktivieren → Objekt auf der Karte greifen und bearbeiten:
+**Editor:** Checkbox *Enable editing* → Objekt greifen und bearbeiten:
 
 | Taste | Aktion |
 |-------|--------|
-| Drag | Objekt verschieben (Move-Modus) |
-| `M` | Modus: Move (Position) |
-| `R` | Modus: Rotate (Yaw-Drehung, gelber Pfeil) |
-| `S` | Modus: Scale (uniform, cyaner Rahmen) |
-| `Entf` | Objekt als gelöscht markieren (rote Durchstreichung) |
-| `Ctrl+Z` | Undo letzte Änderung (Pos / Rot / Scale / Delete) |
-| `F` | View auf alle Objekte zoomen (Fit) |
-| Doppelklick | Zoomen auf Cursor-Position |
-| Rechtsklick | Kontextmenü (Location kopieren, Modus wechseln, Delete) |
+| Drag | Objekt bearbeiten (je nach Modus) |
+| `M` / `R` / `S` | Modus: Move / Rotate / Scale |
+| `Entf` | Objekt als gelöscht markieren |
+| `Ctrl+Z` | Undo |
+| `F` | Fit auf alle Objekte |
+| Doppelklick | Zoom auf Cursor |
+| Rechtsklick | Kontextmenü (Location kopieren, Modus, Delete) |
 
-**Export mod .pak…** schreibt alle Änderungen (Position, Rotation, Scale, Delete) als eigene `.pak`. Gelöschte Objekte haben ihre Komponentendaten mit Nullen überschrieben. Die `.pak` in `StateOfDecay2\Content\Paks\` kopieren — das `_P`-Suffix sorgt dafür, dass das Spiel dem Mod-Pak den Vorzug gibt.
+**Export mod .pak…** schreibt alle Änderungen in eine `.pak` für `StateOfDecay2\Content\Paks\` (das `_P`-Suffix gibt dem Mod den Vorzug).
 
-### Headless-Modi
+### Fahrzeug injizieren
+
+Einmalig **Kalibrierung** (pro Save): Toolbar **„Inject vehicle…"** oder **Rechtsklick auf der Karte** → Slot/Klasse/Position prüfen → **Calibrate…** → Sonde ins Spiel, beobachteten Versatz (Ost/Nord in m) im Dialog eingeben → Fertig. Danach injizieren echte Fahrzeuge exakt an der gewählten Stelle.
+
+- Vor jedem Schreiben: Spiel muss geschlossen sein + automatisches Backup unter `Backups\`
+- Sonden-Fahrzeuge: „Delete probe vehicle"
+- Kalibrierung persistiert: `%LOCALAPPDATA%\SoD2MapViewer\calibration.json`
+
+### Echte Karte als Hintergrund
+
+Toolbar **„Wand map"** — blendet die echte Trumbull-Valley-Karte (faustite) hinter die Objekte ein. Quelle sind die öffentlichen WebP-Kacheln der WeMod/Wand-Interactive-Map (Zoom 1–5), gecached unter `%LOCALAPPDATA%\SoD2MapViewer\wandtiles`. Die Wand-Projektion (gameCoords ↔ lng/lat) transformiert jede Kachel auf das exakte Weltkoordinaten-Rechteck — die Objekte liegen automatisch passend (verifiziert an den faustite-Basen). Nur für faustite-Karten sinnvoll; nur zur Orientierung geladen, kein Re-Hosting.
+
+<details>
+<summary><b>Headless-Modi (CLI)</b></summary>
 
 ```sh
 # Alle 888 Karten parsen und Erfolg/Fehler zusammenfassen
@@ -82,6 +74,9 @@ SoD2MapViewer.exe --umapinfo "D:\Games\State of Decay 2\StateOfDecay2" <file.uma
 # Tagged Properties eines Exports byte-exakt dekodieren (FName-Auflösung, Tag-Offsets, Trailer-Bytes)
 SoD2MapViewer.exe --umapdecode "D:\Games\State of Decay 2\StateOfDecay2" <file.umap> <exportIndex0based>
 
+# Wand-Karten-Projektion testen: Weltkoordinate (m) -> Tile + Weltrechteck + dekodiertes Tile als PNG
+SoD2MapViewer.exe --wandcheck <X_m> <Y_m>
+
 # Synthetische 200x200-m-Testmap erzeugen: flacher Boden (WaterPlane_01, Scale 20) + 9 Grid-Marker
 # mit bekannten Positionen/Yaws/Scales — nur für Viewer/Editor-Tests, nicht für das Spiel bestimmt
 SoD2MapViewer.exe --genmap <out.umap>
@@ -90,71 +85,56 @@ SoD2MapViewer.exe --genmap <out.umap>
 # mit gameDir wird sie zusätzlich als pakchunk997-WindowsNoEditor_P.pak installiert (Datei löschen zum Revert)
 SoD2MapViewer.exe --testmap <file.umap> ["D:\Games\State of Decay 2\StateOfDecay2"]
 
-# Dekomprimierten Savegame-Block parsen: Top-Level-Props, VehicleSaveCollection (Klassen-Liste,
-# alle Fahrzeuge mit Klasse/Position/GUID); optional Props eines Eintrags rekursiv dumpen
+# Dekomprimierten Savegame-Block parsen: Top-Level-Props, VehicleSaveCollection; optional Props eines Eintrags dumpen
 SoD2MapViewer.exe --saveprops <file.gvas> [entryIndex]
 
-# Fahrzeug in die VehicleSaveCollection injizieren: klont einen bestehenden Eintrag und patcht
-# VehicleClassIndex + Transform (Rotation aus Yaw, Translation). Schreibt <out>, Eingabe bleibt
-# unverändert; Original-Footer wird kopiert, Größen/Counts aller Ahnen werden korrigiert.
-# Koordinaten in UE-cm (x/y/z), yaw in Grad, templateIndex = zu klonender Eintrag (Standard 0),
-# setGuid=1 erzeugt eine frische VehicleGuid (Welt-Fahrzeuge brauchen GUID + ScoutedLevel::Revealed)
+# Fahrzeug in die VehicleSaveCollection injizieren: klont einen bestehenden Eintrag, patcht Klasse/Transform.
+# Koordinaten in UE-cm, yaw in Grad, templateIndex = zu klonender Eintrag (-1 = erster lebender), setGuid=1 = frische GUID
 SoD2MapViewer.exe --saveinject <save.sav> <out.sav> <classIndex> <x> <y> <z> [yaw] [templateIndex] [setGuid]
 
-# Fahrzeugeinträge per Index löschen (Bereiche "24-56" oder Liste "24,27"); gleiche
-# Größen-/Count-Korrekturen wie beim Injizieren
+# Fahrzeugeinträge per Index löschen (Bereiche "24-56" oder Liste "24,27")
 SoD2MapViewer.exe --savedelete <save.sav> <out.sav> <indexSpec>
 
 # Live-Savegames auflisten (%LOCALAPPDATA%\StateOfDecay2, neueste zuerst)
 SoD2MapViewer.exe --saves
 ```
 
-### Fahrzeuge über die GUI injizieren
+</details>
 
-- Toolbar **„Inject vehicle…"** oder **Rechtsklick auf der Karte** (übernimmt die angeklickte Weltkoordinate)
-- Dialog: Save-Slot, Fahrzeugklasse, Position (m), Yaw, Kalibrierungs-Verschiebung
-- **Kalibrierung** (einmal pro Save): „Calibrate…" injiziert eine Sonde am angeklickten Punkt; danach gibst du im Spiel beobachteten Versatz (Ost/Nord in m) ein — die Verschiebung wird gespeichert (`%LOCALAPPDATA%\SoD2MapViewer\calibration.json`) und wirkt auf alle künftigen Injektionen dieses Saves
-- Vor jedem Schreiben: Prüfung, ob das Spiel läuft (muss geschlossen sein) + automatisches Backup unter `Backups\`
-- Sonden-Fahrzeuge können mit „Delete probe vehicle" wieder entfernt werden
-
-## Technik
+<details>
+<summary><b>Technik</b></summary>
 
 | Baustein | Umsetzung |
 |---|---|
 | GUI | C# / WinForms (`net10.0-windows`) |
 | Pak-Mounting & Asset-Parsing | [CUE4Parse](https://github.com/FabianFG/CUE4Parse) (`EGame.GAME_StateOfDecay2`) |
-| LZ4 Linked Blocks | eigener sequenzieller Decoder (`app/Lz4Linked.cs`) |
+| LZ4 Linked Blocks | eigener sequenzieller Decoder (`app/Lz4Linked.cs`) — SoD2 nutzt LZ4-„Linked Blocks" (Rückverweise in die unkomprimierte Ausgabe des Vorgängerblocks); CUE4Parse dekodiert isoliert und scheitert daran. Damit: alle 888 Karten lesbar (`--smoke-all: ok=888 failed=0`) |
 | Karten-Objekte | Actors via `RootComponent` → `Transform` (Fallback: `RelativeLocation`/`RelativeRotation`/`RelativeScale3D`) |
+| Wand-Hintergrund | WebP-Kacheln (ImageSharp) + veröffentlichte Wand-Projektion (`Lz4Linked.cs`-Nachbar `WandTiles.cs`) |
 
-## Repo-Status
+</details>
 
-- Vorheriger Stand: `v0.1` (Viewer-Grundlage, 481/888 Karten)
-- Aktueller Stand: **alle 888 Karten lesbar** (LZ4-Linked-Blocks-Fix), **Phase 3 (Voller Editor) abgeschlossen** (Rotation, Scale, Delete, Undo, Export)
-- Release `v0.3.5` auf GitHub (selbstständige Windows-EXE + Framework-abhängiger Build, .NET 10)
-- **v0.4.0 — Echte Spielkarte als Hintergrund**: Toolbar **„Wand map"** blendet die echte Trumbull-Valley-(faustite)-Karte als Kachel-Hintergrund ein (Quelle: WeMod/Wand-Interactive-Map, öffentliche WebP-Kacheln, Zoom 1–5; Cache unter `%LOCALAPPDATA%\SoD2MapViewer\wandtiles`). Die Kacheln werden über die veröffentlichte Projektion des Karten-Anbieters pixelgenau in Weltkoordinaten transformiert — keine manuelle Ausrichtung nötig. Selbstdiagnose: `--wandcheck <X_m> <Y_m>` gibt Tile + Weltrechteck aus
-- Testmap-Generator (`--genmap`/`--testmap`/`--umapsum`): generiert flache 200×200-m-Testkarte (`sod2_testmap`) als Pak `pakchunk997-WindowsNoEditor_P.pak` — Viewer-Test ohne Spielinhalte
-- Bugfixes: Komponenten-Transforms waren um einen Export verschoben zugeordnet (`FPackageIndex` ist 1-based) — jeder Actor zeigte die Position der Komponente seines **Nachbars**; `QuatFromRotator` folgte nicht der UE-Konvention (`FRotator::Quaternion()`). Beide gefixt und per Testmap + Referenz-Koordinaten verifiziert.
-- GUI: Objekt-Grid zeigt X/Y/Z jetzt in Metern (vorher rohe UE-Zentimeter)
-- Savegame-Injektion (`--saveprops`/`--saveinject`): VehicleSaveCollection wird rekursiv gefunden (nestet unter `MapSaveCollection` → `MapSaves` → …); `--saveinject` klont einen bestehenden Fahrzeugintrag, patcht Klasse/Position/Yaw und korrigiert Count/Größen aller Ahnen inkl. der validierten `hsize`-Felder der Struct-Arrays. 4× Military Truck (Klasse 5) auf P1–P4 in `SaveGame_Vanilla_1.sav` injiziert und verifiziert (28 Einträge, alle 13 Props intakt)
-- Savegame-Parser: `SetProperty` unterstützt (Layout `[name][type][size i64][flag][daten]`, Nested-Parse mit Leaf-Fallback) — `SiteCollection`/`MapSiteSaves` (439 Sites × 10 Props) parst jetzt vollständig
-- `--saveprops <gvas> [index|"" <node> [guids]]`: rekursiver Dump eines beliebigen Knotens per Name; Sondermodus `SiteCollection … guids` listet alle Site-GUIDs + OutpostId
-- `--umapdecode`: `*Guids`-Arrays (From/ToGuids von PrefabActors) werden vollständig als GUID-Liste ausgegeben
-- `--savedelete`: Fahrzeugeinträge per Index/Bereich entfernen (Byte-Chirurgie, gleiche Größen-Fixups wie `--saveinject`)
-- **Fahrzeug-Injektion an der Base erfolgreich verifiziert**: 4× Military Truck (Klasse 5) stehen exakt auf den 4 `homesite_parking_space_prefab`-Markierungen der Base (faustite, `Faustite_Player_Base_Tiny_prefab`, Kachel x2y3). Yaw je Parkfläche aus dem UMAP-Prefab übernommen (2× −115°, 2× +64°)
-- **Koordinaten-Kalibrierung Save↔Karte** (empirisch, per Sonden-Fahrzeugen): `world = umap-local + WorldTileInfo.Position` (x2y3: +496/−992 m); Save-Frame = Welt-Frame + verschiebung (pro Save unterschiedlich, keine Rotation/Achstausch; Ost=+X, Nord=−Y, Z mit Offset). Basen/Parkplätze lassen sich über `--umapinfo`/`--umapdecode` der PrefabActors (+ RootComponent `RelativeLocation`/`RelativeRotation`) lokalisieren; Feinabgleich per Sonden-Injektion + Spieler-Feedback
-- Spiel verschob beim Laden zwei Fahrzeuge um ~20 m (Physik/Kollision) — Injektionspunkt sollte auf freier Stellfläche liegen; z wird beim Spawnen auf den Boden gesnappt
-- **GUI-Injektion**: Karte rechtsklicken → Fahrzeug an dieser Weltposition in ein Live-Savegame injizieren (Slot-/Klassen-Auswahl aus dem Save, Auto-Backup, Spiel-läuft-Check). Einmalige per-Save-Kalibrierung über Sonden-Fahrzeug + beobachteten Versatz; Verschiebung wird pro Save persistiert (`calibration.json`). `--saves` listet Live-Slots inkl. Fahrzeugzahl
+<details>
+<summary><b>Repo-Status / Versionshistorie</b></summary>
+
+- **v0.4.0** — Echte Karte als Hintergrund (Wand-Tiles, pixelgenaue Projektion, `--wandcheck`); Fenstertitel zeigt Paketversion
+- **v0.3.5** — Framework-abhängiger Build als Release-Asset; `--saves`; Auto-Template-Injektion
+- **v0.3.x** — **GUI-Injektion**: Rechtsklick → Fahrzeug in Live-Save (Kalibrierungs-Assistent, Auto-Backup, Spiel-läuft-Check, Sonden-Löschung); `--savedelete`
+- **Voll-Editor (Phase 3)** — Move/Rotate/Scale/Delete mit Undo, Export als Mod-`.pak` (eigener Pak-Writer)
+- **Savegame-Kalibrierung** (empirisch per Sonden-Fahrzeugen): `save = world + shift` (pure Translation, pro Save unterschiedlich); Ost=+X, Nord=−Y; Spiel kann schiefe Einträge ~20 m verschieben (Injektionspunkt auf freier Stellfläche wählen)
+- **Basis-Lokalisierung**: faustite-Tile-Weltpositionen über `WorldTileInfo.Position` (x2y3: +496/−992 m); Workflow über `--umapinfo`/`--umapdecode` dokumentiert
+- **Bugfixes**: Komponenten-Transform-Zuordnung (1-based `FPackageIndex`), `QuatFromRotator` UE-Konvention, `SetProperty`-Parsing (`SiteCollection`, 439 Sites), GUID-Arrays in `--umapdecode`
+- Testmap-Generator (`--genmap`/`--testmap`) für Viewer-Tests ohne Spielinhalte
+
+</details>
 
 ## Virenwarnung / False Positive
 
-Die selbstständige Single-File-EXE (enthält die komplette .NET 10 Runtime) wird von einzelnen
-VirusTotal-Engines als generisch verdächtig gemeldet — ein bekanntes Muster für **unsignte**
-self-contained .NET-Anwendungen („Packer"-Heuristik). Windows Defender meldet: **keine Bedrohung**.
+Die self-contained Single-File-EXE wird von einzelnen VirusTotal-Engines als generisch verdächtig gemeldet — bekanntes Muster für **unsignte** self-contained .NET-Apps („Packer"-Heuristik). Windows Defender meldet: **keine Bedrohung**.
 
-- Wer nicht glauben will, baut selbst: `dotnet build app/SoD2MapViewer.csproj -c Release` (Quellcode in diesem Repo)
-- False-Positive-Meldung an Microsoft: https://www.microsoft.com/wdsi/filesubmission
+- Selbst bauen: `dotnet build app/SoD2MapViewer.csproj -c Release`
+- False-Positive melden: https://www.microsoft.com/wdsi/filesubmission
 
 ## Lizenz
 
 MIT — siehe [LICENSE](LICENSE). Alle Markenrechte an *State of Decay 2* liegen bei Undead Labs / Microsoft.
-
