@@ -104,7 +104,18 @@ SoD2MapViewer.exe --saveinject <save.sav> <out.sav> <classIndex> <x> <y> <z> [ya
 # Fahrzeugeinträge per Index löschen (Bereiche "24-56" oder Liste "24,27"); gleiche
 # Größen-/Count-Korrekturen wie beim Injizieren
 SoD2MapViewer.exe --savedelete <save.sav> <out.sav> <indexSpec>
+
+# Live-Savegames auflisten (%LOCALAPPDATA%\StateOfDecay2, neueste zuerst)
+SoD2MapViewer.exe --saves
 ```
+
+### Fahrzeuge über die GUI injizieren
+
+- Toolbar **„Inject vehicle…"** oder **Rechtsklick auf der Karte** (übernimmt die angeklickte Weltkoordinate)
+- Dialog: Save-Slot, Fahrzeugklasse, Position (m), Yaw, Kalibrierungs-Verschiebung
+- **Kalibrierung** (einmal pro Save): „Calibrate…" injiziert eine Sonde am angeklickten Punkt; danach gibst du im Spiel beobachteten Versatz (Ost/Nord in m) ein — die Verschiebung wird gespeichert (`%LOCALAPPDATA%\SoD2MapViewer\calibration.json`) und wirkt auf alle künftigen Injektionen dieses Saves
+- Vor jedem Schreiben: Prüfung, ob das Spiel läuft (muss geschlossen sein) + automatisches Backup unter `Backups\`
+- Sonden-Fahrzeuge können mit „Delete probe vehicle" wieder entfernt werden
 
 ## Technik
 
@@ -119,7 +130,7 @@ SoD2MapViewer.exe --savedelete <save.sav> <out.sav> <indexSpec>
 
 - Vorheriger Stand: `v0.1` (Viewer-Grundlage, 481/888 Karten)
 - Aktueller Stand: **alle 888 Karten lesbar** (LZ4-Linked-Blocks-Fix), **Phase 3 (Voller Editor) abgeschlossen** (Rotation, Scale, Delete, Undo, Export)
-- Release `v0.3.4` auf GitHub (selbstständige Windows-EXE, .NET 10 Runtime inklusive)
+- Release `v0.3.5` auf GitHub (selbstständige Windows-EXE + Framework-abhängiger Build, .NET 10)
 - Testmap-Generator (`--genmap`/`--testmap`/`--umapsum`): generiert flache 200×200-m-Testkarte (`sod2_testmap`) als Pak `pakchunk997-WindowsNoEditor_P.pak` — Viewer-Test ohne Spielinhalte
 - Bugfixes: Komponenten-Transforms waren um einen Export verschoben zugeordnet (`FPackageIndex` ist 1-based) — jeder Actor zeigte die Position der Komponente seines **Nachbars**; `QuatFromRotator` folgte nicht der UE-Konvention (`FRotator::Quaternion()`). Beide gefixt und per Testmap + Referenz-Koordinaten verifiziert.
 - GUI: Objekt-Grid zeigt X/Y/Z jetzt in Metern (vorher rohe UE-Zentimeter)
@@ -131,6 +142,7 @@ SoD2MapViewer.exe --savedelete <save.sav> <out.sav> <indexSpec>
 - **Fahrzeug-Injektion an der Base erfolgreich verifiziert**: 4× Military Truck (Klasse 5) stehen exakt auf den 4 `homesite_parking_space_prefab`-Markierungen der Base (faustite, `Faustite_Player_Base_Tiny_prefab`, Kachel x2y3). Yaw je Parkfläche aus dem UMAP-Prefab übernommen (2× −115°, 2× +64°)
 - **Koordinaten-Kalibrierung Save↔Karte** (empirisch, per Sonden-Fahrzeugen): `world = umap-local + WorldTileInfo.Position` (x2y3: +496/−992 m); Save-Frame = Welt-Frame + verschiebung (pro Save unterschiedlich, keine Rotation/Achstausch; Ost=+X, Nord=−Y, Z mit Offset). Basen/Parkplätze lassen sich über `--umapinfo`/`--umapdecode` der PrefabActors (+ RootComponent `RelativeLocation`/`RelativeRotation`) lokalisieren; Feinabgleich per Sonden-Injektion + Spieler-Feedback
 - Spiel verschob beim Laden zwei Fahrzeuge um ~20 m (Physik/Kollision) — Injektionspunkt sollte auf freier Stellfläche liegen; z wird beim Spawnen auf den Boden gesnappt
+- **GUI-Injektion**: Karte rechtsklicken → Fahrzeug an dieser Weltposition in ein Live-Savegame injizieren (Slot-/Klassen-Auswahl aus dem Save, Auto-Backup, Spiel-läuft-Check). Einmalige per-Save-Kalibrierung über Sonden-Fahrzeug + beobachteten Versatz; Verschiebung wird pro Save persistiert (`calibration.json`). `--saves` listet Live-Slots inkl. Fahrzeugzahl
 
 ## Virenwarnung / False Positive
 

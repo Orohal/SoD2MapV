@@ -823,7 +823,21 @@ public static class Savegame
         if (saves == null) { Console.Error.WriteLine("[saveinject] no VehicleSaveCollection found"); return 3; }
         if (saves.Layout != "header-once")
         { Console.Error.WriteLine($"[saveinject] unexpected array layout '{saves.Layout}'"); return 3; }
-        if (templateIndex < 0 || templateIndex >= saves.Children.Count)
+        // templateIndex < 0 = auto-pick the first alive entry (non-zero VehicleGuid)
+        if (templateIndex < 0)
+        {
+            for (var i = 0; i < saves.Children.Count; i++)
+            {
+                var g = saves.Children[i].Children.FirstOrDefault(c => c.Name == "VehicleGuid");
+                if (g == null || g.DataEnd - g.DataStart != 16) continue;
+                var alive = false;
+                for (var b = 0; b < 16; b++) { if (data[g.DataStart + b] != 0) { alive = true; break; } }
+                if (alive) { templateIndex = i; break; }
+            }
+            if (templateIndex < 0)
+            { Console.Error.WriteLine("[saveinject] auto-template: no entry with non-zero VehicleGuid found"); return 3; }
+        }
+        if (templateIndex >= saves.Children.Count)
         { Console.Error.WriteLine($"[saveinject] templateIndex {templateIndex} out of range (0..{saves.Children.Count - 1})"); return 3; }
         var tpl = saves.Children[templateIndex];
         var tplCls = tpl.Children.FirstOrDefault(c => c.Name == "VehicleClassIndex");
@@ -1095,5 +1109,66 @@ public static class Savegame
         }
         Console.WriteLine($"[savedelete] self-check OK: count={saves2.Count}");
         return 0;
+    }
+
+    /// <summary>Summary of a savegame for the GUI (vehicle classes, entry count).</summary>
+    public sealed record SavegameInfo(string[] VehicleClasses, int VehicleCount, DateTime LastSaved);
+
+    /// <summary>Decompresses + parses a .sav and extracts the vehicle class list and entry count.</summary>
+    public static SavegameInfo? ReadInfo(string savPath)
+    {
+        byte[] data;
+        try { data = DecompressProps(File.ReadAllBytes(savPath)); }
+        catch { return null; }
+        var root = ParseRoot(data, out _);
+
+        var classes = new List<string>();
+        var cls = FindNamedStatic(root, "VehicleClasses");
+        if (cls is { Type: "ArrayProperty" })
+        {
+            var p = cls.DataStart;
+            for (var i = 0; i < cls.Count && p + 4 <= cls.DataEnd; i++)
+            {
+                var len = BitConverter.ToInt32(data, p); p += 4;
+                string s;
+                if (len < 0) { s = Encoding.Unicode.GetString(data, p, Math.Max(0, -len - 1) * 2); p += -len * 2; }
+                else { s = Encoding.ASCII.GetString(data, p, Math.Max(0, len - 1)); p += len; }
+                if (cls.StructType == "NameProperty" && p + 4 <= cls.DataEnd) p += 4;
+                classes.Add(s);
+            }
+        }
+
+        var coll = FindNamedStatic(root, "VehicleCollection");
+        var saves = (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaveCollection"))
+                    ?? FindNamedStatic(root, "VehicleSaveCollection")
+                    ?? FindNamedStatic(root, "VehicleSaves");
+        return new SavegameInfo(classes.ToArray(), saves?.Count ?? 0, File.GetLastWriteTime(savPath));
+    }
+
+    /// <summary>Decompresses the GVAS properties block of a .sav (header checks like SaveInject).</summary>
+    public static byte[] DecompressProps(byte[] bytes)
+    {
+        if (bytes.Length < HeaderEnd + FooterSize || Encoding.ASCII.GetString(bytes, 0, 4) != "GVAS")
+            throw new InvalidDataException("not a GVAS savegame (bad signature)");
+        var compressedLen = BitConverter.ToInt32(bytes, 0x25d);
+        var uncompressedLen = BitConverter.ToInt32(bytes, 0x261);
+        if (compressedLen <= 0 || HeaderEnd + compressedLen + FooterSize != bytes.Length)
+            throw new InvalidDataException($"implausible header: compressed={compressedLen} uncompressed={uncompressedLen} fileSize={bytes.Length}");
+        var src = new byte[compressedLen];
+        Array.Copy(bytes, HeaderEnd, src, 0, compressedLen);
+        return Lz4Linked.DecodeSingleBlock(src, uncompressedLen);
+    }
+
+    /// <summary>Finds all live savegame slots under %LOCALAPPDATA%\StateOfDecay2, newest first.</summary>
+    public static FileInfo[] FindSavegames()
+    {
+        var baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "StateOfDecay2", "Saved", "Steam");
+        if (!Directory.Exists(baseDir)) return Array.Empty<FileInfo>();
+        return Directory.EnumerateFiles(baseDir, "SaveGame_*.sav", SearchOption.AllDirectories)
+            .Where(f => f.Replace('/', '\\').Contains("\\Release\\"))
+            .Select(f => new FileInfo(f))
+            .OrderByDescending(f => f.LastWriteTime)
+            .ToArray();
     }
 }

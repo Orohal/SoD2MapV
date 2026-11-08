@@ -58,6 +58,18 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--saves")
+        {
+            var saves = Savegame.FindSavegames();
+            if (saves.Length == 0) { Console.WriteLine("no savegames found"); return 1; }
+            foreach (var f in saves)
+            {
+                var info = Savegame.ReadInfo(f.FullName);
+                Console.WriteLine($"{f.FullName}");
+                Console.WriteLine($"   vehicles={info?.VehicleCount ?? -1}, classes={info?.VehicleClasses.Length ?? -1}, saved={f.LastWriteTime:yyyy-MM-dd HH:mm:ss}");
+            }
+            return 0;
+        }
         if (args.Length >= 1 && args[0] == "--saveprops")
         {
             try

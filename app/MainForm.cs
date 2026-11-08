@@ -162,8 +162,11 @@ public sealed class MainForm : Form
         _chkEdit.CheckedChanged += (s, e) => _canvas.EditingEnabled = _chkEdit.Checked;
         var btnExport = new Button { Text = "Export mod .pak...", AutoSize = true, Height = 30 };
         btnExport.Click += (s, e) => ExportModPak();
-        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit, btnExport });
+        var btnInject = new Button { Text = "Inject vehicle...", AutoSize = true, Height = 30 };
+        btnInject.Click += (s, e) => OpenInjectDialog(null);
+        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit, btnExport, btnInject });
         top.Controls.Add(flow);
+        _canvas.WorldRightClicked += w => OpenInjectDialog(w);
 
         _status = new TextBox
         {
@@ -438,8 +441,10 @@ public sealed class MainForm : Form
         return yaw * 180f / MathF.PI;
     }
 
-    private void ExportModPak()
-    {
+    private void OpenInjectDialog(System.Drawing.PointF? worldCm) =>
+        new InjectDialog(worldCm).ShowDialog(this);
+
+    private void ExportModPak()    {
         if (_map == null || _map.Error != null)
         {
             MessageBox.Show(this, "Load a map first.", "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);

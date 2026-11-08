@@ -383,7 +383,15 @@ namespace SoD2MapViewer;
                 Invalidate();
             }
         }
+        else if (e.Button == MouseButtons.Right)
+        {
+            var w = ScreenToWorld(e.X, e.Y);
+            WorldRightClicked?.Invoke(w);
+        }
     }
+
+    /// <summary>Fired on right-click with the world position (UE cm) under the cursor.</summary>
+    public event Action<PointF>? WorldRightClicked;
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
