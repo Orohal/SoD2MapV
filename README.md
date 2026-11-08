@@ -130,10 +130,20 @@ SoD2MapViewer.exe --saves
 
 ## Virenwarnung / False Positive
 
-Die self-contained Single-File-EXE wird von einzelnen VirusTotal-Engines als generisch verdächtig gemeldet — bekanntes Muster für **unsignte** self-contained .NET-Apps („Packer"-Heuristik). Windows Defender meldet: **keine Bedrohung**.
+Die gepackten Single-File-EXEs werden von einzelnen VirusTotal-Engines als generisch verdächtig gemeldet — bekanntes Muster für **unsignte** .NET-Apps („Packer"-Heuristik, kein echter Befund). Windows Defender meldet: **keine Bedrohung**.
+
+**Wenn ungünstig:** Ordner-Variante ohne gepackte EXE nutzen — [SoD2MapViewer-framework-dependent-plain.zip](https://github.com/Orohal/SoD2MapV/releases/latest) (kleine EXE + DLLs, gleiche Funktion). Im eigenen Virenprogramm ggf. Ordner ausschließen.
+
+**Published Hashes (SHA256):**
+
+| Asset | SHA256 |
+|---|---|
+| `SoD2MapViewer.exe` (self-contained) | `5AEA735BE80C3E20F55D3BA55AB6BF9479C22941BA9A362246450FC806B2C803` |
+| `SoD2MapViewer.exe` in framework-dependent.zip (single-file) | `9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A` |
+| `SoD2MapViewer-framework-dependent-plain.zip` | `BF6D453E195DE211B4224473DBF448509320B3FC6F83EA8B924CF298571CC6E8` |
 
 - Selbst bauen: `dotnet build app/SoD2MapViewer.csproj -c Release`
-- False-Positive melden: https://www.microsoft.com/wdsi/filesubmission
+- False-Positive melden (alle Engines): [Microsoft WDSI-Filesubmission](https://www.microsoft.com/wdsi/filesubmission); bei anderen Engines jeweils deren FP-Portal nutzen
 
 ## Lizenz
 
