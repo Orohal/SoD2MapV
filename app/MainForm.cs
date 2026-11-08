@@ -39,7 +39,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "State of Decay 2 — Map Viewer (v0.2)";
+        Text = $"State of Decay 2 — Map Viewer (v{typeof(MainForm).Assembly.GetName().Version?.ToString(3) ?? "?"})";
         Size = new Size(1400, 900);
         MinimumSize = new Size(900, 600);
         StartPosition = FormStartPosition.CenterScreen;
