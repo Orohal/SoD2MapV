@@ -27,6 +27,26 @@ namespace SoD2MapViewer;
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public EditMode Mode { get; set; } = EditMode.Move;
 
+        /// <summary>Optional background layer with the real in-game map (Wand tiles); null = hidden.</summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public WandTileLayer? WandLayer
+        {
+            get => _wandLayer;
+            set
+            {
+                if (_wandLayer != null) _wandLayer.Updated -= OnWandTileLoaded;
+                _wandLayer = value;
+                if (_wandLayer != null) _wandLayer.Updated += OnWandTileLoaded;
+                Invalidate();
+            }
+        }
+        private WandTileLayer? _wandLayer;
+
+        private void OnWandTileLoaded()
+        {
+            try { if (IsHandleCreated) BeginInvoke(() => Invalidate()); } catch (ObjectDisposedException) { }
+        }
+
         public event Action<int>? SelectionChanged; // index of selected object, -1 = none
 
         /// <summary>Fired after a drag moved an object: (index, oldX, oldY). Editing only.</summary>
@@ -160,6 +180,75 @@ namespace SoD2MapViewer;
 
     private static float ClampF(float v, float min, float max) => v < min ? min : (v > max ? max : v);
 
+    /// <summary>Draws the Wand background: picks the zoom whose tile ≈ 256 px on screen,
+    /// requests + draws every tile intersecting the viewport (z and z−1 for gap-free loading).</summary>
+    private void DrawWandTiles(Graphics g)
+    {
+        try
+        {
+            var visibleMin = ScreenToWorld(0, Height);
+            var visibleMax = ScreenToWorld(Width, 0);
+
+            // nearest tile zoom for the current on-screen scale
+            var z = WandTiles.MaxZoom;
+            while (z > WandTiles.MinZoom)
+            {
+                var probe = WandTiles.TileWorldRect(z, 0, 0);
+                if ((probe.X1 - probe.X0) * _zoom >= 256) break;
+                z--;
+            }
+
+            for (var level = Math.Min(WandTiles.MaxZoom, z + 1); level >= z; level--)
+                DrawWandLevel(g, level, visibleMin, visibleMax);
+        }
+        catch (Exception ex)
+        {
+            using var f = new Font("Segoe UI", 8f);
+            g.DrawString("Wand layer error: " + ex.Message, f, Brushes.OrangeRed, 8, 8);
+        }
+    }
+
+    private void DrawWandLevel(Graphics g, int z, PointF visibleMin, PointF visibleMax)
+    {
+        const float maxLatDeg = 85.0f;
+        var corners = new[] { visibleMin, visibleMax, ScreenToWorld(0, 0), ScreenToWorld(Width, Height) };
+        int txMin = int.MaxValue, txMax = int.MinValue, tyMin = int.MaxValue, tyMax = int.MinValue;
+        foreach (var c in corners)
+        {
+            var (lng, lat) = WandTiles.LngLatFromWorld(c.X, c.Y);
+            var latF = ClampF((float)lat, -maxLatDeg, maxLatDeg);
+            var n = Math.Pow(2.0, z);
+            var tx = (int)Math.Floor((lng + 180.0) / 360.0 * n);
+            var ty = (int)Math.Floor((1.0 - Math.Log(Math.Tan(Math.PI / 4.0 + latF * Math.PI / 360.0)) / Math.PI) / 2.0 * n);
+            txMin = Math.Min(txMin, tx); txMax = Math.Max(txMax, tx);
+            tyMin = Math.Min(tyMin, ty); tyMax = Math.Max(tyMax, ty);
+        }
+        txMin = Math.Max(txMin, 0); tyMin = Math.Max(tyMin, 0);
+        var pow = (int)Math.Pow(2.0, z) - 1;
+        txMax = Math.Min(txMax, pow); tyMax = Math.Min(tyMax, pow);
+
+        for (var tx = txMin; tx <= txMax; tx++)
+        for (var ty = tyMin; ty <= tyMax; ty++)
+        {
+            var tile = WandLayer!.Peek(z, tx, ty);
+            if (tile == null)
+            {
+                WandLayer.EnsureLoaded(z, tx, ty);
+                continue;
+            }
+            var pTL = WorldToScreen(tile.X0, tile.Y0);
+            var w = (tile.X1 - tile.X0) * _zoom;
+            var h = (tile.Y1 - tile.Y0) * _zoom;
+            if (pTL.X + w < -50 || pTL.Y + h < -50 || pTL.X > Width + 50 || pTL.Y > Height + 50) continue;
+            var prevInterp = g.InterpolationMode;
+            g.InterpolationMode = w > 3 * tile.Bitmap.Width
+                ? System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor
+                : System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+            g.DrawImage(tile.Bitmap, pTL.X, pTL.Y, w, h);
+            g.InterpolationMode = prevInterp;
+        }
+    }
+
     private PointF WorldToScreen(float x, float y) => new(
         Width / 2f + (x - _center.X) * _zoom,
         Height / 2f - (y - _center.Y) * _zoom); // Y up
@@ -178,6 +267,10 @@ namespace SoD2MapViewer;
     {
         var g = e.Graphics;
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+        // background: real map tiles (Wand)
+        if (WandLayer != null)
+            DrawWandTiles(g);
 
         // grid lines in 10 m steps
         const float gridStep = 1000f; // 10 meters in cm

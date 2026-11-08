@@ -26,6 +26,7 @@ public sealed class MainForm : Form
     private List<MapObject> _visible = new();
     private readonly TextBox _mapFilter;
     private readonly CheckBox _chkEdit;
+    private CheckBox _chkWand = null!;
     private readonly Stack<UndoEntry> _undo = new();
 
     private sealed class UndoEntry
@@ -164,7 +165,9 @@ public sealed class MainForm : Form
         btnExport.Click += (s, e) => ExportModPak();
         var btnInject = new Button { Text = "Inject vehicle...", AutoSize = true, Height = 30 };
         btnInject.Click += (s, e) => OpenInjectDialog(null);
-        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit, btnExport, btnInject });
+        _chkWand = new CheckBox { Text = "Wand map", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
+        _chkWand.CheckedChanged += (s, e) => ToggleWandLayer();
+        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit, btnExport, btnInject, _chkWand });
         top.Controls.Add(flow);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
 
@@ -443,6 +446,23 @@ public sealed class MainForm : Form
 
     private void OpenInjectDialog(System.Drawing.PointF? worldCm) =>
         new InjectDialog(worldCm).ShowDialog(this);
+
+    private WandTileLayer? _wandLayer;
+
+    private void ToggleWandLayer()
+    {
+        if (_chkWand.Checked)
+        {
+            _wandLayer ??= new WandTileLayer();
+            _canvas.WandLayer = _wandLayer;
+            _status.Text = "Wand-Karte aktiv (Trumbull Valley) — nur sinnvoll auf faustite; Tiles laden im Hintergrund.";
+        }
+        else
+        {
+            _canvas.WandLayer = null;
+            _status.Text = "Wand-Karte aus.";
+        }
+    }
 
     private void ExportModPak()    {
         if (_map == null || _map.Error != null)

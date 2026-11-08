@@ -131,6 +131,7 @@ SoD2MapViewer.exe --saves
 - Vorheriger Stand: `v0.1` (Viewer-Grundlage, 481/888 Karten)
 - Aktueller Stand: **alle 888 Karten lesbar** (LZ4-Linked-Blocks-Fix), **Phase 3 (Voller Editor) abgeschlossen** (Rotation, Scale, Delete, Undo, Export)
 - Release `v0.3.5` auf GitHub (selbstständige Windows-EXE + Framework-abhängiger Build, .NET 10)
+- **v0.4.0 — Echte Spielkarte als Hintergrund**: Toolbar **„Wand map"** blendet die echte Trumbull-Valley-(faustite)-Karte als Kachel-Hintergrund ein (Quelle: WeMod/Wand-Interactive-Map, öffentliche WebP-Kacheln, Zoom 1–5; Cache unter `%LOCALAPPDATA%\SoD2MapViewer\wandtiles`). Die Kacheln werden über die veröffentlichte Projektion des Karten-Anbieters pixelgenau in Weltkoordinaten transformiert — keine manuelle Ausrichtung nötig. Selbstdiagnose: `--wandcheck <X_m> <Y_m>` gibt Tile + Weltrechteck aus
 - Testmap-Generator (`--genmap`/`--testmap`/`--umapsum`): generiert flache 200×200-m-Testkarte (`sod2_testmap`) als Pak `pakchunk997-WindowsNoEditor_P.pak` — Viewer-Test ohne Spielinhalte
 - Bugfixes: Komponenten-Transforms waren um einen Export verschoben zugeordnet (`FPackageIndex` ist 1-based) — jeder Actor zeigte die Position der Komponente seines **Nachbars**; `QuatFromRotator` folgte nicht der UE-Konvention (`FRotator::Quaternion()`). Beide gefixt und per Testmap + Referenz-Koordinaten verifiziert.
 - GUI: Objekt-Grid zeigt X/Y/Z jetzt in Metern (vorher rohe UE-Zentimeter)

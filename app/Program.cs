@@ -70,6 +70,30 @@ internal static class Program
             }
             return 0;
         }
+        if (args.Length >= 1 && args[0] == "--wandcheck")
+        {
+            // projection self-test: convert world meters -> tile coords, download + decode that tile
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            var (mx, my) = (double.Parse(args[1], inv), double.Parse(args[2], inv));
+            foreach (var z in new[] { WandTiles.MaxZoom, WandTiles.MinZoom })
+            {
+                var (lng, lat) = WandTiles.LngLatFromWorld(mx * 100, my * 100);
+                var n = Math.Pow(2.0, z);
+                var tx = (int)Math.Floor((lng + 180.0) / 360.0 * n);
+                var ty = (int)Math.Floor((1.0 - Math.Log(Math.Tan(Math.PI / 4.0 + lat * Math.PI / 360.0)) / Math.PI) / 2.0 * n);
+                var rect = WandTiles.TileWorldRect(z, tx, ty);
+                Console.WriteLine($"[wandcheck] z{z} tile {tx},{ty}  lng/lat {lng:F4}/{lat:F4}  world rect ({rect.X0:F0},{rect.Y0:F0})..({rect.X1:F0},{rect.Y1:F0}) cm");
+                var layer = new WandTileLayer();
+                layer.EnsureLoaded(z, tx, ty);
+                WandTileLayer.Tile? tile = null;
+                for (var i = 0; i < 100 && tile == null; i++) { System.Threading.Thread.Sleep(200); tile = layer.Peek(z, tx, ty); }
+                if (tile?.Bitmap == null) { Console.WriteLine("[wandcheck] tile missing/download failed"); continue; }
+                var outPath = Path.Combine(Path.GetTempPath(), $"wandcheck_z{z}_{tx}_{ty}.png");
+                tile.Bitmap.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
+                Console.WriteLine($"[wandcheck] decoded {tile.Bitmap.Width}x{tile.Bitmap.Height} -> {outPath}");
+            }
+            return 0;
+        }
         if (args.Length >= 1 && args[0] == "--saveprops")
         {
             try
