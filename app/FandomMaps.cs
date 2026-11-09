@@ -29,30 +29,75 @@ public sealed record FandomMap(
 /// <summary>Embedded fandom basemaps (offline replacement/filler for the WeMod tile CDN).</summary>
 public static class FandomMaps
 {
-    public static readonly FandomMap Trumbull = new(
+    // base rects (approximate); user can drag-adjust via "Edit base-map pos" (Fandom-only) for rough orientation
+    static readonly FandomMap _trumbull = new(
         MapRegions.TrumbullValley, "fandom_trumbull.webp", 1196, 1366,
         -260000f, -270000f, 260000f, 300000f);
-
-    public static readonly FandomMap Cascade = new(
+    static readonly FandomMap _cascade = new(
         MapRegions.CascadeHills, "fandom_cascade.webp", 1366, 1246,
         -220000f, -260000f, 160000f, 130000f);
-
-    public static readonly FandomMap Drucker = new(
+    static readonly FandomMap _drucker = new(
         MapRegions.DruckerCounty, "fandom_ducker.webp", 1366, 1201,
         -220000f, -240000f, 160000f, 110000f);
-
-    public static readonly FandomMap Meagher = new(
+    static readonly FandomMap _meagher = new(
         MapRegions.MeagherValley, "fandom_meagher.webp", 1065, 1365,
         -180000f, -280000f, 100000f, 180000f);
-
-    public static readonly FandomMap Providence = new(
+    static readonly FandomMap _providence = new(
         MapRegions.ProvidenceRidge, "fandom_providence.webp", 1366, 1224,
         -220000f, -250000f, 160000f, 110000f);
 
-    public static readonly FandomMap?[] All = { Trumbull, Cascade, Drucker, Meagher, Providence };
+    static readonly Dictionary<string, (double DX, double DY)> _offsets = new(StringComparer.OrdinalIgnoreCase);
+    static string OffsetPath => Path.Combine(AppContext.BaseDirectory, "fandom_offset_override.json");
+
+    static FandomMaps()
+    {
+        try
+        {
+            if (!File.Exists(OffsetPath)) return;
+            var obj = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(OffsetPath));
+            foreach (var p in obj.Properties())
+                _offsets[p.Name] = (p.Value["dx"]?.ToObject<double>() ?? 0, p.Value["dy"]?.ToObject<double>() ?? 0);
+        }
+        catch { }
+    }
+
+    static FandomMap Apply(FandomMap b)
+    {
+        if (!_offsets.TryGetValue(b.Region.Key, out var o) || (o.DX == 0 && o.DY == 0)) return b;
+        return b with { WorldX0 = b.WorldX0 + (float)o.DX, WorldY0 = b.WorldY0 + (float)o.DY, WorldX1 = b.WorldX1 + (float)o.DX, WorldY1 = b.WorldY1 + (float)o.DY };
+    }
+
+    public static (double DX, double DY) GetOffset(string regionKey) => _offsets.TryGetValue(regionKey, out var o) ? o : (0, 0);
+    public static void SetOffset(string regionKey, double dx, double dy)
+    {
+        Newtonsoft.Json.Linq.JObject obj;
+        try { obj = File.Exists(OffsetPath) ? Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(OffsetPath)) : new(); } catch { obj = new(); }
+        obj[regionKey] = new Newtonsoft.Json.Linq.JObject { ["dx"] = dx, ["dy"] = dy };
+        try { File.WriteAllText(OffsetPath, obj.ToString(Newtonsoft.Json.Formatting.Indented)); } catch { }
+        _offsets[regionKey] = (dx, dy);
+    }
+
+    public static readonly FandomMap Trumbull = _trumbull; // compat
+    public static readonly FandomMap Cascade = _cascade;
+    public static readonly FandomMap Drucker = _drucker;
+    public static readonly FandomMap Meagher = _meagher;
+    public static readonly FandomMap Providence = _providence;
 
     public static FandomMap? For(MapRegion region)
-        => All.FirstOrDefault(m => m != null && m.Region == region);
+    {
+        var b = region.Key switch
+        {
+            "trumbull-valley" => _trumbull,
+            "cascade-hills" => _cascade,
+            "drucker-county" => _drucker,
+            "meagher-valley" => _meagher,
+            "providence-ridge" => _providence,
+            _ => (FandomMap?)null
+        };
+        return b == null ? null : Apply(b);
+    }
+
+    public static FandomMap?[] All => new[] { For(MapRegions.TrumbullValley), For(MapRegions.CascadeHills), For(MapRegions.DruckerCounty), For(MapRegions.MeagherValley), For(MapRegions.ProvidenceRidge) };
 
     static readonly ConcurrentDictionary<string, Bitmap?> _bitmaps = new();
 

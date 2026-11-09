@@ -42,6 +42,10 @@ namespace SoD2MapViewer;
         [System.ComponentModel.Browsable(false)]
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public MapRegion? MapRegion { get; set; }
+        /// <summary>Loaded map path (used to pick the correct background asset variant).</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public string? MapPath { get; set; }
 
         /// <summary>Draw the embedded fandom basemap (offline, no network) beneath the map graphics.</summary>
         [System.ComponentModel.Browsable(false)]
@@ -67,6 +71,13 @@ namespace SoD2MapViewer;
         [System.ComponentModel.Browsable(false)]
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public float BgNudgeY { get; set; }
+        /// <summary>Live drag offset (cm) applied to the fandom basemap while editing it.</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public float FandomNudgeX { get; set; }
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public float FandomNudgeY { get; set; }
 
         /// <summary>File provider used to load/render the vector basemap assets; null = disabled.</summary>
         [System.ComponentModel.Browsable(false)]
@@ -74,6 +85,14 @@ namespace SoD2MapViewer;
         public CUE4Parse.FileProvider.DefaultFileProvider? BgSource { get; set; }
 
         public event Action<int>? SelectionChanged; // index of selected object, -1 = none
+
+        /// <summary>Optional player/character marker position in canvas-world cm (null = hidden).</summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public PointF? PlayerWorldPos { get; set; }
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public float? PlayerWorldZCm { get; set; }
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string PlayerLabel { get; set; } = "Player";
 
         /// <summary>Fired after a drag moved an object: (index, oldX, oldY). Editing only.</summary>
         public event Action<int, float, float>? ObjectMoved;
@@ -145,6 +164,12 @@ namespace SoD2MapViewer;
             var o = Objects[_selected];
             _center = new PointF(o.X, o.Y);
         }
+        Invalidate();
+    }
+
+    public void CenterOn(float worldX, float worldY)
+    {
+        _center = new PointF(worldX, worldY);
         Invalidate();
     }
 
@@ -220,7 +245,7 @@ namespace SoD2MapViewer;
         try
         {
             var region = MapRegion ?? MapRegions.TrumbullValley;
-            var bm = BgMaps.Get(BgSource, region, 1800);
+            var bm = BgMaps.Get(BgSource, region, 1800, MapPath);
             if (bm == null) return;
             var pTL = WorldToScreen(bm.WorldX0 + BgNudgeX - MapWorldOffsetX, bm.WorldY0 + BgNudgeY - MapWorldOffsetY);
             var w = (bm.WorldX1 - bm.WorldX0) * _zoom;
@@ -256,7 +281,7 @@ namespace SoD2MapViewer;
             var bmp = FandomMaps.GetBitmap(map);
             if (bmp == null) return;
             // fandom rect is in world cm; canvas frame is local (= world − offset)
-            var pTL = WorldToScreen(map.WorldX0 - MapWorldOffsetX, map.WorldY0 - MapWorldOffsetY);
+            var pTL = WorldToScreen(map.WorldX0 + FandomNudgeX - MapWorldOffsetX, map.WorldY0 + FandomNudgeY - MapWorldOffsetY);
             var w = (map.WorldX1 - map.WorldX0) * _zoom;
             var h = (map.WorldY1 - map.WorldY0) * _zoom;
             if (pTL.X + w < -50 || pTL.X > Width + 50 || pTL.Y + h < -50 || pTL.Y > Height + 50) return;
@@ -299,11 +324,11 @@ namespace SoD2MapViewer;
         var g = e.Graphics;
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-        // background: vector asset basemap first (raw data), then fandom blank map
-        if (ShowBgBase)
-            DrawBgBasemap(g);
+        // background: fandom (stylized) underneath, then vector asset basemap (accurate) on top
         if (ShowFandomBase)
             DrawFandomBasemap(g);
+        if (ShowBgBase)
+            DrawBgBasemap(g);
 
         // grid lines in 10 m steps
         const float gridStep = 1000f; // 10 meters in cm
@@ -375,6 +400,28 @@ namespace SoD2MapViewer;
             }
         }
 
+        // player/character marker (on top)
+        if (PlayerWorldPos is { } pw)
+        {
+            var pp = WorldToScreen(pw.X, pw.Y);
+            float r = Math.Max(7f, 10f * _zoom < 1f ? 8f : Math.Min(14f, 8f + _zoom * 200f));
+            using var fill = new SolidBrush(Color.FromArgb(230, 60, 220, 255));
+            using var pen = new Pen(Color.White, 2f);
+            using var pen2 = new Pen(Color.FromArgb(200, 0, 40, 60), 3f);
+            g.FillEllipse(fill, pp.X - r, pp.Y - r, r * 2, r * 2);
+            g.DrawEllipse(pen2, pp.X - r, pp.Y - r, r * 2, r * 2);
+            g.DrawEllipse(pen, pp.X - r, pp.Y - r, r * 2, r * 2);
+            g.DrawLine(pen, pp.X - r - 4, pp.Y, pp.X + r + 4, pp.Y);
+            g.DrawLine(pen, pp.X, pp.Y - r - 4, pp.X, pp.Y + r + 4);
+            using var lf = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+            var label = $"{PlayerLabel} ({pw.X / 100:0.#}, {pw.Y / 100:0.#} m)";
+            var sz = g.MeasureString(label, lf);
+            var lx = pp.X + r + 5; var ly = pp.Y - sz.Height / 2;
+            using var bg = new SolidBrush(Color.FromArgb(180, 20, 24, 30));
+            g.FillRectangle(bg, lx - 2, ly - 1, sz.Width + 4, sz.Height + 2);
+            g.DrawString(label, lf, Brushes.White, lx, ly);
+        }
+
         using var hudFont = new Font("Segoe UI", 8.5f);
         using var hudBrush = new SolidBrush(Color.FromArgb(150, 200, 210));
         g.DrawString(
@@ -404,18 +451,19 @@ namespace SoD2MapViewer;
         ZoomAt(e.X, e.Y, e.Delta > 0 ? 1.25f : 0.8f);
     }
 
-    private bool _bgPanning;
-    private float _bgNudgeStartX, _bgNudgeStartY;
+    private bool _bgPanning, _fandomPanning;
+    private float _bgNudgeStartX, _bgNudgeStartY, _fandomNudgeStartX, _fandomNudgeStartY;
 
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
         if (e.Button == MouseButtons.Left && EditBgOffset)
         {
-            _bgPanning = true;
+            bool editFandom = ShowFandomBase && !ShowBgBase;
+            if (editFandom) _fandomPanning = true; else _bgPanning = true;
             _panStart = e.Location;
-            _bgNudgeStartX = BgNudgeX;
-            _bgNudgeStartY = BgNudgeY;
+            if (editFandom) { _fandomNudgeStartX = FandomNudgeX; _fandomNudgeStartY = FandomNudgeY; }
+            else { _bgNudgeStartX = BgNudgeX; _bgNudgeStartY = BgNudgeY; }
             Cursor = Cursors.SizeAll;
             return;
         }
@@ -517,13 +565,28 @@ namespace SoD2MapViewer;
                 _bgPanning = false;
                 Cursor = Cursors.Cross;
                 var region = MapRegion ?? MapRegions.TrumbullValley;
-                var cur = BgCalib.Regions.GetValueOrDefault(region.Key, (1.6, 1.6, 0, 0));
+                var asset = BgMaps.AssetFor(region, MapPath);
+                var cur = BgCalib.Get(region.Key, asset);
                 double newOx = cur.OX + BgNudgeX;
                 double newOy = cur.OY + BgNudgeY;
-                BgCalib.SetOverride(region.Key, cur.SX, cur.SY, newOx, newOy);
+                BgCalib.SetOverride(region.Key, cur.SX, cur.SY, newOx, newOy, asset);
                 BgMaps.ClearCache();
                 BgNudgeX = 0; BgNudgeY = 0;
                 _tip.SetToolTip(this, $"committed: ox={newOx:0} oy={newOy:0} cm");
+                Invalidate();
+                return;
+            }
+            if (_fandomPanning)
+            {
+                _fandomPanning = false;
+                Cursor = Cursors.Cross;
+                var region = MapRegion ?? MapRegions.TrumbullValley;
+                var cur = FandomMaps.GetOffset(region.Key);
+                double ndx = cur.DX + FandomNudgeX;
+                double ndy = cur.DY + FandomNudgeY;
+                FandomMaps.SetOffset(region.Key, ndx, ndy);
+                FandomNudgeX = 0; FandomNudgeY = 0;
+                _tip.SetToolTip(this, $"Fandom map committed: dx={ndx:0} dy={ndy:0} cm");
                 Invalidate();
                 return;
             }
@@ -603,7 +666,15 @@ namespace SoD2MapViewer;
         {
             BgNudgeX = _bgNudgeStartX + (e.X - _panStart.X) / _zoom;
             BgNudgeY = _bgNudgeStartY + (e.Y - _panStart.Y) / _zoom;
-            _tip.SetToolTip(this, $"base-map nudge: X={BgNudgeX:0} Y={BgNudgeY:0} cm  (release to commit)");
+            _tip.SetToolTip(this, $"vector map nudge: X={BgNudgeX:0} Y={BgNudgeY:0} cm  (release to commit)");
+            Invalidate();
+            return;
+        }
+        if (_fandomPanning)
+        {
+            FandomNudgeX = _fandomNudgeStartX + (e.X - _panStart.X) / _zoom;
+            FandomNudgeY = _fandomNudgeStartY + (e.Y - _panStart.Y) / _zoom;
+            _tip.SetToolTip(this, $"Fandom map nudge: X={FandomNudgeX:0} Y={FandomNudgeY:0} cm  (release to commit)");
             Invalidate();
             return;
         }

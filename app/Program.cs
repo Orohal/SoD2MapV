@@ -67,6 +67,11 @@ internal static class Program
             try { return BgMaps.Cli(args.Length > 1 ? args[1..] : Array.Empty<string>()); }
             catch (Exception e) { Console.Error.WriteLine(e); return 2; }
         }
+        if (args.Length >= 1 && args[0] == "--bgrenderasset")
+        {
+            try { return BgMaps.RenderAssetCli(args.Length > 1 ? args[1..] : Array.Empty<string>()); }
+            catch (Exception e) { Console.Error.WriteLine(e); return 2; }
+        }
         if (args.Length >= 1 && args[0] == "--save")
         {
             try

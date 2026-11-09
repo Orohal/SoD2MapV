@@ -37,15 +37,22 @@ public sealed record BgMap(
 /// </summary>
 public static class BgCalib
 {
+    // keyed by region key, with optional "regionKey|assetName" overrides for variants
     public static readonly Dictionary<string, (double SX, double SY, double OX, double OY)> Regions = new()
     {
-        // final values: interactive drag calibration, user-verified in-game
-        ["trumbull-valley"]     = (1.600, 1.600, -87407, 374846),
-        ["cascade-hills"]       = (1.650, 1.650, 44708, 445557),
-        ["drucker-county"]      = (1.450, 1.450, 206579, 707815),
-        ["meagher-valley"]      = (1.540, 1.540, 224487, 311577),
-        ["providence-ridge"]    = (1.620, 1.620, -50906, 432548),
+        // fitted so the rendered vector widget bbox maps to each region's Fandom world rect
+        // (the coordinate space that aligns with loaded map objects / save breadcrumbs).
+        // Fine-tune per region/variant via "Edit base-map pos" (drag) or --bgset; overrides persist.
+        ["trumbull-valley"]     = (1.9739, 2.6317, -540,    8018),   // trumbull_valley_persistent_Background
+        ["trumbull-valley|faustite_persistent_Background"] = (1.6643, 1.5975, 32093, 26847), // confirmed correct, rotated 180°
+        ["cascade-hills"]       = (1.3144, 1.3157, -21889, -64229),
+        ["drucker-county"]      = (1.1410, 1.0025, -3804,  -81678),
+        ["meagher-valley"]      = (1.0414, 1.4491, -47868, -36601),
+        ["providence-ridge"]    = (1.1247, 1.0899,  2070,  -76182),
     };
+
+    static string CalibKey(string regionKey, string? assetName = null)
+        => assetName != null && Regions.ContainsKey(regionKey + "|" + assetName) ? regionKey + "|" + assetName : regionKey;
 
     static BgCalib()
     {
@@ -72,36 +79,48 @@ public static class BgCalib
     public static string OverridePath() =>
         Path.Combine(AppContext.BaseDirectory, "bgcalib_override.json");
 
-    public static void SetOverride(string region, double sx, double sy, double ox, double oy)
+    public static void SetOverride(string region, double sx, double sy, double ox, double oy, string? assetName = null)
     {
+        var key = CalibKey(region, assetName);
+        if (!Regions.ContainsKey(key)) key = region; // persist under resolved key
         Newtonsoft.Json.Linq.JObject obj;
         var path = OverridePath();
         try { obj = File.Exists(path) ? Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(path)) : new Newtonsoft.Json.Linq.JObject(); }
         catch { obj = new Newtonsoft.Json.Linq.JObject(); }
-        obj[region] = new Newtonsoft.Json.Linq.JObject
+        obj[key] = new Newtonsoft.Json.Linq.JObject
         {
             ["sx"] = sx, ["sy"] = sy, ["ox"] = ox, ["oy"] = oy,
         };
         File.WriteAllText(path, obj.ToString(Newtonsoft.Json.Formatting.Indented));
-        if (Regions.ContainsKey(region)) Regions[region] = (sx, sy, ox, oy);
+        Regions[key] = (sx, sy, ox, oy);
     }
 
     public static (double X0, double Y0, double X1, double Y1) WorldRectFor(
-        string regionKey, double wMinX, double wMaxX, double wMinY, double wMaxY)
+        string regionKey, double wMinX, double wMaxX, double wMinY, double wMaxY, string? assetName = null)
     {
-        var (sx, sy, ox, oy) = Regions.GetValueOrDefault(regionKey, (1.600, 1.600, 0, 0));
+        var key = CalibKey(regionKey, assetName);
+        var (sx, sy, ox, oy) = Regions.GetValueOrDefault(key, Regions.GetValueOrDefault(regionKey, (1.600, 1.600, 0, 0)));
         var x0 = wMinX * sx + ox; var x1 = wMaxX * sx + ox;
         var y0 = wMinY * sy + oy; var y1 = wMaxY * sy + oy;
         return (x0, y0, x1, y1);
+    }
+
+    public static (double SX, double SY, double OX, double OY) Get(string regionKey, string? assetName = null)
+    {
+        var key = CalibKey(regionKey, assetName);
+        return Regions.GetValueOrDefault(key, Regions.GetValueOrDefault(regionKey, (1.600, 1.600, 0, 0)));
     }
 }
 
 public static class BgMaps
 {
-    /// <summary>Codename (background asset prefix) per Wand region key.</summary>
-    public static string? AssetFor(MapRegion region) => region.Key switch
+    /// <summary>Background asset short name for a region, optionally refined by the loaded map path
+    /// (e.g. faustite vs. trumbull_valley are different Trumbull variants).</summary>
+    public static string? AssetFor(MapRegion region, string? mapPath = null) => region.Key switch
     {
-        "trumbull-valley"  => "trumbull_valley_persistent_Background",
+        "trumbull-valley" => (mapPath != null && mapPath.Replace('\\','/').Contains("maps/trumbull_valley/", StringComparison.OrdinalIgnoreCase))
+            ? "trumbull_valley_persistent_Background"
+            : "faustite_persistent_Background", // default/faustite
         "cascade-hills"    => "amethyst_region_map_Background",
         "drucker-county"   => "basalt_region_map_Background",
         "meagher-valley"   => "copper_region_map_Background",
@@ -109,21 +128,40 @@ public static class BgMaps
         _ => null,
     };
 
+    static bool NeedsRotation180(string assetName)
+        => assetName.Equals("faustite_persistent_Background", StringComparison.OrdinalIgnoreCase);
+
     static readonly ConcurrentDictionary<string, BgMap?> _renders = new();
 
-    public static void ClearCache() => _renders.Clear();
+    public static void ClearCache()
+    {
+        foreach (var kv in _renders)
+        {
+            try { kv.Value?.Bitmap?.Dispose(); } catch { }
+        }
+        _renders.Clear();
+    }
 
     /// <summary>
     /// Renders (or fetches from cache) the vector basemap of the region, in MapUIInfo colors.
     /// Bitmap coordinate system: widget X → px (right), widget Y → py (top-down, Y inverted).
     /// </summary>
-    public static BgMap? Get(DefaultFileProvider provider, MapRegion region, int targetPx = 1800)
+    public static BgMap? Get(DefaultFileProvider provider, MapRegion region, int targetPx = 1800, string? mapPath = null)
     {
-        var asset = AssetFor(region);
+        var asset = AssetFor(region, mapPath);
         if (asset == null) return null;
-        return _renders.GetOrAdd(region.Key, _ =>
+        var cacheKey = region.Key + "|" + asset;
+        return _renders.GetOrAdd(cacheKey, _ =>
         {
-            try { return Render(provider, region, asset, targetPx); }
+            try
+            {
+                var m = Render(provider, region, asset, targetPx);
+                if (m != null && NeedsRotation180(asset))
+                {
+                    try { m.Bitmap.RotateFlip(RotateFlipType.Rotate180FlipNone); } catch { }
+                }
+                return m;
+            }
             catch { return null; }
         });
     }
@@ -196,7 +234,7 @@ public static class BgMaps
             DrawBorder(g, buffers, pBorder, toPxX, toPxY);
         }
 
-        var (wx0, wy0, wx1, wy1) = BgCalib.WorldRectFor(region.Key, minX, maxX, minY, maxY);
+        var (wx0, wy0, wx1, wy1) = BgCalib.WorldRectFor(region.Key, minX, maxX, minY, maxY, assetName);
         // bitmap Y is top-down but world Y is south-positive UE (larger y = south):
         // top edge of the bitmap = northern edge = smaller world Y
         var (rx0, ry0, rx1, ry1) = wx0 <= wx1
@@ -309,6 +347,27 @@ public static class BgMaps
             (int)(Math.Clamp(c.R, 0f, 1f) * 255),
             (int)(Math.Clamp(c.G, 0f, 1f) * 255),
             (int)(Math.Clamp(c.B, 0f, 1f) * 255));
+    }
+
+    /// <summary>Renders an arbitrary Backgrounds/*_Background asset by short name (no region mapping).</summary>
+    public static int RenderAssetCli(string[] args)
+    {
+        if (args.Length < 3)
+        {
+            Console.WriteLine("usage: --bgrenderasset <gameDir> <assetShortName> <out.png>");
+            return 1;
+        }
+        var gameDir = args[0]; var assetName = args[1]; var png = args[2];
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+        var dummy = new MapRegion("_", "_");
+        var map = Render(loader.Provider, dummy, assetName, 1800);
+        if (map == null) { Console.Error.WriteLine("render failed: " + assetName); return 2; }
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(png))!);
+        using (map.Bitmap) using (var fs = File.Create(png)) map.Bitmap.Save(fs, System.Drawing.Imaging.ImageFormat.Png);
+        Console.WriteLine($"[bgrenderasset] {assetName}: {map.Px}x{map.Py}  widget X {map.WidgetMinX:F0}..{map.WidgetMaxX:F0} Y {map.WidgetMinY:F0}..{map.WidgetMaxY:F0} -> {png}");
+        return 0;
     }
 
     /// <summary>CLI: --bgrender <gameDir> <outPrefix> [regionKey|"all"]

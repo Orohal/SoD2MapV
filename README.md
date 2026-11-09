@@ -4,7 +4,7 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 
 <a href="https://www.buymeacoffee.com/Orohal" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-**Aktueller Stand: [v0.5.2](https://github.com/Orohal/SoD2MapV/releases/latest)** — Viewer + Voll-Editor + Fahrzeug-Injektion (GUI/CLI) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen). Details: [Repo-Status](#repo-status) (eingeklappt).
+**Aktueller Stand: [v0.5.3](https://github.com/Orohal/SoD2MapV/releases/latest)** — Viewer + Voll-Editor + Fahrzeug-Injektion (GUI/CLI) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen). Details: [Repo-Status](#repo-status) (eingeklappt).
 
 ## Features
 
@@ -114,6 +114,7 @@ SoD2MapViewer.exe --saves
 <details>
 <summary><b>Repo-Status / Versionshistorie</b></summary>
 
+- **v0.5.3** — **Spielerposition & vereinfachte Injektion**: Button „Show character“ zeigt die letzte Spielerposition aus dem Save (`PlayerBreadcrumbs`, mit Kalibrierung). „Inject at player“ füllt Pos/Höhe (+10 m Offset) vor und gibt Hinweis auf freie Fläche; Zahlenfelder akzeptieren `,`/`.` und leere Werte als `0`. **Fandom-Map verschiebbar** (nur zur groben Orientierung): „Edit base-map pos“ bei aktiver Fandom-/inaktiver Vektor-Map, Versatz gespeichert. **Vektor-Basemap-Fixes**: `faustite` nutzt `faustite_persistent_Background` (+180°) mit variantenspezifischer Kalibrierung; Kalibrierung asset-variantenfähig, Vektor standardmäßig an/über Fandom. CLI: `--bgrenderasset`.
 - **v0.5.2** — **Map-Liste nach Regionen gruppiert**: unter „filter maps“ als ein-/ausklappbare Baumansicht (Trumbull Valley, Cascade Hills, Drucker County, Meagher Valley, Providence Ridge, Other); Filter expandiert Treffer-Gruppen.
 - **v0.5.1** — **WeMod/Wand-Kachel-Map entfernt** (CDN-Abhängigkeit): Kachel-Layer, Tile-Projektion, `--wandcheck`/`--wandrender`/`--fancalib` sind weg; Regions-Konfigurationen und die Vektor-Basemap bleiben. Rebuild der Release-Artefakte.
 - **v0.5.0** — **Eigene Vektor-Basemap (Option 2)**: rendert die Ingame-`MapBackgroundData`-Assets (`maps/Backgrounds/*_Background`: Road/River/Lakes/Building/Border-Buffer) direkt zu einer offline-Karte in den echten Ingame-Farben (`MapUIInfo_BP`) — für alle 5 Regionen. Widget↔Welt-Transform per Drag kalibrierbar („Edit base-map pos"), dazu CLI `--bgrender` / `--bgset`. Neue Tooling-Modi: `--maptex LIST/DUMP/PROPS/JSON` (Pak-Exploration). Fix: Trumbull-Kartenpfad (`maps/trumbull_valley/`) in der Regionserkennung. **Entfernt:** WeMod/Wand-Kachel-Hintergrund (CDN-Abhängigkeit) samt `--wandcheck`/`--wandrender`/`--fancalib`. Abhängigkeiten: `CUE4Parse-Conversion` 1.2.2.202611, `SixLabors.ImageSharp` 3.1.12. **Hinweis:** die Vektor-Map ersetzt die (ungenau kalibrierte) Fandom-Map als verlässliche Basis.
@@ -136,15 +137,15 @@ Die gepackten Single-File-EXEs werden von einzelnen VirusTotal-Engines als gener
 
 **Wenn ungünstig:** Ordner-Variante ohne gepackte EXE nutzen — [SoD2MapViewer-framework-dependent-plain.zip](https://github.com/Orohal/SoD2MapV/releases/latest) (kleine EXE + DLLs, gleiche Funktion). Im eigenen Virenprogramm ggf. Ordner ausschließen.
 
-**Published Hashes (SHA256) — v0.5.2:**
+**Published Hashes (SHA256) — v0.5.3:**
 
 | Asset | SHA256 |
 |---|---|
-| `SoD2MapViewer.exe` (self-contained, ~126 MB) | `5C23EDD320F234FA9BCF284D368123FA133DE3B39C49FA5828F0E30083E1A818` |
-| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `DFD5703F2EAFC59C7066AA5E856406787CDAF04991DE6D4912423515381F2A5A` |
-| `SoD2MapViewer-framework-dependent.zip` | `BE6D75D2A8B0560C213A5337D43C55ECD5470D198F583B6F6F7237068EC9A143` |
-| `SoD2MapViewer-framework-dependent-plain.zip` | `96C054386877A10F63BB8A153BB600D96198967DD57731DA629E43247520DB7C` |
-| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `B132AC59FB9B95C92F9C3471CABFA43C3633329FBAD59CD549C21A312E291242` |
+| `SoD2MapViewer.exe` (self-contained, ~126 MB) | `C8DF7AEFF26A7446E1C373EF94B7B5838D33463486F8302C260BC575CD57A69D` |
+| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `626C20712EEDCD73FE2E1819FB375F47B28340FE54EB9F947FBFAC7188149804` |
+| `SoD2MapViewer-framework-dependent.zip` | `D1082551C638F883CD6BF9ADEFFBD734FD533E598DCB5EB1670373D54D2DD63D` |
+| `SoD2MapViewer-framework-dependent-plain.zip` | `8D3F38E03CF91AC8325DBEC13363EC9B9264A01D9DFD98EC9C20242BF846BB1A` |
+| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `59A198BD83642742903D2DF1BEAFA187EA38883D0773ACA1767FC1DFAEDE12B0` |
 
 Historisch: die framework-dependent Single-File-EXE von **v0.4.0** (`9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A`) wurde von 9 VirusTotal-Engines generisch gemeldet (Packer-Heuristik der Single-File-Apphosts).
 

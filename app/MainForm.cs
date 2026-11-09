@@ -179,13 +179,30 @@ public sealed class MainForm : Form
         btnExport.Click += (s, e) => ExportModPak();
         var btnInject = new Button { Text = "Inject vehicle...", AutoSize = true, Height = 30 };
         btnInject.Click += (s, e) => OpenInjectDialog(null);
-        _chkFandom = new CheckBox { Text = "Fandom map (offline)", AutoSize = true, Checked = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
+        var btnChar = new Button { Text = "Show character", AutoSize = true, Height = 30 };
+        btnChar.Click += (s, e) => ShowCharacterPosition();
+        var btnInjectAtPlayer = new Button { Text = "Inject at player", AutoSize = true, Height = 30 };
+        btnInjectAtPlayer.Click += (s, e) =>
+        {
+            if (_canvas.PlayerWorldPos is { } p)
+            {
+                // 10m "in front" (default: +X); yaw unknown from save. Adjust in dialog if needed.
+                var ahead = new System.Drawing.PointF(p.X + 1000f, p.Y);
+                OpenInjectDialog(ahead, _canvas.PlayerWorldZCm, 0f,
+                    "Hinweis: Beim Injizieren am Spieler am besten auf freier Fläche stehen (sonst spawnt das Fahrzeug evtl. in einem Objekt). Position/Yaw/Höhe ggf. anpassen.");
+                SetStatus("Inject: Spieler-Pos + 10m (X). Tipp: auf freier Fläche stehen. Position/Yaw/Höhe ggf. anpassen.");
+            }
+            else
+                SetStatus("No player position known — click 'Show character' first.");
+        };
+        _chkFandom = new CheckBox { Text = "Fandom map (offline)", AutoSize = true, Checked = false, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkFandom.CheckedChanged += (s, e) => { _canvas.ShowFandomBase = _chkFandom.Checked; _canvas.Invalidate(); };
-        _chkBg = new CheckBox { Text = "Vector map (asset)", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
+        _chkBg = new CheckBox { Text = "Vector map (asset)", AutoSize = true, Checked = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkBg.CheckedChanged += (s, e) => { _canvas.ShowBgBase = _chkBg.Checked; _canvas.Invalidate(); };
+        _canvas.ShowBgBase = true;
         _chkEditBg = new CheckBox { Text = "Edit base-map pos", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkEditBg.CheckedChanged += (s, e) => { _canvas.EditBgOffset = _chkEditBg.Checked; _canvas.Invalidate(); };
-        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit, btnExport, btnInject, _chkFandom, _chkBg, _chkEditBg });
+        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit, btnExport, btnInject, btnChar, btnInjectAtPlayer, _chkFandom, _chkBg, _chkEditBg });
         top.Controls.Add(flow);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
 
@@ -372,11 +389,12 @@ public sealed class MainForm : Form
         _canvas.MapWorldOffsetY = model.HasWorldTileOffset ? model.WorldTileOffsetY : 0;
         // select the matching Wand background region from the map path (folder codename)
         _canvas.MapRegion = MapRegions.FromMapPath(model.Path);
+        _canvas.MapPath = model.Path;
         // vector basemap renders from the game paks — provider available after open
         _canvas.BgSource = _loader.Provider;
         var bgRegion = _canvas.MapRegion ?? MapRegions.TrumbullValley;
         var ok = model.Error == null;
-        var bgMap = BgMaps.Get(_loader.Provider, bgRegion, 1800);
+        var bgMap = BgMaps.Get(_loader.Provider, bgRegion, 1800, model.Path);
         if (bgMap != null)
             SetStatus($"map: {Path.GetFileName(model.Path)}  |  exports: {model.TotalExports:N0}  objects: {model.Objects.Count:N0}  " +
                 $"without position: {Math.Max(0, model.FailedExports):N0}  parse time: {model.LoadMs} ms  " +
@@ -531,8 +549,61 @@ public sealed class MainForm : Form
         return yaw * 180f / MathF.PI;
     }
 
-    private void OpenInjectDialog(System.Drawing.PointF? worldCm) =>
-        new InjectDialog(worldCm).ShowDialog(this);
+    private void OpenInjectDialog(System.Drawing.PointF? worldCm, float? zCm = null, float yawDeg = 0f, string? hint = null) =>
+        new InjectDialog(worldCm, zCm, yawDeg, hint).ShowDialog(this);
+
+    private void ShowCharacterPosition()
+    {
+        try
+        {
+            var saves = Savegame.FindSavegames();
+            string? savPath = null;
+            if (saves.Length == 1)
+            {
+                savPath = saves[0].FullName;
+            }
+            else
+            {
+                using var dlg = new OpenFileDialog
+                {
+                    Title = "Select savegame (.sav) — shows last player breadcrumb",
+                    Filter = "Savegame (*.sav)|*.sav|All files (*.*)|*.*",
+                    CheckFileExists = true,
+                };
+                if (saves.Length > 0)
+                    dlg.InitialDirectory = Path.GetDirectoryName(saves[0].FullName);
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                savPath = dlg.FileName;
+            }
+
+            var pos = Savegame.GetPlayerPosition(savPath);
+            if (pos == null)
+            {
+                _canvas.PlayerWorldPos = null;
+                _canvas.Invalidate();
+                SetStatus("Character position: no PlayerBreadcrumbs found in this save.");
+                return;
+            }
+
+            var (sx, sy, sz, arch) = pos.Value; // save coords, cm
+            var cal = Calibration.Get(savPath);
+            double dx = cal?.ShiftX ?? 0, dy = cal?.ShiftY ?? 0, dz = cal?.ShiftZ ?? 0; // shift cm: save = world + shift => world = save - shift
+            var wx = (float)(sx - dx);
+            var wy = (float)(sy - dy);
+            var wz = (float)(sz - dz);
+            _canvas.PlayerWorldPos = new System.Drawing.PointF(wx, wy);
+            _canvas.PlayerWorldZCm = wz;
+            _canvas.PlayerLabel = "Player";
+            _canvas.CenterOn(wx, wy);
+            _canvas.Invalidate();
+            var calNote = cal == null ? " (keine Kalibrierung — evtl. versetzt; wie bei Fahrzeug-Injektion kalibrieren)" : "";
+            SetStatus($"Character: save({sx / 100:0.#}, {sy / 100:0.#}, {sz / 100:0.#}) m, world({wx / 100:0.#}, {wy / 100:0.#}, {wz / 100:0.#}) m, map={arch}, save={Path.GetFileName(savPath)}{calNote}");
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Character position error: " + ex.Message);
+        }
+    }
 
     private void ExportModPak()    {
         if (_map == null || _map.Error != null)

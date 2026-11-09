@@ -984,6 +984,55 @@ public static class Savegame
         return 0;
     }
 
+    /// <summary>
+    /// Reads the player's last breadcrumb position from a .sav (save coords, cm) and the map archetype.
+    /// Returns null if the save can't be read or has no PlayerBreadcrumbs.
+    /// </summary>
+    public static (float X, float Y, float Z, string MapArchetype)? GetPlayerPosition(string savPath)
+    {
+        try
+        {
+            var bytes = File.ReadAllBytes(savPath);
+            if (bytes.Length < HeaderEnd + FooterSize || Encoding.ASCII.GetString(bytes, 0, 4) != "GVAS")
+                return null;
+            var compressedLen = BitConverter.ToInt32(bytes, 0x25d);
+            if (compressedLen <= 0 || HeaderEnd + compressedLen + FooterSize > bytes.Length)
+                return null;
+            var uncompressedLen = BitConverter.ToInt32(bytes, 0x261);
+            var src = new byte[compressedLen];
+            Array.Copy(bytes, HeaderEnd, src, 0, compressedLen);
+            var data = Lz4Linked.DecodeSingleBlock(src, uncompressedLen);
+
+            var root = ParseRoot(data, out _);
+            var breadcrumbs = FindNamedStatic(root, "PlayerBreadcrumbs");
+            if (breadcrumbs == null || breadcrumbs.Children.Count == 0)
+                return null;
+            var last = breadcrumbs.Children[^1];
+            if (last.DataStart + 12 > data.Length)
+                return null;
+            var x = BitConverter.ToSingle(data, last.DataStart);
+            var y = BitConverter.ToSingle(data, last.DataStart + 4);
+            var z = BitConverter.ToSingle(data, last.DataStart + 8);
+
+            string arch = "";
+            var mapSaves = FindNamedStatic(root, "MapSaves");
+            if (mapSaves?.Children.Count > 0)
+            {
+                var archNode = mapSaves.Children[0].Children.FirstOrDefault(c => c.Name == "MapArchetype");
+                if (archNode != null && archNode.DataStart + 4 <= data.Length)
+                {
+                    var (s, _) = ReadFString(data, archNode.DataStart);
+                    arch = s ?? "";
+                }
+            }
+            return (x, y, z, arch);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>Deletes vehicle entries by index (byte-surgery on the header-once array,
     /// same count/hsize/ancestor size fixups as SaveInject).</summary>
     public static int SaveDelete(string savPath, string outPath, int[] indices)

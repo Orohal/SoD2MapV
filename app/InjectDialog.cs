@@ -35,7 +35,7 @@ public sealed class InjectDialog : Form
     private FileInfo[] _saves = Array.Empty<FileInfo>();
     private int _probeIndex = -1;   // last injected calibration probe (for cleanup)
 
-    public InjectDialog(PointF? worldCm)
+    public InjectDialog(PointF? worldCm, float? zCm = null, float defaultYawDeg = 0f, string? hint = null)
     {
         Text = "Inject vehicle into savegame";
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -81,10 +81,11 @@ public sealed class InjectDialog : Form
         _btnDeleteProbe.Click += (s, e) => DeleteProbe();
         _btnCancel.Click += (s, e) => Close();
 
-        LoadSaves(worldCm);
+        LoadSaves(worldCm, zCm, defaultYawDeg);
+        if (!string.IsNullOrEmpty(hint)) _lblInfo.Text = hint;
     }
 
-    private void LoadSaves(PointF? worldCm)
+    private void LoadSaves(PointF? worldCm, float? zCm, float defaultYawDeg)
     {
         _saves = Savegame.FindSavegames();
         if (_saves.Length == 0)
@@ -110,6 +111,8 @@ public sealed class InjectDialog : Form
         {
             _lblInfo.Text = "Tip: right-click the map to pick the injection position.";
         }
+        if (zCm.HasValue) _txtZ.Text = (zCm.Value / 100).ToString("0.##");
+        _txtYaw.Text = defaultYawDeg.ToString("0.##");
         LoadShift();
     }
 
@@ -150,14 +153,15 @@ public sealed class InjectDialog : Form
     {
         classIdx = 0; x = y = z = yaw = dx = dy = dz = 0;
         var inv = System.Globalization.CultureInfo.InvariantCulture;
-        var ok = double.TryParse(_txtX.Text, System.Globalization.NumberStyles.Float, inv, out x)
-              & double.TryParse(_txtY.Text, System.Globalization.NumberStyles.Float, inv, out y)
-              & double.TryParse(_txtZ.Text, System.Globalization.NumberStyles.Float, inv, out z)
-              & double.TryParse(_txtYaw.Text, System.Globalization.NumberStyles.Float, inv, out yaw)
-              & double.TryParse(_txtDx.Text, System.Globalization.NumberStyles.Float, inv, out dx)
-              & double.TryParse(_txtDy.Text, System.Globalization.NumberStyles.Float, inv, out dy)
-              & double.TryParse(_txtDz.Text, System.Globalization.NumberStyles.Float, inv, out dz);
-        if (!ok) { _lblInfo.Text = "Please enter valid numbers."; return false; }
+        static string N(string? s) { var t = (s ?? "").Trim().Replace(',', '.'); return t.Length == 0 ? "0" : t; }
+        var ok = double.TryParse(N(_txtX.Text), System.Globalization.NumberStyles.Float, inv, out x)
+              & double.TryParse(N(_txtY.Text), System.Globalization.NumberStyles.Float, inv, out y)
+              & double.TryParse(N(_txtZ.Text), System.Globalization.NumberStyles.Float, inv, out z)
+              & double.TryParse(N(_txtYaw.Text), System.Globalization.NumberStyles.Float, inv, out yaw)
+              & double.TryParse(N(_txtDx.Text), System.Globalization.NumberStyles.Float, inv, out dx)
+              & double.TryParse(N(_txtDy.Text), System.Globalization.NumberStyles.Float, inv, out dy)
+              & double.TryParse(N(_txtDz.Text), System.Globalization.NumberStyles.Float, inv, out dz);
+        if (!ok) { _lblInfo.Text = "Please enter valid numbers (use . or , as decimal)."; return false; }
         classIdx = _cboClass.SelectedIndex;
         if (classIdx < 0) { _lblInfo.Text = "No vehicle class selected."; return false; }
         return true;
