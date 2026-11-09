@@ -4,14 +4,14 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 
 <a href="https://www.buymeacoffee.com/Orohal" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-**Aktueller Stand: [v0.4.2](https://github.com/Orohal/SoD2MapV/releases/latest)** — Viewer + Voll-Editor + Fahrzeug-Injektion (GUI/CLI) + Hintergrund-Karten für alle 5 Regionen (auto-ausgerichtet, Rohbau). Details: [Repo-Status](#repo-status) (eingeklappt).
+**Aktueller Stand: [v0.5.0](https://github.com/Orohal/SoD2MapV/releases/latest)** — Viewer + Voll-Editor + Fahrzeug-Injektion (GUI/CLI) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen) + Wand-Kacheln. Details: [Repo-Status](#repo-status) (eingeklappt).
 
 ## Features
 
 - **888 Karten** aus allen 35 PAKs, fehlerfrei lesbar (eigener LZ4-Linked-Blocks-Decoder)
 - **2D-Top-Down-Viewer**: Objekte mit Positionen; Grid, Suchfilter, Legende
 - **Voller Editor**: verschieben / rotieren / skalieren / löschen per Drag & Drop, Undo, Export als Mod-`.pak`
-- **Echte Karte als Hintergrund** (Trumbull Valley): öffentliche WeMod/Wand-Kacheln, pixelgenau in Weltkoordinaten projiziert, kein manuelles Align nötig
+- **Echte Karte als Hintergrund**: (a) **Vektor-Basemap** aus den Ingame-`MapBackgroundData`-Assets (Straßen/Flüsse/Seen/Gebäude/Border), offline, alle 5 Regionen, per Drag kalibrierbar; (b) öffentliche WeMod/Wand-Kacheln, pixelgenau in Weltkoordinaten projiziert
 - **Fahrzeug-Injektion in Live-Savegames**: Rechtsklick auf der Karte → Position → Fahrzeug in Save schreiben; per-Save-Kalibrierung, Auto-Backup, Spiel-läuft-Check
 - Headless-CLI für alle Funktionen (siehe unten)
 
@@ -53,7 +53,9 @@ Einmalig **Kalibrierung** (pro Save): Toolbar **„Inject vehicle…"** oder **R
 
 ### Echte Karte als Hintergrund
 
-Toolbar **„Wand map"** — blendet die echte Trumbull-Valley-Karte (faustite) hinter die Objekte ein. Quelle sind die öffentlichen WebP-Kacheln der WeMod/Wand-Interactive-Map (Zoom 1–5), gecached unter `%LOCALAPPDATA%\SoD2MapViewer\wandtiles`. Die Wand-Projektion (gameCoords ↔ lng/lat) transformiert jede Kachel auf das exakte Weltkoordinaten-Rechteck — die Objekte liegen automatisch passend (verifiziert an den faustite-Basen). Nur für faustite-Karten sinnvoll; nur zur Orientierung geladen, kein Re-Hosting.
+Toolbar **„Vector map (asset)"** — blendet die eigene Vektor-Karte aus den Ingame-`MapBackgroundData`-Assets (`StateOfDecay2/Content/maps/Backgrounds/*`) ein: Straßen, Flüsse, Seen, Gebäude und die Karten-Grenze, in den echten Ingame-Farben (`MapUIInfo_BP`). Komplett offline, für alle 5 Regionen. Bei Abweichung: Checkbox **„Edit base-map pos"** einschalten und die Karte per Drag ausrichten (Loslassen speichert die Kalibrierung). CLI: `--bgrender` (PNG-Render), `--bgcalib` (Auto-Kalibrierung), `--bgset` (manuelle Transform-Werte).
+
+Toolbar **„Wand map"** — blendet zusätzlich die echte Trumbull-Valley-Karte (faustite) hinter die Objekte ein. Quelle sind die öffentlichen WebP-Kacheln der WeMod/Wand-Interactive-Map (Zoom 1–5), gecached unter `%LOCALAPPDATA%\SoD2MapViewer\wandtiles`. Die Wand-Projektion (gameCoords ↔ lng/lat) transformiert jede Kachel auf das exakte Weltkoordinaten-Rechteck — die Objekte liegen automatisch passend (verifiziert an den faustite-Basen). Nur für faustite-Karten sinnvoll; nur zur Orientierung geladen, kein Re-Hosting.
 
 <details>
 <summary><b>Headless-Modi (CLI)</b></summary>
@@ -117,7 +119,8 @@ SoD2MapViewer.exe --saves
 <details>
 <summary><b>Repo-Status / Versionshistorie</b></summary>
 
-- **v0.4.2** — **Hintergrund für alle 5 Regionen** (faustite→Trumbull Valley, amethyst→Cascade Hills, basalt→Drucker County, copper→Meagher Valley, danburite→Providence Ridge — Zuordnung verifiziert über Sublevel-Namen + Render-Checks); Region wird automatisch aus dem Kartenpfad gewählt. Kachel-Zeichnung: grobe Ebene zuerst, Zoom klemmt auf die verlässlichen CDN-Ebenen z4/z5 (z1–z3 der WeMod-CDN sind lückenhaft), fehlende Kacheln werden aus der Elternebene hochskaliert gefüllt. Fix: Kachel-Cache mischte vorher Dateien verschiedener Regionen (Cache-Dateinamen sind jetzt pro Region/GUID — war Ursache des „Flecken/Löcher-Mosaiks“). CLI: `--wandrender`, `--tileinfo` (WorldTileInfo-Offsets je Region). **⚠ Rohbau-Hinweis:** die WeMod-CDN-Pyramide ist derzeit serverseitig unvollständig (Kacheln verschwinden/werden nachgeladen) — Löcher/Flecken im Hintergrund sind bis auf weiteres möglich; an der Anbindung wird weitergearbeitet (Community-Basemap als Fallback geplant)
+- **v0.5.0** — **Eigene Vektor-Basemap (Option 2)**: rendert die Ingame-`MapBackgroundData`-Assets (`maps/Backgrounds/*_Background`: Road/River/Lakes/Building/Border-Buffer) direkt zu einer offline-Karte in den echten Ingame-Farben (`MapUIInfo_BP`) — für alle 5 Regionen. Widget↔Welt-Transform per Drag kalibrierbar („Edit base-map pos"), dazu CLI `--bgrender` / `--bgcalib` / `--bgset`. Neue Tooling-Modi: `--maptex LIST/DUMP/PROPS/JSON` (Pak-Exploration), `--bgrender`. Fix: Trumbull-Kartenpfad (`maps/trumbull_valley/`) in der Regionserkennung. Abhängigkeiten: `CUE4Parse-Conversion` 1.2.2.202611, `SixLabors.ImageSharp` 3.1.12. **Hinweis:** die Vektor-Map ersetzt die (ungenau kalibrierte) Fandom-Map als verlässliche Basis; die Wand-Kachel-Ebene bleibt optional (derzeit serverseitig lückenhaft).
+- **v0.4.2** — **Hintergrund für alle 5 Regionen** (faustite→Trumbull Valley, amethyst→Cascade Hills, basalt→Drucker County, copper→Meagher Valley, danburite→Providence Ridge — Zuordnung verifiziert über Sublevel-Namen + Render-Checks); Region wird automatisch aus dem Kartenpfad gewählt. Kachel-Zeichnung: grobe Ebene zuerst, Zoom klemmt auf die verlässlichen CDN-Ebenen z4/z5 (z1–z3 der WeMod-CDN sind lückenhaft), fehlende Kacheln werden aus der Elternebene hochskaliert gefüllt. Fix: Kachel-Cache mischte vorher Dateien verschiedener Regionen (Cache-Dateinamen sind jetzt pro Region/GUID — war Ursache des „Flecken/Löcher-Mosaiks"). CLI: `--wandrender`, `--tileinfo` (WorldTileInfo-Offsets je Region). **⚠ Rohbau-Hinweis:** die WeMod-CDN-Pyramide ist derzeit serverseitig unvollständig (Kacheln verschwinden/werden nachgeladen) — Löcher/Flecken im Hintergrund sind bis auf weiteres möglich; an der Anbindung wird weitergearbeitet (Community-Basemap als Fallback geplant)
 - **v0.4.1** — **Wand-Hintergrund auto-ausgerichtet**: Kachel-Offset kommt aus dem UMAP-Header (`WorldTileInfo.Position`, pro Karte); keine manuelle Kalibrierung mehr (`--wandrender` ohne Offsets testbar)
 - **v0.4.0** — Echte Karte als Hintergrund (Wand-Tiles, pixelgenaue Projektion, `--wandcheck`); Fenstertitel zeigt Paketversion; ungepackte Variante gegen Viren-FP
 - **v0.3.5** — Framework-abhängiger Build als Release-Asset; `--saves`; Auto-Template-Injektion
@@ -136,15 +139,15 @@ Die gepackten Single-File-EXEs werden von einzelnen VirusTotal-Engines als gener
 
 **Wenn ungünstig:** Ordner-Variante ohne gepackte EXE nutzen — [SoD2MapViewer-framework-dependent-plain.zip](https://github.com/Orohal/SoD2MapV/releases/latest) (kleine EXE + DLLs, gleiche Funktion). Im eigenen Virenprogramm ggf. Ordner ausschließen.
 
-**Published Hashes (SHA256) — v0.4.2:**
+**Published Hashes (SHA256) — v0.5.0:**
 
 | Asset | SHA256 |
 |---|---|
-| `SoD2MapViewer.exe` (self-contained, ~126 MB) | `FBBA7FB7264688F47561B6B7A16333CDF2FAAFF64EEE361E09837CCEA0EE1FD4` |
-| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `86FBA4D85BDC05CB96303727FFAF249708B841F37041C7619FBFD0EE63977CC3` |
-| `SoD2MapViewer-framework-dependent.zip` | `18771BD1A22FE0D34F9F2497809904C29D88C8AD2653CF7F0896C0C80D202B0A` |
-| `SoD2MapViewer-framework-dependent-plain.zip` | `997FFD0E02C5DDE0C5E8786529BFF78401B23FB267CD22C060839854A371E05B` |
-| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `B76CAE97D6C44E439E9633FFBA075821C153896B3352A3CCD343581301DCC14D` |
+| `SoD2MapViewer.exe` (self-contained, ~126 MB) | `7549312AB43D0BC053A8B92983D6AAD7844C061A4B6D7DF7FDBB86DBC8B859C0` |
+| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `388650CEFF583B47C648EBEFD3D82B1F0590B60BACB64816CC178A28175617FB` |
+| `SoD2MapViewer-framework-dependent.zip` | `6A9062120E2A701C4D50941BFA9E34BD84FB518582E58979F15E07E033DA3B34` |
+| `SoD2MapViewer-framework-dependent-plain.zip` | `88479D1FF5E044C5A40BAAEC43D4B59C762D48676FBDEB350BF8E85045E3CC10` |
+| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `2F7C8CBC30F27EBFAF69C0CA7F3FCAED22D232EC80D1F1A81D0018E2301F8A2E` |
 
 Historisch: die framework-dependent Single-File-EXE von **v0.4.0** (`9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A`) wurde von 9 VirusTotal-Engines generisch gemeldet (Packer-Heuristik der Single-File-Apphosts).
 
