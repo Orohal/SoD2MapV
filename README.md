@@ -4,7 +4,7 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 
 <a href="https://www.buymeacoffee.com/Orohal" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-**Aktueller Stand: [v0.4.0](https://github.com/Orohal/SoD2MapV/releases/latest)** — Viewer + Voll-Editor + Fahrzeug-Injektion (GUI/CLI) + echte Karte als Hintergrund. Details: [Repo-Status](#repo-status) (eingeklappt).
+**Aktueller Stand: [v0.4.1](https://github.com/Orohal/SoD2MapV/releases/latest)** — Viewer + Voll-Editor + Fahrzeug-Injektion (GUI/CLI) + echte Karte als Hintergrund (auto-ausgerichtet). Details: [Repo-Status](#repo-status) (eingeklappt).
 
 ## Features
 
@@ -117,7 +117,8 @@ SoD2MapViewer.exe --saves
 <details>
 <summary><b>Repo-Status / Versionshistorie</b></summary>
 
-- **v0.4.0** — Echte Karte als Hintergrund (Wand-Tiles, pixelgenaue Projektion, `--wandcheck`); Fenstertitel zeigt Paketversion
+- **v0.4.1** — **Wand-Hintergrund auto-ausgerichtet**: Kachel-Offset kommt aus dem UMAP-Header (`WorldTileInfo.Position`, pro Karte); keine manuelle Kalibrierung mehr (`--wandrender` ohne Offsets testbar)
+- **v0.4.0** — Echte Karte als Hintergrund (Wand-Tiles, pixelgenaue Projektion, `--wandcheck`); Fenstertitel zeigt Paketversion; ungepackte Variante gegen Viren-FP
 - **v0.3.5** — Framework-abhängiger Build als Release-Asset; `--saves`; Auto-Template-Injektion
 - **v0.3.x** — **GUI-Injektion**: Rechtsklick → Fahrzeug in Live-Save (Kalibrierungs-Assistent, Auto-Backup, Spiel-läuft-Check, Sonden-Löschung); `--savedelete`
 - **Voll-Editor (Phase 3)** — Move/Rotate/Scale/Delete mit Undo, Export als Mod-`.pak` (eigener Pak-Writer)
@@ -134,13 +135,17 @@ Die gepackten Single-File-EXEs werden von einzelnen VirusTotal-Engines als gener
 
 **Wenn ungünstig:** Ordner-Variante ohne gepackte EXE nutzen — [SoD2MapViewer-framework-dependent-plain.zip](https://github.com/Orohal/SoD2MapV/releases/latest) (kleine EXE + DLLs, gleiche Funktion). Im eigenen Virenprogramm ggf. Ordner ausschließen.
 
-**Published Hashes (SHA256):**
+**Published Hashes (SHA256) — v0.4.1:**
 
 | Asset | SHA256 |
 |---|---|
-| `SoD2MapViewer.exe` (self-contained) | `5AEA735BE80C3E20F55D3BA55AB6BF9479C22941BA9A362246450FC806B2C803` |
-| `SoD2MapViewer.exe` in framework-dependent.zip (single-file) | `9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A` |
-| `SoD2MapViewer-framework-dependent-plain.zip` | `BF6D453E195DE211B4224473DBF448509320B3FC6F83EA8B924CF298571CC6E8` |
+| `SoD2MapViewer.exe` (self-contained) | `0A4AF301F084636C88AE1238D3AC767E396BBC2DEF698ECD71660572152ACBE7` |
+| `SoD2MapViewer.exe` in framework-dependent.zip (single-file) | `D392E7735C2150E4E7AB8D2CE7C0AC1E3015E1EA68456C29AF99B28C156F7510` |
+| `SoD2MapViewer-framework-dependent.zip` | `7471469D0BF045E19B08F6A29E9BD7829E8BA40DC6C931528336250E411C9B27` |
+| `SoD2MapViewer-framework-dependent-plain.zip` | `9723E70B14A5350FCA157FA4E358857BB708B667F9FBC57EBEC8D1CB005C3A2B` |
+| `SoD2MapViewer.exe` (ungepackt, 162 kB, in plain.zip) | `D335F40684CB9AD206A3D4370F4A419B6BBD64170819EBB588E454CF01D7F9C8` |
+
+Historisch: die framework-dependent Single-File-EXE von **v0.4.0** (`9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A`) wurde von 9 VirusTotal-Engines generisch gemeldet (Packer-Heuristik der Single-File-Apphosts).
 
 - Selbst bauen: `dotnet build app/SoD2MapViewer.csproj -c Release`
 - False-Positive melden (alle Engines): [Microsoft WDSI-Filesubmission](https://www.microsoft.com/wdsi/filesubmission); bei anderen Engines jeweils deren FP-Portal nutzen

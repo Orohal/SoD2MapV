@@ -1,0 +1,91 @@
+==========================================================================
+ SoD2MapV — Nexus Upload Vorlage (v0.4.0, plain variant)
+ Seite: https://www.nexusmods.com/stateofdecay2/mods/1732?tab=files
+ Datei: D:\tmp\Stateofmap\app\publish-framework-plain\SoD2MapViewer-framework-dependent-plain.zip (6.7 MB)
+==========================================================================
+
+--------------------------------------------------------------------------
+TEIL 1 — FILE UPLOAD FORMULAR
+--------------------------------------------------------------------------
+Version number:        0.4.0
+File name:             SoD2MapViewer-framework-dependent-plain.zip
+(upload über "Let Nexus staff review this file" anfordern,
+ falls es erneut quarantined wird)
+
+OPTIONAL DESCRIPTION (kleines Beschreibungsfeld bei "Add a description"):
+
+[size=3][b]SoD2MapViewer v0.4.0 — framework-dependent (unpacked variant)[/b][/size]
+
+[b]This is the unpacked/preferred variant for users whose antivirus flags
+single-file executables as a false positive.[/b]
+
+Extract anywhere and run [b]SoD2MapViewer.exe[/b]. Requires the
+[b].NET 10 Desktop Runtime (x64)[/b]:
+https://dotnet.microsoft.com/download/dotnet/10.0
+
+What's new in v0.4.0:
+[list][*]Real-world map background layer ("Wand map" checkbox) for
+Trumbull Valley / faustite maps, auto-aligned via the map provider's
+published projection. No manual calibration needed.
+[*]Window title now shows the actual version number.[/list]
+
+[b]SHA256 hashes[/b] (verify your download):
+[list][*]SoD2MapViewer-framework-dependent-plain.zip
+BF6D453E195DE211B4224473DBF448509320B3FC6F83EA8B924CF298571CC6E8
+[*]SoD2MapViewer.exe (inside, unpacked 162 kB exe)
+99EAB195956ECC56A13897C9D3FCFCCAE410353DFBC1B8C1AAD14688A9211681[/list]
+
+[b]Antivirus note:[/b] Some engines generically flag unsigned .NET
+single-file apps (packer heuristic — no actual detection). If your AV
+complains, verify the SHA256 hash above, add an exclusion, or file a
+false-positive report. Windows Defender reports no threat. The previous
+quarantined upload (SoD2MapViewer) could not be inspected.
+
+--------------------------------------------------------------------------
+TEIL 2 — CHANGELOG für die Versions-Historie (falls gefragt) — Kurzform
+--------------------------------------------------------------------------
+v0.4.0 — Real map background layer (Wand/WeMod tiles), auto-aligned;
+unpacked .NET variant for antivirus false-positive workaround;
+version number fix in window title.
+
+--------------------------------------------------------------------------
+TEIL 3 — MOD DESCRIPTION, zum ANHÄNGEN im Description-Tab ("Edit description")
+BBCode. Kurz halten und unter "CURRENT DEVELOPMENT STATUS" bzw. am Ende einfügen.
+--------------------------------------------------------------------------
+[size=4][b]v0.4.0 — Map Background Layer[/b][/size]
+
+[list=1][*][b]Real map background[/b] — new "Wand map" checkbox in the toolbar
+renders the actual in-game top-down map as a tile background behind the map
+objects (currently Trumbull Valley / faustite tiles).
+[*][b]Auto-aligned[/b] — the background is projected into true world
+coordinates using the map provider's published projection. No manual
+calibration needed.
+[*][b]Unpacked distribution variant[/b] —
+[url=https://github.com/Orohal/SoD2MapV/releases]SoD2MapViewer-framework-dependent-plain.zip[/url]
+(plain EXE + DLLs) for users whose antivirus flags the single-file builds.
+[*]Window title now shows the real version number instead of a hardcoded one.[/list]
+
+[size=3][b]Downloads & hash verification[/b][/size]
+
+All release assets, source code and SHA256 hashes of every published file:
+[url=https://github.com/Orohal/SoD2MapV/releases]GitHub Releases[/url]
+
+[size=3][b]Antivirus / false positives[/b][/size]
+
+Single-file .NET executables are generically flagged by a few antivirus
+engines (packer heuristic — no actual detection). This affects neither the
+unpacked variant nor the source build. Windows Defender reports no threat.
+Full hash table and reporting links:
+[url=https://github.com/Orohal/SoD2MapV#virenwarnung--false-positive]README — Antivirus section[/url]
+
+[size=3][b]Requirements[/b][/size]
+[list][*]Windows x64
+[*]A State of Decay 2 installation (the tool reads its .pak files read-only)
+[*].NET 10 Desktop Runtime x64 — bundled in the self-contained EXE variant[/list]
+
+--------------------------------------------------------------------------
+TEIL 4 — STATUS-ZEILE ERSETZEN (falls gewünscht)
+--------------------------------------------------------------------------
+Alt:  [b]Current version: v0.3.2[/b]
+Neu:  [b]Current version: v0.4.0[/b]
+==========================================================================

@@ -105,19 +105,28 @@ public sealed class MapLoader
 
         IPackage? package = null;
         UObject[] exports;
+        byte[]? pkgData = null;
         try
         {
             // SoD2's LZ4 entries use linked blocks (backrefs into the previous block's output),
             // which CUE4Parse cannot decode; decode ourselves and hand the bytes to a Package.
             if (provider[mapPath] is FPakEntry pe && Lz4Linked.NeedsLinkedDecode(pe))
             {
-                var data = Lz4Linked.Decode(provider, pe);
-                var uasset = new FByteArchive(mapPath, data, provider.Versions);
+                pkgData = Lz4Linked.Decode(provider, pe);
+                var uasset = new FByteArchive(mapPath, pkgData, provider.Versions);
                 package = new Package(uasset, null, null, null, provider, useLazySerialization: true);
             }
             else
             {
                 package = provider.LoadPackage(mapPath);
+                // raw bytes needed below for the WorldTileInfo offset (package header)
+                if (package != null && provider.TrySavePackage(mapPath, out var saved))
+                {
+                    foreach (var (p, d) in saved)
+                        if (string.Equals(p, mapPath, StringComparison.OrdinalIgnoreCase)
+                            || p.EndsWith(Path.GetFileName(mapPath), StringComparison.OrdinalIgnoreCase))
+                        { pkgData = d; break; }
+                }
             }
             exports = package.GetExports().ToArray();
         }
@@ -188,7 +197,38 @@ public sealed class MapLoader
             }
 
             model.LoadMs = sw.ElapsedMilliseconds;
+            ReadWorldTileOffset(mapPath, pkgData, provider.Versions, model);
             return model;
+    }
+
+    /// <summary>
+    /// Reads FWorldTileInfo.Position (FIntPoint X/Y, cm) from the package header: tiled world maps
+    /// store their actors with tile-local transforms; the true world position = local + this offset.
+    /// Location comes from the saved WorldTileInfoDataOffset (verified byte-exact against
+    /// faustite_x2_y3 = (49600, -99200)). Best-effort: never fails the map parse.
+    /// </summary>
+    private static void ReadWorldTileOffset(string name, byte[]? data, VersionContainer vc, MapModel model)
+    {
+        try
+        {
+            if (data == null) return;
+            var uasset = new FByteArchive(name, data, vc);
+            var ar = new CUE4Parse.UE4.Assets.Readers.FAssetArchive(uasset, null);
+            var s = new CUE4Parse.UE4.Objects.UObject.FPackageFileSummary(ar);
+            var off = s.WorldTileInfoDataOffset;
+            if (off <= 0 || off + 8 > data.Length) return;
+            var x = BitConverter.ToInt32(data, off);
+            var y = BitConverter.ToInt32(data, off + 4);
+            // sanity: a plausible tile world position (< 200 km, keeps garbage readings out)
+            if (Math.Abs(x) > 20_000_000 || Math.Abs(y) > 20_000_000) return;
+            model.WorldTileOffsetX = x;
+            model.WorldTileOffsetY = y;
+            model.HasWorldTileOffset = true;
+        }
+        catch
+        {
+            // header variants without tile info — ignore
+        }
     }
 
     public static bool TryGetComponentTransform(UObject comp, out FTransform tf)

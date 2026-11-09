@@ -46,6 +46,11 @@ public sealed class MapModel
     public long LoadMs;
     public int FailedExports;
     public int TotalExports;
+
+    /// <summary>WorldTileInfo.Position from the package header (tiled maps only): world = local + offset (cm).</summary>
+    public bool HasWorldTileOffset;
+    public int WorldTileOffsetX;   // cm
+    public int WorldTileOffsetY;   // cm
 }
 
 public static class ClassCategory

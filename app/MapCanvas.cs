@@ -42,6 +42,17 @@ namespace SoD2MapViewer;
         }
         private WandTileLayer? _wandLayer;
 
+        /// <summary>Shift (cm) applied to Wand tiles: the background tiles live in true world
+        /// coordinates, but tiled maps store their objects with tile-local transforms.
+        /// world = local + offset, so tiles are drawn at world − offset to match the canvas frame.
+        /// Set from MapModel.WorldTileOffset* after loading a map.</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public float WandWorldOffsetX { get; set; }  // cm, default 0
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public float WandWorldOffsetY { get; set; }  // cm
+
         private void OnWandTileLoaded()
         {
             try { if (IsHandleCreated) BeginInvoke(() => Invalidate()); } catch (ObjectDisposedException) { }
@@ -215,7 +226,8 @@ namespace SoD2MapViewer;
         int txMin = int.MaxValue, txMax = int.MinValue, tyMin = int.MaxValue, tyMax = int.MinValue;
         foreach (var c in corners)
         {
-            var (lng, lat) = WandTiles.LngLatFromWorld(c.X, c.Y);
+            // the tile request works in true world space; the canvas frame is local (= world − offset)
+            var (lng, lat) = WandTiles.LngLatFromWorld(c.X + WandWorldOffsetX, c.Y + WandWorldOffsetY);
             var latF = ClampF((float)lat, -maxLatDeg, maxLatDeg);
             var n = Math.Pow(2.0, z);
             var tx = (int)Math.Floor((lng + 180.0) / 360.0 * n);
@@ -236,7 +248,7 @@ namespace SoD2MapViewer;
                 WandLayer.EnsureLoaded(z, tx, ty);
                 continue;
             }
-            var pTL = WorldToScreen(tile.X0, tile.Y0);
+            var pTL = WorldToScreen(tile.X0 - WandWorldOffsetX, tile.Y0 - WandWorldOffsetY);
             var w = (tile.X1 - tile.X0) * _zoom;
             var h = (tile.Y1 - tile.Y0) * _zoom;
             if (pTL.X + w < -50 || pTL.Y + h < -50 || pTL.X > Width + 50 || pTL.Y > Height + 50) continue;

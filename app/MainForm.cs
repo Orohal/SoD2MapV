@@ -293,6 +293,9 @@ public sealed class MainForm : Form
     {
         _map = model;
         _undo.Clear();
+        // tiled maps store local object coords; the Wand tiles are in world coords → shift tiles
+        _canvas.WandWorldOffsetX = model.HasWorldTileOffset ? model.WorldTileOffsetX : 0;
+        _canvas.WandWorldOffsetY = model.HasWorldTileOffset ? model.WorldTileOffsetY : 0;
         var ok = model.Error == null;
         SetStatus(
             $"map: {Path.GetFileName(model.Path)}  |  exports: {model.TotalExports:N0}  objects: {model.Objects.Count:N0}  " +
