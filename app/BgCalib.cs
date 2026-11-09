@@ -12,21 +12,49 @@ public static class BgCalibTool
     public static int Cli(string[] args)
     {
         var gameDir = args.Length > 0 ? args[0] : @"D:\Games\State of Decay 2\StateOfDecay2";
-        var outFile = args.Length > 1 ? args[1] : @"D:\tmp\Stateofmap\bgcalib.txt";
+        var regionKey = args.Length > 1 ? args[1] : "trumbull-valley";
+        var outFile = args.Length > 2 ? args[2] : @"D:\tmp\Stateofmap\bgcalib.txt";
 
-        var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "SoD2MapViewer", "wandtiles");
-        var region = WandRegions.TrumbullValley;
+        var region = WandRegions.FromKey(regionKey);
+        if (region == null) { Console.Error.WriteLine($"unknown region '{regionKey}'"); return 2; }
         var baseUrl = region.BaseTilePath;
         var segs = baseUrl.Split('/', StringSplitOptions.RemoveEmptyEntries);
         var guid = segs[Array.LastIndexOf(segs, "maps") + 1];
+        var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "SoD2MapViewer", "wandtiles");
+        Directory.CreateDirectory(cache);
+
+        const int n = 32;
+        const int R = 7;
+
+        // Count already-cached tiles for this region
+        var existingTiles = Directory.GetFiles(cache, $"{guid}_5_*.webp");
+        int cx, cy;
+        if (existingTiles.Length < 10)
+        {
+            // No cached tiles: scan the whole z5 grid (most 404, but the map tiles will succeed)
+            cx = 16; cy = 16; // unused, full scan below
+        }
+        else
+        {
+            // Use bounding-box center of cached tiles
+            var xs = existingTiles.Select(f => int.Parse(Path.GetFileNameWithoutExtension(f).Split('_')[^2])).ToList();
+            var ys = existingTiles.Select(f => int.Parse(Path.GetFileNameWithoutExtension(f).Split('_')[^1])).ToList();
+            cx = (int)Math.Round(xs.Average());
+            cy = (int)Math.Round(ys.Average());
+        }
 
         using (var http = new System.Net.Http.HttpClient())
         {
             int dl = 0;
-            for (int x = 8; x <= 17; x++)
-            for (int y = 13; y <= 20; y++)
+            int xStart = existingTiles.Length < 10 ? 0 : cx - R;
+            int xEnd = existingTiles.Length < 10 ? 31 : cx + R;
+            int yStart = existingTiles.Length < 10 ? 0 : cy - R;
+            int yEnd = existingTiles.Length < 10 ? 31 : cy + R;
+            for (int x = xStart; x <= xEnd; x++)
+            for (int y = yStart; y <= yEnd; y++)
             {
+                if (x < 0 || y < 0 || x >= n || y >= n) continue;
                 var cacheFile = Path.Combine(cache, $"{guid}_5_{x}_{y}.webp");
                 if (File.Exists(cacheFile)) continue;
                 try
@@ -42,10 +70,10 @@ public static class BgCalibTool
 
         var tileFiles = Directory.GetFiles(cache, "*.webp")
             .Select(p => new { Path = p, Name = Path.GetFileNameWithoutExtension(p) })
-            .Select(t => { var parts = t.Name.Split('_'); return new { t.Path, Z = int.Parse(parts[^3]), X = int.Parse(parts[^2]), Y = int.Parse(parts[^1]) }; })
-            .Where(t => t.Z == 5)
+            .Select(t => { var parts = t.Name.Split('_'); return new { t.Path, Z = int.Parse(parts[^3]), X = int.Parse(parts[^2]), Y = int.Parse(parts[^1]), Guid = string.Join("_", parts[..^3]) }; })
+            .Where(t => t.Z == 5 && t.Guid == guid)
             .ToList();
-        Console.WriteLine($"[bgcalib] cached z5 tiles: {tileFiles.Count}");
+        Console.WriteLine($"[bgcalib] cached z5 tiles for {region.Key}: {tileFiles.Count}");
 
         double tMinX = double.MaxValue, tMaxX = double.MinValue, tMinY = double.MaxValue, tMaxY = double.MinValue;
         var tileData = new List<(int W, int H, Rgba32[] Pixels, double X0, double Y0, double X1, double Y1)>();
@@ -126,7 +154,7 @@ public static class BgCalibTool
         foreach (var s in scaleCandidates) scalePairs.Add((s, s));
         scalePairs.Add((1.550, 1.571));
 
-        double globalBestIou = -1, globalBestOx = 0, globalBestOy = 0, globalBestSx = 1.55, globalBestSy = 1.571;
+        double globalBestIou = -1, globalBestOx = 0, globalBestOy = 0, globalBestSx = 1.6, globalBestSy = 1.6;
 
         foreach (var (scx, scy) in scalePairs)
         {
@@ -158,10 +186,9 @@ public static class BgCalibTool
                 globalBestIou = bestIou; globalBestOx = bestOx; globalBestOy = bestOy;
                 globalBestSx = scx; globalBestSy = scy;
             }
-            Console.WriteLine($"[bgcalib] scale ({scx:F3},{scy:F3}): best ox={bestOx:F0} oy={bestOy:F0} IoU={bestIou:F4}");
+            Console.WriteLine($"[bgcalib] {region.Key} scale ({scx:F3},{scy:F3}): best ox={bestOx:F0} oy={bestOy:F0} IoU={bestIou:F4}");
         }
 
-        // refine offset for best scale
         double rsx = globalBestSx, rsy = globalBestSy;
         double bestIou2 = globalBestIou, bestOx2 = globalBestOx, bestOy2 = globalBestOy;
         for (double ox = globalBestOx - 5000; ox <= globalBestOx + 5000; ox += 500)
@@ -185,14 +212,15 @@ public static class BgCalibTool
             double iou = union > 0 ? (double)inter / union : 0;
             if (iou > bestIou2) { bestIou2 = iou; bestOx2 = ox; bestOy2 = oy; }
         }
-        Console.WriteLine($"[bgcalib] GLOBAL best: scale=({globalBestSx:F3},{globalBestSy:F3}) ox={bestOx2:F0} oy={bestOy2:F0} IoU={bestIou2:F4}");
+        Console.WriteLine($"[bgcalib] {region.Key} GLOBAL best: scale=({globalBestSx:F3},{globalBestSy:F3}) ox={bestOx2:F0} oy={bestOy2:F0} IoU={bestIou2:F4}");
 
-        File.WriteAllText(outFile,
-            $"# BgCalib result (Trumbull Valley)\n" +
+        var regionOut = outFile.Replace(".txt", "") + "-" + region.Key + ".txt";
+        File.WriteAllText(regionOut,
+            $"# BgCalib result ({region.Display})\n" +
             $"# best scale sx={globalBestSx:F3} sy={globalBestSy:F3}\n" +
             $"# best offset (cm): ox={bestOx2:F0} oy={bestOy2:F0}  IoU={bestIou2:F4}\n" +
             $"# interpretation: world = widget * scale + offset\n");
-        Console.WriteLine($"[bgcalib] wrote {outFile}");
+        Console.WriteLine($"[bgcalib] wrote {regionOut}");
         return 0;
     }
 }

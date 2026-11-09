@@ -40,11 +40,12 @@ public static class BgCalib
 {
     public static readonly Dictionary<string, (double SX, double SY, double OX, double OY)> Regions = new()
     {
-        ["trumbull-valley"]     = (1.600, 1.600, 130000, -70000),
-        ["cascade-hills"]       = (1.550, 1.571, 0, 0),
-        ["drucker-county"]      = (1.550, 1.571, 0, 0),
-        ["meagher-valley"]      = (1.550, 1.571, 0, 0),
-        ["providence-ridge"]    = (1.550, 1.571, 0, 0),
+        // trumbull: user-verified via interactive drag (override file); others: auto-calibrated vs Wand z5 tiles (IoU ~0.7-0.99)
+        ["trumbull-valley"]     = (1.600, 1.600, 40987, 397897),
+        ["cascade-hills"]       = (1.650, 1.650, 75000, -11000),
+        ["drucker-county"]      = (1.450, 1.450, 141500, 175000),
+        ["meagher-valley"]      = (1.540, 1.540, 205000, -205000),
+        ["providence-ridge"]    = (1.620, 1.620, -81000, -6000),
     };
 
     static BgCalib()
