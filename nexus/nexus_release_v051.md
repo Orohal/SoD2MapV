@@ -1,17 +1,17 @@
-# SoD2MapViewer v0.5.1 — Nexus-Release-Notizen (nur Änderungen)
+# SoD2MapViewer v0.5.1 — Nexus Release Notes (changes only)
 
-[size=3][b]SoD2MapViewer v0.5.1 — Was ist neu[/b][/size]
+[size=3][b]SoD2MapViewer v0.5.1 — What's new[/b][/size]
 
-[b]Entfernt[/b]
-[list][*]WeMod/Wand-Kachel-Hintergrund (CDN-Abhängigkeit) samt Kachel-Layer,
+[b]Removed[/b]
+[list][*]WeMod/Wand tile background (CDN dependency) including the tile layer,
 [c]--wandcheck[/c], [c]--wandrender[/c], [c]--fancalib[/c].
-[*]Die eigene Vektor-Basemap (aus den Ingame-[i]MapBackgroundData[/i]-Assets)
-bleibt die verlässliche Offline-Basis.[/list]
+[*]The custom vector basemap (rendered from the game's own [i]MapBackgroundData[/i] assets)
+remains the reliable offline base.[/list]
 
-[b]Behoben[/b]
-[list][*]Regionserkennung für Trumbull-Kartenpfade ([c]maps/trumbull_valley/[/c]).[/list]
+[b]Fixed[/b]
+[list][*]Region detection for Trumbull map paths ([c]maps/trumbull_valley/[/c]).[/list]
 
-[b]Hinweis zu v0.5.0 (Basisfunktionen)[/b]
-[list][*]Eigene Vektor-Basemap (offline, alle 5 Regionen), Drag-Kalibrierung
-(„Vector map (asset)" + „Edit base-map pos"), CLI [c]--bgrender[/c]/[c]--bgset[/c],
+[b]Note on v0.5.0 (base features)[/b]
+[list][*]Custom vector basemap (offline, all 5 regions), drag calibration
+("Vector map (asset)" + "Edit base-map pos"), CLI [c]--bgrender[/c]/[c]--bgset[/c],
 [c]--maptex LIST/DUMP/PROPS/JSON[/c].[/list]
