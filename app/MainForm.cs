@@ -14,7 +14,7 @@ public sealed class MainForm : Form
     private readonly MapLoader _loader = new();
     private static readonly string DefaultGameDir = @"D:\Games\State of Decay 2\StateOfDecay2";
 
-    private readonly ListBox _mapList;
+    private readonly TreeView _mapTree;
     private readonly DataGridView _grid;
     private readonly MapCanvas _canvas;
     private readonly TextBox _search;
@@ -69,10 +69,22 @@ public sealed class MainForm : Form
             }
         };
 
-        // left: map filter + map list + legend
+        // left: map filter + map list (grouped by region, collapsible) + legend
         var left = new Panel { Dock = DockStyle.Fill };
-        _mapList = new ListBox { Dock = DockStyle.Fill, Font = new Font("Consolas", 9f) };
-        _mapList.SelectedIndexChanged += MapListSelected;
+        _mapTree = new TreeView
+        {
+            Dock = DockStyle.Fill,
+            Font = new Font("Consolas", 9f),
+            BackColor = Color.FromArgb(30, 32, 38),
+            ForeColor = Color.Gainsboro,
+            LineColor = Color.FromArgb(90, 95, 110),
+            BorderStyle = BorderStyle.None,
+            HideSelection = false,
+            ShowPlusMinus = true,
+            ShowRootLines = true,
+            FullRowSelect = true,
+        };
+        _mapTree.AfterSelect += MapTreeSelected;
         _legendHost = new Panel { Dock = DockStyle.Bottom, Height = 180, BackColor = Color.FromArgb(32, 34, 40) };
         _mapFilter = new TextBox
         {
@@ -81,7 +93,7 @@ public sealed class MainForm : Form
         };
         _mapFilter.TextChanged += (s, e) => ApplyMapFilter();
 
-        left.Controls.Add(_mapList);
+        left.Controls.Add(_mapTree);
         left.Controls.Add(_legendHost);
         left.Controls.Add(_mapFilter);
 
@@ -262,15 +274,71 @@ public sealed class MainForm : Form
     private void ApplyMapFilter()
     {
         var f = _mapFilter.Text?.Trim() ?? "";
-        _mapList.BeginUpdate();
-        _mapList.Items.Clear();
-        foreach (var m in _loader.MapPaths)
+        _mapTree.BeginUpdate();
+        try
         {
-            if (f.Length == 0 || m.Contains(f, StringComparison.OrdinalIgnoreCase))
-                _mapList.Items.Add(m);
+            _mapTree.Nodes.Clear();
+
+            var filtered = _loader.MapPaths
+                .Where(m => f.Length == 0 || m.Contains(f, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            // Group by region (known regions first, in MapRegions.All order, then "Other")
+            var groups = new Dictionary<string, (string label, List<string> maps)>(StringComparer.OrdinalIgnoreCase);
+            foreach (var r in MapRegions.All)
+                groups[r.Key] = (r.Display, new List<string>());
+            const string otherKey = "__other__";
+            groups[otherKey] = ("Other", new List<string>());
+
+            foreach (var m in filtered)
+            {
+                var region = MapRegions.FromMapPath(m);
+                var key = region?.Key ?? otherKey;
+                if (!groups.TryGetValue(key, out var g))
+                    g = groups[otherKey];
+                g.maps.Add(m);
+            }
+
+            int shown = 0;
+            // Add known regions in order, then Other
+            foreach (var r in MapRegions.All)
+            {
+                if (!groups.TryGetValue(r.Key, out var g) || g.maps.Count == 0) continue;
+                var node = new TreeNode($"{g.label} ({g.maps.Count})")
+                {
+                    ForeColor = Color.FromArgb(255, 220, 150),
+                    NodeFont = new Font(_mapTree.Font, FontStyle.Bold),
+                };
+                foreach (var m in g.maps)
+                {
+                    node.Nodes.Add(new TreeNode(m) { Tag = m });
+                    shown++;
+                }
+                _mapTree.Nodes.Add(node);
+                if (f.Length > 0) node.Expand();
+            }
+            if (groups.TryGetValue(otherKey, out var other) && other.maps.Count > 0)
+            {
+                var node = new TreeNode($"{other.label} ({other.maps.Count})")
+                {
+                    ForeColor = Color.FromArgb(180, 180, 180),
+                    NodeFont = new Font(_mapTree.Font, FontStyle.Bold),
+                };
+                foreach (var m in other.maps)
+                {
+                    node.Nodes.Add(new TreeNode(m) { Tag = m });
+                    shown++;
+                }
+                _mapTree.Nodes.Add(node);
+                if (f.Length > 0) node.Expand();
+            }
+
+            SetStatus($"maps shown: {shown:N0} / {_loader.MapPaths.Count:N0}");
         }
-        _mapList.EndUpdate();
-        SetStatus($"maps shown: {_mapList.Items.Count:N0} / {_loader.MapPaths.Count:N0}");
+        finally
+        {
+            _mapTree.EndUpdate();
+        }
     }
 
     private void PickGameDir()
@@ -287,9 +355,9 @@ public sealed class MainForm : Form
         }
     }
 
-    private async void MapListSelected(object? sender, EventArgs e)
+    private async void MapTreeSelected(object? sender, TreeViewEventArgs e)
     {
-        if (_mapList.SelectedItem is not string path) return;
+        if (e.Node?.Tag is not string path) return; // group nodes have no Tag
         SetStatus($"parsing {Path.GetFileName(path)} ...");
         var model = await _loader.LoadMapAsync(path);
         SetMap(model);
