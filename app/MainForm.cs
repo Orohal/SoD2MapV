@@ -26,7 +26,6 @@ public sealed class MainForm : Form
     private List<MapObject> _visible = new();
     private readonly TextBox _mapFilter;
     private readonly CheckBox _chkEdit;
-    private CheckBox _chkWand = null!;
     private CheckBox _chkFandom = null!;
     private CheckBox _chkBg = null!;
     private CheckBox _chkEditBg = null!;
@@ -168,15 +167,13 @@ public sealed class MainForm : Form
         btnExport.Click += (s, e) => ExportModPak();
         var btnInject = new Button { Text = "Inject vehicle...", AutoSize = true, Height = 30 };
         btnInject.Click += (s, e) => OpenInjectDialog(null);
-        _chkWand = new CheckBox { Text = "Wand map", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
-        _chkWand.CheckedChanged += (s, e) => ToggleWandLayer();
         _chkFandom = new CheckBox { Text = "Fandom map (offline)", AutoSize = true, Checked = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkFandom.CheckedChanged += (s, e) => { _canvas.ShowFandomBase = _chkFandom.Checked; _canvas.Invalidate(); };
         _chkBg = new CheckBox { Text = "Vector map (asset)", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkBg.CheckedChanged += (s, e) => { _canvas.ShowBgBase = _chkBg.Checked; _canvas.Invalidate(); };
         _chkEditBg = new CheckBox { Text = "Edit base-map pos", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkEditBg.CheckedChanged += (s, e) => { _canvas.EditBgOffset = _chkEditBg.Checked; _canvas.Invalidate(); };
-        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit, btnExport, btnInject, _chkWand, _chkFandom, _chkBg, _chkEditBg });
+        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit, btnExport, btnInject, _chkFandom, _chkBg, _chkEditBg });
         top.Controls.Add(flow);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
 
@@ -303,13 +300,13 @@ public sealed class MainForm : Form
         _map = model;
         _undo.Clear();
         // tiled maps store local object coords; the Wand tiles are in world coords → shift tiles
-        _canvas.WandWorldOffsetX = model.HasWorldTileOffset ? model.WorldTileOffsetX : 0;
-        _canvas.WandWorldOffsetY = model.HasWorldTileOffset ? model.WorldTileOffsetY : 0;
+        _canvas.MapWorldOffsetX = model.HasWorldTileOffset ? model.WorldTileOffsetX : 0;
+        _canvas.MapWorldOffsetY = model.HasWorldTileOffset ? model.WorldTileOffsetY : 0;
         // select the matching Wand background region from the map path (folder codename)
-        _canvas.WandRegion = WandRegions.FromMapPath(model.Path);
+        _canvas.MapRegion = MapRegions.FromMapPath(model.Path);
         // vector basemap renders from the game paks — provider available after open
         _canvas.BgSource = _loader.Provider;
-        var bgRegion = _canvas.WandRegion ?? WandRegions.TrumbullValley;
+        var bgRegion = _canvas.MapRegion ?? MapRegions.TrumbullValley;
         var ok = model.Error == null;
         var bgMap = BgMaps.Get(_loader.Provider, bgRegion, 1800);
         if (bgMap != null)
@@ -468,27 +465,6 @@ public sealed class MainForm : Form
 
     private void OpenInjectDialog(System.Drawing.PointF? worldCm) =>
         new InjectDialog(worldCm).ShowDialog(this);
-
-    private WandTileLayer? _wandLayer;
-
-    private void ToggleWandLayer()
-    {
-        if (_chkWand.Checked)
-        {
-            _wandLayer ??= new WandTileLayer();
-            _canvas.WandLayer = _wandLayer;
-            var region = _canvas.WandRegion ?? WandRegions.TrumbullValley;
-            if (region == WandRegions.TrumbullValley)
-                _status.Text = $"Wand-Karte aktiv: {region.Display} — Tiles laden im Hintergrund.";
-            else
-                _status.Text = $"Wand-Karte aktiv: {region.Display} — Tiles laden im Hintergrund.";
-        }
-        else
-        {
-            _canvas.WandLayer = null;
-            _status.Text = "Wand-Karte aus.";
-        }
-    }
 
     private void ExportModPak()    {
         if (_map == null || _map.Error != null)

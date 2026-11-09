@@ -62,21 +62,9 @@ internal static class Program
             Console.WriteLine($"[bgset] {reg}: sx={sx} sy={sy} ox={ox} oy={oy}  -> {BgCalib.OverridePath()}");
             return 0;
         }
-        if (args.Length >= 1 && args[0] == "--bgcalib")
-        {
-            try { return BgCalibTool.Cli(args.Length > 1 ? args[1..] : Array.Empty<string>()); }
-            catch (Exception e) { Console.Error.WriteLine(e); return 2; }
-        }
         if (args.Length >= 1 && args[0] == "--bgrender")
         {
             try { return BgMaps.Cli(args.Length > 1 ? args[1..] : Array.Empty<string>()); }
-            catch (Exception e) { Console.Error.WriteLine(e); return 2; }
-        }
-        if (args.Length >= 1 && args[0] == "--fancalib")
-        {
-            // offline calibration tool: fit the embedded fandom basemap to the world-anchored
-            // Wand z4 tiles of a region (downloads tiles into the app cache once, then matches)
-            try { return Fancalib.Run(args); }
             catch (Exception e) { Console.Error.WriteLine(e); return 2; }
         }
         if (args.Length >= 1 && args[0] == "--save")
@@ -105,155 +93,6 @@ internal static class Program
             }
             return 0;
         }
-        if (args.Length >= 1 && args[0] == "--wandcheck")
-        {
-            // projection self-test: convert world meters -> tile coords, download + decode that tile
-            var inv = System.Globalization.CultureInfo.InvariantCulture;
-            var (mx, my) = (double.Parse(args[1], inv), double.Parse(args[2], inv));
-            var regCheck = (args.Length > 3 ? WandRegions.FromKey(args[3]) : null) ?? WandRegions.TrumbullValley;
-            foreach (var z in new[] { WandTiles.MaxZoom, WandTiles.MinZoom })
-            {
-                var (lng, lat) = WandTiles.LngLatFromWorld(regCheck, mx * 100, my * 100);
-                var n = Math.Pow(2.0, z);
-                var tx = (int)Math.Floor((lng + 180.0) / 360.0 * n);
-                var ty = (int)Math.Floor((1.0 - Math.Log(Math.Tan(Math.PI / 4.0 + lat * Math.PI / 360.0)) / Math.PI) / 2.0 * n);
-                var rect = WandTiles.TileWorldRect(regCheck, z, tx, ty);
-                Console.WriteLine($"[wandcheck:{regCheck.Key}] z{z} tile {tx},{ty}  lng/lat {lng:F4}/{lat:F4}  world rect ({rect.X0:F0},{rect.Y0:F0})..({rect.X1:F0},{rect.Y1:F0}) cm");
-                var layer = new WandTileLayer();
-                layer.SetRegion(regCheck);
-                layer.EnsureLoaded(z, tx, ty);
-                WandTileLayer.Tile? tile = null;
-                for (var i = 0; i < 100 && tile == null; i++) { System.Threading.Thread.Sleep(200); tile = layer.Peek(z, tx, ty); }
-                if (tile?.Bitmap == null) { Console.WriteLine("[wandcheck] tile missing/download failed"); continue; }
-                var outPath = Path.Combine(Path.GetTempPath(), $"wandcheck_z{z}_{tx}_{ty}.png");
-                tile.Bitmap.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
-                Console.WriteLine($"[wandcheck] decoded {tile.Bitmap.Width}x{tile.Bitmap.Height} -> {outPath}");
-            }
-            return 0;
-        }
-        if (args.Length >= 1 && args[0] == "--wandrender")
-        {
-            // Alignment test: parse a faustite tile umap headlessly and render Wand background tiles
-            // underneath the object positions — shows directly whether save/umap coords match the real map.
-            // Usage: --wandrender <gameDir> <chapterObjekt> <out.png> [zoom]
-            var gameDir = args[1];
-            var mapFilter = args[2];
-            var outPng = args[3];
-            var zoomLevel = args.Length > 4 && int.TryParse(args[4], out var zl) ? zl : 5;
-
-            var loader2 = new MapLoader();
-            var res2 = loader2.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
-            var mapPath = loader2.MapPaths.FirstOrDefault(p => p.Contains(mapFilter) && !p.Contains("LOD"));
-            if (mapPath == null) { Console.Error.WriteLine($"[wandrender] no map matching '{mapFilter}'"); return 1; }
-            Console.WriteLine($"[wandrender] {mapPath}");
-            var model2 = MapLoader.ParseMap(loader2.Provider, mapPath);
-            var withPos2 = model2.Objects.Where(o => o.HasTransform).ToList();
-            Console.WriteLine($"[wandrender] objects={model2.Objects.Count} withPos={withPos2.Count}");
-            if (withPos2.Count == 0) return 1;
-
-            // collect everything needed for the bg download
-            float minX = withPos2.Min(o => o.X), maxX = withPos2.Max(o => o.X);
-            float minY = withPos2.Min(o => o.Y), maxY = withPos2.Max(o => o.Y);
-            var pad = 20000f;
-            var (wminX, wminY) = (minX - pad, minY - pad);
-            var (wmaxX, wmaxY) = (maxX + pad, maxY + pad);
-            float wMinX = wminX, wMinY = wminY, wMaxX = wmaxX, wMaxY = wmaxY;
-            Console.WriteLine($"[wandrender] world span = ({minX / 100:F0}..{maxX / 100:F0}, {minY / 100:F0}..{maxY / 100:F0}) m");
-            // local->world tile offset in meters: default = WorldTileInfo.Position from the header (auto-align)
-            float offXm = args.Length > 6 ? float.Parse(args[6], System.Globalization.CultureInfo.InvariantCulture)
-                          : (model2.HasWorldTileOffset ? model2.WorldTileOffsetX / 100f : 0f);
-            float offYm = args.Length > 7 ? float.Parse(args[7], System.Globalization.CultureInfo.InvariantCulture)
-                          : (model2.HasWorldTileOffset ? model2.WorldTileOffsetY / 100f : 0f);
-            Console.WriteLine($"[wandrender] applying local->world offset = ({offXm}, {offYm}) m" +
-                (model2.HasWorldTileOffset ? " (auto from WorldTileInfo)" : " (no WorldTileInfo!)"));
-            minX += offXm * 100; maxX += offXm * 100; minY += offYm * 100; maxY += offYm * 100;
-            var scale = args.Length > 5 ? float.Parse(args[5], System.Globalization.CultureInfo.InvariantCulture) : 0.08f; // px per cm
-            var spanX = wmaxX - wminX;
-            var spanY = wmaxY - wminY;
-            var maxSpan = Math.Max(spanX, spanY);
-            if (maxSpan <= 0) { Console.Error.WriteLine("[wandrender] empty span"); return 1; }
-            if (maxSpan * scale > 4000) scale = 4000f / maxSpan; // clamp output size
-            var pxW = (int)(spanX * scale);
-            var pxH = (int)(spanY * scale);
-            using var bmp = new System.Drawing.Bitmap(pxW, pxH);
-            using var g = System.Drawing.Graphics.FromImage(bmp);
-            g.Clear(System.Drawing.Color.FromArgb(32, 28, 28));
-
-            var layer2 = new WandTileLayer();
-            var regRender = args.Length > 8
-                ? (WandRegions.FromKey(args[8]) ?? WandRegions.FromMapPath(mapPath))
-                : (WandRegions.FromMapPath(mapPath) ?? WandRegions.TrumbullValley);
-            layer2.SetRegion(regRender);
-            Console.WriteLine($"[wandrender] Wand region = {regRender} ({regRender.Key})");
-            // request tiles for the rect
-            int n = 1 << zoomLevel;
-            var (lngA, latA) = WandTiles.LngLatFromWorld(regRender, wminX, wminY);
-            var (lngB, latB) = WandTiles.LngLatFromWorld(regRender, wmaxX, wmaxY);
-            int txA = (int)Math.Floor((Math.Min(lngA, lngB) + 180) / 360 * n), txB = (int)Math.Floor((Math.Max(lngA, lngB) + 180) / 360 * n);
-            double MercNorm(double latDeg) { latDeg = Math.Clamp(latDeg, -85, 85); return (1 - Math.Log(Math.Tan(Math.PI / 4 + latDeg * Math.PI / 360.0)) / Math.PI) / 2; }
-            int tyA = (int)Math.Floor(MercNorm(Math.Min(latA, latB)) * n), tyB = (int)Math.Floor(MercNorm(Math.Max(latA, latB)) * n);
-            var txLo = Math.Min(txA, txB); var txHi = Math.Max(txA, txB);
-            var tyLo = Math.Min(tyA, tyB); var tyHi = Math.Max(tyA, tyB);
-            for (int tx = txLo; tx <= txHi; tx++)
-                for (int ty = tyLo; ty <= tyHi; ty++)
-                    layer2.EnsureLoaded(zoomLevel, tx, ty);
-            Console.WriteLine($"[wandrender] tile rect z{zoomLevel}: x {txLo}..{txHi}, y {tyLo}..{tyHi}");
-            // wait for tiles
-            for (int pass = 0; pass < 150; pass++)
-            {
-                Task.Delay(200).Wait();
-                bool allDone = true;
-                for (int tx = txLo; tx <= txHi && allDone; tx++)
-                    for (int ty = tyLo; ty <= tyHi && allDone; ty++)
-                        if (layer2.Peek(zoomLevel, tx, ty) == null) allDone = false;
-                if (allDone) break;
-            }
-            int have = 0, miss = 0;
-            for (int tx = txLo; tx <= txHi; tx++)
-                for (int ty = tyLo; ty <= tyHi; ty++)
-                {
-                    var t = layer2.Peek(zoomLevel, tx, ty);
-                    if (t == null) { miss++; Console.WriteLine($"[wandrender] miss z{zoomLevel}/{tx}/{ty}"); }
-                    else have++;
-                }
-            Console.WriteLine($"[wandrender] tiles: have={have} miss={miss}");
-            // draw tiles (world y up -> flip on screen)
-            Func<double, int> XOf = w => (int)((w - wminX) * scale);
-            Func<double, int> YOf = w => (int)((wmaxY - w) * scale);
-            for (int tx = txLo; tx <= txHi; tx++)
-                for (int ty = tyLo; ty <= tyHi; ty++)
-                {
-                    var t = layer2.Peek(zoomLevel, tx, ty);
-                    if (t == null) continue;
-                    var rx = XOf(t.X0); var rw = XOf(t.X1) - XOf(t.X0);
-                    var ry = YOf(t.Y0); var rh = YOf(t.Y1) - YOf(t.Y0);
-                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
-                    g.DrawImage(t.Bitmap, rx, ry, rw, rh);
-                }
-            // draw objects
-            using var objPen = new System.Drawing.Pen(System.Drawing.Color.Lime);
-            using var f = new System.Drawing.Font("Arial", 8);
-            foreach (var o in withPos2)
-            {
-                var X = XOf(o.X + offXm * 100);
-                var Y = YOf(o.Y + offYm * 100);
-                g.DrawRectangle(objPen, X - 2, Y - 2, 4, 4);
-            }
-            var bigObjs = withPos2.Where(o => o.Name.Contains("Base_Tiny", StringComparison.OrdinalIgnoreCase) || o.Name.Contains("parking", StringComparison.OrdinalIgnoreCase)).ToList();
-            foreach (var o in bigObjs)
-            {
-                var X = XOf(o.X + offXm * 100);
-                var Y = YOf(o.Y + offYm * 100);
-                g.FillEllipse(System.Drawing.Brushes.Red, X - 5, Y - 5, 10, 10);
-                g.DrawString(o.Name, f, System.Drawing.Brushes.Red, X + 6, Y);
-            }
-            bmp.Save(outPng, System.Drawing.Imaging.ImageFormat.Png);
-            Console.WriteLine($"[wandrender] {outPng} ({pxW}x{pxH}, objects drawn)");
-            // print coordinate sanity
-            var (lngNow, latNow) = WandTiles.LngLatFromWorld(regRender, (minX + maxX) / 2, (minY + maxY) / 2);
-            Console.WriteLine($"[wandrender] center world = ({(minX + maxX) / 100:F1}, {(minY + maxY) / 100:F1}) m -> lng/lat {lngNow:F4}/{latNow:F4}");
-            return 0;
-        }
         if (args.Length >= 1 && args[0] == "--fandomrender")
         {
             // fully offline render: embedded fandom basemap + parsed objects — verifies the
@@ -272,7 +111,7 @@ internal static class Program
             var withPos3 = model3.Objects.Where(o => o.HasTransform).ToList();
             Console.WriteLine($"[fandomrender] objects={model3.Objects.Count} withPos={withPos3.Count}");
             if (withPos3.Count == 0) return 1;
-            var region3 = WandRegions.FromMapPath(mapPath3) ?? WandRegions.TrumbullValley;
+            var region3 = MapRegions.FromMapPath(mapPath3) ?? MapRegions.TrumbullValley;
             var fMap3 = FandomMaps.For(region3);
             if (fMap3 == null) { Console.Error.WriteLine($"[fandomrender] no fandom map for {region3.Key}"); return 1; }
             var fan3 = FandomMaps.GetBitmap(fMap3);

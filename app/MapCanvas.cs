@@ -27,37 +27,21 @@ namespace SoD2MapViewer;
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public EditMode Mode { get; set; } = EditMode.Move;
 
-        /// <summary>Optional background layer with the real in-game map (Wand tiles); null = hidden.</summary>
-        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public WandTileLayer? WandLayer
-        {
-            get => _wandLayer;
-            set
-            {
-                if (_wandLayer != null) _wandLayer.Updated -= OnWandTileLoaded;
-                _wandLayer = value;
-                if (_wandLayer != null) _wandLayer.Updated += OnWandTileLoaded;
-                Invalidate();
-            }
-        }
-        private WandTileLayer? _wandLayer;
-
-        /// <summary>Shift (cm) applied to Wand tiles: the background tiles live in true world
+        /// <summary>Shift (cm) applied to the background basemaps: the basemaps live in true world
         /// coordinates, but tiled maps store their objects with tile-local transforms.
-        /// world = local + offset, so tiles are drawn at world − offset to match the canvas frame.
+        /// world = local + offset, so basemaps are drawn at world − offset to match the canvas frame.
         /// Set from MapModel.WorldTileOffset* after loading a map.</summary>
         [System.ComponentModel.Browsable(false)]
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        public float WandWorldOffsetX { get; set; }  // cm, default 0
+        public float MapWorldOffsetX { get; set; }  // cm, default 0
         [System.ComponentModel.Browsable(false)]
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        public float WandWorldOffsetY { get; set; }  // cm
+        public float MapWorldOffsetY { get; set; }  // cm
 
-        /// <summary>Wand region matching the currently loaded map (null = keep last / Trumbull).
-        /// The tile layer follows this on the next repaint and drops its old-region tiles.</summary>
+        /// <summary>Region matching the currently loaded map (null = keep last / Trumbull).</summary>
         [System.ComponentModel.Browsable(false)]
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        public WandRegion? WandRegion { get; set; }
+        public MapRegion? MapRegion { get; set; }
 
         /// <summary>Draw the embedded fandom basemap (offline, no network) beneath the map graphics.</summary>
         [System.ComponentModel.Browsable(false)]
@@ -88,11 +72,6 @@ namespace SoD2MapViewer;
         [System.ComponentModel.Browsable(false)]
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public CUE4Parse.FileProvider.DefaultFileProvider? BgSource { get; set; }
-
-        private void OnWandTileLoaded()
-        {
-            try { if (IsHandleCreated) BeginInvoke(() => Invalidate()); } catch (ObjectDisposedException) { }
-        }
 
         public event Action<int>? SelectionChanged; // index of selected object, -1 = none
 
@@ -240,10 +219,10 @@ namespace SoD2MapViewer;
         if (BgSource == null) return;
         try
         {
-            var region = WandRegion ?? WandRegions.TrumbullValley;
+            var region = MapRegion ?? MapRegions.TrumbullValley;
             var bm = BgMaps.Get(BgSource, region, 1800);
             if (bm == null) return;
-            var pTL = WorldToScreen(bm.WorldX0 + BgNudgeX - WandWorldOffsetX, bm.WorldY0 + BgNudgeY - WandWorldOffsetY);
+            var pTL = WorldToScreen(bm.WorldX0 + BgNudgeX - MapWorldOffsetX, bm.WorldY0 + BgNudgeY - MapWorldOffsetY);
             var w = (bm.WorldX1 - bm.WorldX0) * _zoom;
             var h = (bm.WorldY1 - bm.WorldY0) * _zoom;
             if (pTL.X + w < -50 || pTL.X > Width + 50 || pTL.Y + h < -50 || pTL.Y > Height + 50) return;
@@ -271,13 +250,13 @@ namespace SoD2MapViewer;
     {
         try
         {
-            var region = WandRegion ?? WandRegions.TrumbullValley;
+            var region = MapRegion ?? MapRegions.TrumbullValley;
             var map = FandomMaps.For(region);
             if (map == null) return;
             var bmp = FandomMaps.GetBitmap(map);
             if (bmp == null) return;
             // fandom rect is in world cm; canvas frame is local (= world − offset)
-            var pTL = WorldToScreen(map.WorldX0 - WandWorldOffsetX, map.WorldY0 - WandWorldOffsetY);
+            var pTL = WorldToScreen(map.WorldX0 - MapWorldOffsetX, map.WorldY0 - MapWorldOffsetY);
             var w = (map.WorldX1 - map.WorldX0) * _zoom;
             var h = (map.WorldY1 - map.WorldY0) * _zoom;
             if (pTL.X + w < -50 || pTL.X > Width + 50 || pTL.Y + h < -50 || pTL.Y > Height + 50) return;
@@ -301,111 +280,6 @@ namespace SoD2MapViewer;
         }
     }
 
-    private void DrawWandTiles(Graphics g)
-    {
-        try
-        {
-            var region = WandRegion ?? WandRegions.TrumbullValley;
-            WandLayer?.SetRegion(region);
-            var visibleMin = ScreenToWorld(0, Height);
-            var visibleMax = ScreenToWorld(Width, 0);
-
-            // nearest tile zoom for the current on-screen scale — clamped to z4/z5:
-            // the CDN also serves z1..z3 tiles, but those are incomplete and misaligned
-            // (landmass cut at tile edges / sits elsewhere than the z4/z5 content),
-            // so zoomed-out views draw upscaled z4 tiles instead of the patchwork.
-            var z = WandTiles.MaxZoom;
-            var zMin = WandTiles.MaxZoom - 1;
-            while (z > zMin)
-            {
-                var probe = WandTiles.TileWorldRect(region, z, 0, 0);
-                if ((probe.X1 - probe.X0) * _zoom >= 256) break;
-                z--;
-            }
-            z = Math.Max(z, zMin);
-
-            // always draw a coarse base level beneath the fine one: z5-only views stay covered
-            var zBase = Math.Max(WandTiles.MaxZoom - 1, z - 1);
-            for (var level = zBase; level <= z; level++)
-                DrawWandLevel(g, region, level, visibleMin, visibleMax);
-        }
-        catch (Exception ex)
-        {
-            using var f = new Font("Segoe UI", 8f);
-            g.DrawString("Wand layer error: " + ex.Message, f, Brushes.OrangeRed, 8, 8);
-        }
-    }
-
-    private void DrawWandLevel(Graphics g, WandRegion region, int z, PointF visibleMin, PointF visibleMax)
-    {
-        const float maxLatDeg = 85.0f;
-        var corners = new[] { visibleMin, visibleMax, ScreenToWorld(0, 0), ScreenToWorld(Width, Height) };
-        int txMin = int.MaxValue, txMax = int.MinValue, tyMin = int.MaxValue, tyMax = int.MinValue;
-        foreach (var c in corners)
-        {
-            // the tile request works in true world space; the canvas frame is local (= world − offset)
-            var (lng, lat) = WandTiles.LngLatFromWorld(region, c.X + WandWorldOffsetX, c.Y + WandWorldOffsetY);
-            var latF = ClampF((float)lat, -maxLatDeg, maxLatDeg);
-            var n = Math.Pow(2.0, z);
-            var tx = (int)Math.Floor((lng + 180.0) / 360.0 * n);
-            var ty = (int)Math.Floor((1.0 - Math.Log(Math.Tan(Math.PI / 4.0 + latF * Math.PI / 360.0)) / Math.PI) / 2.0 * n);
-            txMin = Math.Min(txMin, tx); txMax = Math.Max(txMax, tx);
-            tyMin = Math.Min(tyMin, ty); tyMax = Math.Max(tyMax, ty);
-        }
-        txMin = Math.Max(txMin, 0); tyMin = Math.Max(tyMin, 0);
-        var pow = (int)Math.Pow(2.0, z) - 1;
-        txMax = Math.Min(txMax, pow); tyMax = Math.Min(tyMax, pow);
-
-        for (var tx = txMin; tx <= txMax; tx++)
-        for (var ty = tyMin; ty <= tyMax; ty++)
-        {
-            var tile = WandLayer!.Peek(z, tx, ty);
-            if (tile == null || tile.Bitmap == null)
-            {
-                WandLayer.EnsureLoaded(z, tx, ty);
-                // the CDN has sporadic 404s — cover the slot with the coarser parent tile
-                DrawAncestorTile(g, region, z, tx, ty);
-                continue;
-            }
-            var pTL = WorldToScreen(tile.X0 - WandWorldOffsetX, tile.Y0 - WandWorldOffsetY);
-            var w = (tile.X1 - tile.X0) * _zoom;
-            var h = (tile.Y1 - tile.Y0) * _zoom;
-            if (pTL.X + w < -50 || pTL.Y + h < -50 || pTL.X > Width + 50 || pTL.Y > Height + 50) continue;
-            var prevInterp = g.InterpolationMode;
-            g.InterpolationMode = w > 3 * tile.Bitmap.Width
-                ? System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor
-                : System.Drawing.Drawing2D.InterpolationMode.Bilinear;
-            g.DrawImage(tile.Bitmap, pTL.X, pTL.Y, w, h);
-            g.InterpolationMode = prevInterp;
-        }
-    }
-
-    /// <summary>Fills a missing/404 tile slot with the corresponding crop of its coarser
-    /// parent (z−1, only ≥ MaxZoom−1 — lower levels are unreliable/misaligned), so CDN
-    /// holes never appear as bare rectangles.</summary>
-    private void DrawAncestorTile(Graphics g, WandRegion region, int z, int tx, int ty)
-    {
-        if (WandLayer == null || z - 1 < WandTiles.MaxZoom - 1) return;
-        var parent = WandLayer.Peek(z - 1, tx >> 1, ty >> 1);
-        if (parent == null || parent.Bitmap == null) return;
-        var child = WandTiles.TileWorldRect(region, z, tx, ty);
-        var pTL = WorldToScreen(child.X0 - WandWorldOffsetX, child.Y1 - WandWorldOffsetY);
-        var w = (child.X1 - child.X0) * _zoom;
-        var h = (child.Y1 - child.Y0) * _zoom;
-        if (pTL.X + w < -50 || pTL.X > Width + 50 || pTL.Y + h < -50 || pTL.Y > Height + 50) return;
-        // source crop inside the parent bitmap (bitmap y runs southward, world y runs northward)
-        var rx = (child.X0 - parent.X0) / (parent.X1 - parent.X0) * parent.Bitmap.Width;
-        var ry = (parent.Y1 - child.Y1) / (parent.Y1 - parent.Y0) * parent.Bitmap.Height;
-        var rW = (child.X1 - child.X0) / (parent.X1 - parent.X0) * parent.Bitmap.Width;
-        var rH = (child.Y1 - child.Y0) / (parent.Y1 - parent.Y0) * parent.Bitmap.Height;
-        var dst = new RectangleF(pTL.X, pTL.Y, w, h);
-        var src = new RectangleF((float)rx, (float)ry, (float)rW, (float)rH);
-        var prevInterp = g.InterpolationMode;
-        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
-        g.DrawImage(parent.Bitmap, dst, src, GraphicsUnit.Pixel);
-        g.InterpolationMode = prevInterp;
-    }
-
     private PointF WorldToScreen(float x, float y) => new(
         Width / 2f + (x - _center.X) * _zoom,
         Height / 2f - (y - _center.Y) * _zoom); // Y up
@@ -425,14 +299,11 @@ namespace SoD2MapViewer;
         var g = e.Graphics;
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-        // background: vector asset basemap first (raw data), then fandom blank map,
-        // then the real map tiles (Wand) on top
+        // background: vector asset basemap first (raw data), then fandom blank map
         if (ShowBgBase)
             DrawBgBasemap(g);
         if (ShowFandomBase)
             DrawFandomBasemap(g);
-        if (WandLayer != null)
-            DrawWandTiles(g);
 
         // grid lines in 10 m steps
         const float gridStep = 1000f; // 10 meters in cm
@@ -645,7 +516,7 @@ namespace SoD2MapViewer;
             {
                 _bgPanning = false;
                 Cursor = Cursors.Cross;
-                var region = WandRegion ?? WandRegions.TrumbullValley;
+                var region = MapRegion ?? MapRegions.TrumbullValley;
                 var cur = BgCalib.Regions.GetValueOrDefault(region.Key, (1.6, 1.6, 0, 0));
                 double newOx = cur.OX + BgNudgeX;
                 double newOy = cur.OY + BgNudgeY;

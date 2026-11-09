@@ -21,7 +21,7 @@ namespace SoD2MapViewer;
 /// exactly this vector data (Iggy/Scaleform), so the render is authentic and fully offline.
 /// </summary>
 public sealed record BgMap(
-    WandRegion Region,
+    MapRegion Region,
     Dictionary<string, List<(float X, float Y)>> Buffers,  // buffer name -> widget-space polyline/segment points
     float WidgetMinX, float WidgetMaxX, float WidgetMinY, float WidgetMaxY,
     Bitmap Bitmap, int Px, int Py,
@@ -32,9 +32,8 @@ public sealed record BgMap(
 /// <summary>
 /// Widget↔world calibration per region: world = widget * Scale + Offset
 /// (widget space is the asset vertex space; world space is UE cm per region).
-/// Scale values are initial estimates from the BBox↔z4-tile-span comparison
-/// (Trumbull ~1.550/1.571 — NOT exactly uniform); they still need verification
-/// against world objects and refinement, same approach as --fancalib.
+/// Final values were calibrated interactively (drag) and verified in-game;
+/// override via bgcalib_override.json or --bgset.
 /// </summary>
 public static class BgCalib
 {
@@ -100,7 +99,7 @@ public static class BgCalib
 public static class BgMaps
 {
     /// <summary>Codename (background asset prefix) per Wand region key.</summary>
-    public static string? AssetFor(WandRegion region) => region.Key switch
+    public static string? AssetFor(MapRegion region) => region.Key switch
     {
         "trumbull-valley"  => "trumbull_valley_persistent_Background",
         "cascade-hills"    => "amethyst_region_map_Background",
@@ -118,7 +117,7 @@ public static class BgMaps
     /// Renders (or fetches from cache) the vector basemap of the region, in MapUIInfo colors.
     /// Bitmap coordinate system: widget X → px (right), widget Y → py (top-down, Y inverted).
     /// </summary>
-    public static BgMap? Get(DefaultFileProvider provider, WandRegion region, int targetPx = 1800)
+    public static BgMap? Get(DefaultFileProvider provider, MapRegion region, int targetPx = 1800)
     {
         var asset = AssetFor(region);
         if (asset == null) return null;
@@ -129,7 +128,7 @@ public static class BgMaps
         });
     }
 
-    static BgMap? Render(DefaultFileProvider provider, WandRegion region, string assetName, int targetPx)
+    static BgMap? Render(DefaultFileProvider provider, MapRegion region, string assetName, int targetPx)
     {
         const string prefix = "StateOfDecay2/Content/maps/Backgrounds/";
         var path = prefix + assetName;
@@ -326,8 +325,8 @@ public static class BgMaps
         var outPrefix = args[1];
         var wildcard = args.Length > 2 ? args[2] : "all";
         var regions = wildcard.Equals("all", StringComparison.OrdinalIgnoreCase)
-            ? WandRegions.All
-            : new[] { WandRegions.FromKey(wildcard) ?? throw new ArgumentException($"unknown region '{wildcard}'") };
+            ? MapRegions.All
+            : new[] { MapRegions.FromKey(wildcard) ?? throw new ArgumentException($"unknown region '{wildcard}'") };
 
         var loader = new MapLoader();
         var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
