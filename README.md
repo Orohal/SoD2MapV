@@ -51,6 +51,8 @@ Einmalig **Kalibrierung** (pro Save): Toolbar **„Inject vehicle…"** oder **R
 - Sonden-Fahrzeuge: „Delete probe vehicle"
 - Kalibrierung persistiert: `%LOCALAPPDATA%\SoD2MapViewer\calibration.json`
 
+**Schnell: „Inject at player“ (ab v0.5.3):** Zuerst **„Show character"** klicken (liest die zuletzt gespeicherte Spielerposition aus dem Save, `PlayerBreadcrumbs`, nutzt die Save-Kalibrierung) → dann **„Inject at player"**. Der Injekt-Dialog wird mit Spieler-Pos/Höhe (+10 m Offset) vorausgefüllt. **Hinweis:** Möglichst auf einer **freien Fläche** stehen, sonst kann das Fahrzeug in einem Objekt spawnen. Die Blickrichtung ist aus dem Save nicht ablesbar — **Yaw/Position/Höhe** im Dialog bei Bedarf anpassen. Zahlenfelder akzeptieren `,` oder `.`; leere Z-/Shift-/Yaw-Felder = `0`.
+
 ### Echte Karte als Hintergrund
 
 Toolbar **„Vector map (asset)"** — blendet die eigene Vektor-Karte aus den Ingame-`MapBackgroundData`-Assets (`StateOfDecay2/Content/maps/Backgrounds/*`) ein: Straßen, Flüsse, Seen, Gebäude und die Karten-Grenze, in den echten Ingame-Farben (`MapUIInfo_BP`). Komplett offline, für alle 5 Regionen. Bei Abweichung: Checkbox **„Edit base-map pos"** einschalten und die Karte per Drag ausrichten (Loslassen speichert die Kalibrierung). CLI: `--bgrender` (PNG-Render), `--bgset` (manuelle Transform-Werte).
