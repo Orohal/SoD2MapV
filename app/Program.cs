@@ -44,6 +44,41 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--maptex")
+        {
+            try { return MapTex.Run(args.Length > 1 ? args[1..] : Array.Empty<string>()); }
+            catch (Exception e) { Console.Error.WriteLine(e); return 2; }
+        }
+        if (args.Length >= 1 && args[0] == "--bgset")
+        {
+            // Usage: --bgset <regionKey> <sx> <sy> <ox> <oy>   (writes bgcalib_override.json next to the exe)
+            if (args.Length < 6) { Console.WriteLine("usage: --bgset <region> <sx> <sy> <ox> <oy>"); return 1; }
+            var reg = args[1];
+            double sx = double.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture);
+            double sy = double.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture);
+            double ox = double.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture);
+            double oy = double.Parse(args[5], System.Globalization.CultureInfo.InvariantCulture);
+            BgCalib.SetOverride(reg, sx, sy, ox, oy);
+            Console.WriteLine($"[bgset] {reg}: sx={sx} sy={sy} ox={ox} oy={oy}  -> {BgCalib.OverridePath()}");
+            return 0;
+        }
+        if (args.Length >= 1 && args[0] == "--bgcalib")
+        {
+            try { return BgCalibTool.Cli(args.Length > 1 ? args[1..] : Array.Empty<string>()); }
+            catch (Exception e) { Console.Error.WriteLine(e); return 2; }
+        }
+        if (args.Length >= 1 && args[0] == "--bgrender")
+        {
+            try { return BgMaps.Cli(args.Length > 1 ? args[1..] : Array.Empty<string>()); }
+            catch (Exception e) { Console.Error.WriteLine(e); return 2; }
+        }
+        if (args.Length >= 1 && args[0] == "--fancalib")
+        {
+            // offline calibration tool: fit the embedded fandom basemap to the world-anchored
+            // Wand z4 tiles of a region (downloads tiles into the app cache once, then matches)
+            try { return Fancalib.Run(args); }
+            catch (Exception e) { Console.Error.WriteLine(e); return 2; }
+        }
         if (args.Length >= 1 && args[0] == "--save")
         {
             try
@@ -217,6 +252,75 @@ internal static class Program
             // print coordinate sanity
             var (lngNow, latNow) = WandTiles.LngLatFromWorld(regRender, (minX + maxX) / 2, (minY + maxY) / 2);
             Console.WriteLine($"[wandrender] center world = ({(minX + maxX) / 100:F1}, {(minY + maxY) / 100:F1}) m -> lng/lat {lngNow:F4}/{latNow:F4}");
+            return 0;
+        }
+        if (args.Length >= 1 && args[0] == "--fandomrender")
+        {
+            // fully offline render: embedded fandom basemap + parsed objects — verifies the
+            // calibrated world rect of each region's basemap without touching the network
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            var gameDir = args[1];
+            var mapFilter = args[2];
+            var outPng = args[3];
+            var scaleOverride = args.Length > 4 && double.TryParse(args[4], System.Globalization.NumberStyles.Float, inv, out var so) ? so : 0.0;
+
+            var loader3 = new MapLoader();
+            loader3.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
+            var mapPath3 = loader3.MapPaths.FirstOrDefault(p => p.Contains(mapFilter) && !p.Contains("LOD"));
+            if (mapPath3 == null) { Console.Error.WriteLine($"[fandomrender] no map matching '{mapFilter}'"); return 1; }
+            var model3 = MapLoader.ParseMap(loader3.Provider, mapPath3);
+            var withPos3 = model3.Objects.Where(o => o.HasTransform).ToList();
+            Console.WriteLine($"[fandomrender] objects={model3.Objects.Count} withPos={withPos3.Count}");
+            if (withPos3.Count == 0) return 1;
+            var region3 = WandRegions.FromMapPath(mapPath3) ?? WandRegions.TrumbullValley;
+            var fMap3 = FandomMaps.For(region3);
+            if (fMap3 == null) { Console.Error.WriteLine($"[fandomrender] no fandom map for {region3.Key}"); return 1; }
+            var fan3 = FandomMaps.GetBitmap(fMap3);
+            if (fan3 == null) { Console.Error.WriteLine("[fandomrender] embedded basemap decode failed"); return 1; }
+
+            // world frame: objects (local + tile offset) ∪ fandom rect, padded
+            var offX3 = model3.HasWorldTileOffset ? model3.WorldTileOffsetX : 0;
+            var offY3 = model3.HasWorldTileOffset ? model3.WorldTileOffsetY : 0;
+            float minX3 = withPos3.Min(o => o.X) + offX3, maxX3 = withPos3.Max(o => o.X) + offX3;
+            float minY3 = withPos3.Min(o => o.Y) + offY3, maxY3 = withPos3.Max(o => o.Y) + offY3;
+            Console.WriteLine($"[fandomrender] world span of objects = ({minX3 / 100:F0}..{maxX3 / 100:F0}, {minY3 / 100:F0}..{maxY3 / 100:F0}) m");
+            minX3 = Math.Min(minX3, fMap3.WorldX0); maxX3 = Math.Max(maxX3, fMap3.WorldX1);
+            minY3 = Math.Min(minY3, fMap3.WorldY0); maxY3 = Math.Max(maxY3, fMap3.WorldY1);
+            var fanOverlap3 = !(maxX3 - fMap3.WorldX0 < 0 || fMap3.WorldX1 - minX3 < 0 || maxY3 - fMap3.WorldY0 < 0 || fMap3.WorldY1 - minY3 < 0);
+            if (!fanOverlap3) Console.WriteLine("[fandomrender] WARNING: fandom rect does not overlap the object frame — calibration likely wrong");
+            var pad3 = (maxX3 - minX3 + maxY3 - minY3) * 0.03f;
+            var frameX3 = minX3 - pad3; var frameY3n = minY3 - pad3;
+            var spanXY3 = Math.Max(maxX3 - minX3, maxY3 - minY3) + 2 * pad3;
+            var scale3 = scaleOverride != 0 ? (float)scaleOverride : 3600f / spanXY3;
+            var pxW3 = (int)(spanXY3 * scale3);
+            using var bmp3 = new Bitmap(pxW3, pxW3);
+            using var g3 = Graphics.FromImage(bmp3);
+            g3.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g3.Clear(Color.FromArgb(24, 26, 34));
+            // fandom image (north edge = smaller world Y → screen top)
+            var fx3 = (fMap3.WorldX0 - frameX3) * scale3;
+            var fy3 = (fMap3.WorldY0 - frameY3n) * scale3;
+            var fw3 = (fMap3.WorldX1 - fMap3.WorldX0) * scale3;
+            var fh3 = (fMap3.WorldY1 - fMap3.WorldY0) * scale3;
+            Console.WriteLine($"[fandomrender] fandom rect px = ({fx3:F0},{fy3:F0}) {fw3:F0}x{fh3:F0}");
+            g3.DrawImage(fan3, fx3, fy3, fw3, fh3);
+            // objects
+            foreach (var o in withPos3)
+            {
+                var X = (o.X + offX3 - frameX3) * scale3;
+                var Y = (o.Y + offY3 - frameY3n) * scale3;
+                g3.DrawRectangle(Pens.Lime, X - 2, Y - 2, 4, 4);
+            }
+            foreach (var o in withPos3.Where(o => o.Name.Contains("Base_Tiny", StringComparison.OrdinalIgnoreCase) || o.Name.Contains("parking", StringComparison.OrdinalIgnoreCase)))
+            {
+                var X = (o.X + offX3 - frameX3) * scale3;
+                var Y = (o.Y + offY3 - frameY3n) * scale3;
+                g3.FillEllipse(Brushes.Red, X - 5, Y - 5, 10, 10);
+                using var f3 = new Font("Arial", 10);
+                g3.DrawString(o.Name, f3, Brushes.Red, X + 6, Y);
+            }
+            bmp3.Save(outPng, System.Drawing.Imaging.ImageFormat.Png);
+            Console.WriteLine($"[fandomrender] {outPng} ({pxW3}x{pxW3}) region={region3.Key} fandom={fMap3.Resource}");
             return 0;
         }
         if (args.Length >= 1 && args[0] == "--saveprops")

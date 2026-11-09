@@ -75,6 +75,7 @@ public static class WandRegions
         var p = mapPath.Replace('\\', '/').ToLowerInvariant();
         return p switch
         {
+            var s when s.Contains("maps/trumbull_valley/") => TrumbullValley,
             var s when s.Contains("maps/faustite/") => TrumbullValley,
             var s when s.Contains("maps/amethyst") => AmethystRegion,
             var s when s.Contains("maps/basalt") => BasaltRegion,
@@ -266,7 +267,7 @@ public sealed class WandTileLayer
     }
 
     /// <summary>Decodes a webp into a 32bpp ARGB GDI bitmap (null on parse failure).</summary>
-    private static Bitmap? Decode(byte[] webp)
+    public static Bitmap? Decode(byte[] webp)
     {
         try
         {

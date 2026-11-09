@@ -59,6 +59,36 @@ namespace SoD2MapViewer;
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public WandRegion? WandRegion { get; set; }
 
+        /// <summary>Draw the embedded fandom basemap (offline, no network) beneath the map graphics.</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool ShowFandomBase { get; set; } = true;
+
+        /// <summary>Draw the vector basemap rendered from the game's own MapBackgroundData assets
+        /// (StateOfDecay2/Content/maps/Backgrounds/*) — authentic and fully offline. Needs BgSource.</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool ShowBgBase { get; set; }
+
+        /// <summary>When true, dragging pans the base-map layer (Bg) instead of the view, so its
+        /// world offset can be tuned interactively. Commit happens on mouse-up (writes override file).</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool EditBgOffset { get; set; }
+
+        /// <summary>Live drag offset (cm) applied to the base-map layer while EditBgOffset is active.</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public float BgNudgeX { get; set; }
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public float BgNudgeY { get; set; }
+
+        /// <summary>File provider used to load/render the vector basemap assets; null = disabled.</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public CUE4Parse.FileProvider.DefaultFileProvider? BgSource { get; set; }
+
         private void OnWandTileLoaded()
         {
             try { if (IsHandleCreated) BeginInvoke(() => Invalidate()); } catch (ObjectDisposedException) { }
@@ -200,6 +230,77 @@ namespace SoD2MapViewer;
     /// <summary>Draws the Wand background: picks the zoom whose tile ≈ 256 px on screen,
     /// requests + draws every tile intersecting the viewport. Coarse level first, fine level
     /// on top — so loaded fine tiles cover the coarse filler (gap-free pyramid look).</summary>
+    /// <summary>Draws the embedded fandom blank-map image at its calibrated world rect —
+    /// purely offline (image is embedded in the EXE). Serves as the complete base layer
+    /// beneath the (often hole-ridden) WeMod tile pyramid.</summary>
+    /// <summary>Vector basemap drawn straight from the game's MapBackgroundData assets.
+    /// Rendered lazily on first paint of a region (few seconds), cached per provider+region.</summary>
+    private void DrawBgBasemap(Graphics g)
+    {
+        if (BgSource == null) return;
+        try
+        {
+            var region = WandRegion ?? WandRegions.TrumbullValley;
+            var bm = BgMaps.Get(BgSource, region, 1800);
+            if (bm == null) return;
+            var pTL = WorldToScreen(bm.WorldX0 + BgNudgeX - WandWorldOffsetX, bm.WorldY0 + BgNudgeY - WandWorldOffsetY);
+            var w = (bm.WorldX1 - bm.WorldX0) * _zoom;
+            var h = (bm.WorldY1 - bm.WorldY0) * _zoom;
+            if (pTL.X + w < -50 || pTL.X > Width + 50 || pTL.Y + h < -50 || pTL.Y > Height + 50) return;
+            var prevInterp = g.InterpolationMode;
+            if (w > 3 * bm.Bitmap.Width)
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                g.DrawImage(bm.Bitmap, new RectangleF(pTL.X, pTL.Y, w, h));
+            }
+            else
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+                g.DrawImage(bm.Bitmap, pTL.X, pTL.Y, w, h);
+            }
+            g.InterpolationMode = prevInterp;
+        }
+        catch (Exception ex)
+        {
+            using var f = new Font("Segoe UI", 8f);
+            g.DrawString("Vector basemap error: " + ex.Message, f, Brushes.OrangeRed, 8, 32);
+        }
+    }
+
+    private void DrawFandomBasemap(Graphics g)
+    {
+        try
+        {
+            var region = WandRegion ?? WandRegions.TrumbullValley;
+            var map = FandomMaps.For(region);
+            if (map == null) return;
+            var bmp = FandomMaps.GetBitmap(map);
+            if (bmp == null) return;
+            // fandom rect is in world cm; canvas frame is local (= world − offset)
+            var pTL = WorldToScreen(map.WorldX0 - WandWorldOffsetX, map.WorldY0 - WandWorldOffsetY);
+            var w = (map.WorldX1 - map.WorldX0) * _zoom;
+            var h = (map.WorldY1 - map.WorldY0) * _zoom;
+            if (pTL.X + w < -50 || pTL.X > Width + 50 || pTL.Y + h < -50 || pTL.Y > Height + 50) return;
+            var prevInterp = g.InterpolationMode;
+            if (w > 3 * bmp.Width)
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                g.DrawImage(bmp, new RectangleF(pTL.X, pTL.Y, w, h));
+            }
+            else
+            {
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+                g.DrawImage(bmp, pTL.X, pTL.Y, w, h);
+            }
+            g.InterpolationMode = prevInterp;
+        }
+        catch (Exception ex)
+        {
+            using var f = new Font("Segoe UI", 8f);
+            g.DrawString("Fandom basemap error: " + ex.Message, f, Brushes.OrangeRed, 8, 20);
+        }
+    }
+
     private void DrawWandTiles(Graphics g)
     {
         try
@@ -324,7 +425,12 @@ namespace SoD2MapViewer;
         var g = e.Graphics;
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
-        // background: real map tiles (Wand)
+        // background: vector asset basemap first (raw data), then fandom blank map,
+        // then the real map tiles (Wand) on top
+        if (ShowBgBase)
+            DrawBgBasemap(g);
+        if (ShowFandomBase)
+            DrawFandomBasemap(g);
         if (WandLayer != null)
             DrawWandTiles(g);
 
@@ -427,9 +533,21 @@ namespace SoD2MapViewer;
         ZoomAt(e.X, e.Y, e.Delta > 0 ? 1.25f : 0.8f);
     }
 
+    private bool _bgPanning;
+    private float _bgNudgeStartX, _bgNudgeStartY;
+
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
+        if (e.Button == MouseButtons.Left && EditBgOffset)
+        {
+            _bgPanning = true;
+            _panStart = e.Location;
+            _bgNudgeStartX = BgNudgeX;
+            _bgNudgeStartY = BgNudgeY;
+            Cursor = Cursors.SizeAll;
+            return;
+        }
         if (e.Button == MouseButtons.Left)
         {
             if (EditingEnabled && PickObject(e.Location) is int hit && hit >= 0)
@@ -523,6 +641,21 @@ namespace SoD2MapViewer;
                 }
                 return;
             }
+            if (_bgPanning)
+            {
+                _bgPanning = false;
+                Cursor = Cursors.Cross;
+                var region = WandRegion ?? WandRegions.TrumbullValley;
+                var cur = BgCalib.Regions.GetValueOrDefault(region.Key, (1.6, 1.6, 0, 0));
+                double newOx = cur.OX + BgNudgeX;
+                double newOy = cur.OY + BgNudgeY;
+                BgCalib.SetOverride(region.Key, cur.SX, cur.SY, newOx, newOy);
+                BgMaps.ClearCache();
+                BgNudgeX = 0; BgNudgeY = 0;
+                _tip.SetToolTip(this, $"committed: ox={newOx:0} oy={newOy:0} cm");
+                Invalidate();
+                return;
+            }
             _panning = false;
             if (Math.Abs(e.X - _panStart.X) < 3 && Math.Abs(e.Y - _panStart.Y) < 3)
             {
@@ -592,6 +725,14 @@ namespace SoD2MapViewer;
                     _tip.SetToolTip(this, Describe(o) + $"\nscale={o.SX:0.##}  (release to drop, Ctrl+Z to undo)");
                 }
             }
+            Invalidate();
+            return;
+        }
+        if (_bgPanning)
+        {
+            BgNudgeX = _bgNudgeStartX + (e.X - _panStart.X) / _zoom;
+            BgNudgeY = _bgNudgeStartY + (e.Y - _panStart.Y) / _zoom;
+            _tip.SetToolTip(this, $"base-map nudge: X={BgNudgeX:0} Y={BgNudgeY:0} cm  (release to commit)");
             Invalidate();
             return;
         }
