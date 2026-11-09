@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using CUE4Parse.UE4.Assets;
@@ -96,6 +97,44 @@ internal static class Smoke
         foreach (var key in loader.Provider.Files.Keys)
             if (filter.Length == 0 || key.Contains(filter, StringComparison.OrdinalIgnoreCase))
                 Console.WriteLine(key);
+        return 0;
+    }
+
+    /// <summary>Dumps WorldTileInfo.Position + tile grid extent for all maps matching a filter
+    /// (header-only, no object parsing, no tile downloads).</summary>
+    public static int TileInfo(string gameDir, string filter)
+    {
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+
+        foreach (var g in loader.MapPaths
+                     .Where(m => m.Contains(filter, StringComparison.OrdinalIgnoreCase) && !m.Contains("_LOD"))
+                     .Select(m => (path: m, region: Regex.Match(m, @"maps/([A-Za-z_]+?)/", RegexOptions.IgnoreCase).Groups[1].Value))
+                     .GroupBy(t => t.region)
+                     .OrderBy(g => g.Key))
+        {
+            Console.WriteLine($"=== region dir: {g.Key} ({g.Count()} tiles) ===");
+            var minWx = double.MaxValue; var minWy = double.MaxValue; var maxWx = double.MinValue; var maxWy = double.MinValue;
+            var anyOk = false;
+            foreach (var t in g.OrderBy(t => t.path))
+            {
+                byte[]? data = null;
+                try { data = loader.ReadMapBytes(t.path); } catch { }
+                var ok = MapLoader.TryReadWorldTileOffset(t.path, data, loader.Provider.Versions, out var ox, out var oy);
+                if (ok)
+                {
+                    anyOk = true;
+                    var wx = ox / 100.0; var wy = oy / 100.0;
+                    minWx = Math.Min(minWx, wx); minWy = Math.Min(minWy, wy);
+                    maxWx = Math.Max(maxWx, wx); maxWy = Math.Max(maxWy, wy);
+                }
+                Console.WriteLine($"  {Path.GetFileName(t.path)}  worldPos=({ox / 100.0:F1}, {oy / 100.0:F1}) m  ok={ok}");
+            }
+            if (anyOk)
+                Console.WriteLine($"  world extent ≈ x {minWx:F0}..{maxWx:F0} m  y {minWy:F0}..{maxWy:F0} m");
+        }
+        Console.WriteLine("done");
         return 0;
     }
 

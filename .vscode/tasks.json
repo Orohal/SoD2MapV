@@ -1,0 +1,126 @@
+{
+    // Build environment for SoD2MapViewer (net10.0-windows, WinForms)
+    // Two dotnet installs exist on this machine:
+    //   C:\Program Files\dotnet  (PATH-first, SDK 8.0.427 + 10.0.403)
+    //   D:\Tools\dotnet          (SDK 10.0.100 + 10.0.403)
+    // D:\Tools\dotnet is put first in PATH and pinned as DOTNET_ROOT so every
+    // task/build uses the same 10.0.403 SDK regardless of PATH order changes.
+    "version": "2.0.0",
+    "options": {
+        "env": {
+            "DOTNET_ROOT": "D:\\Tools\\dotnet",
+            "PATH": "D:\\Tools\\dotnet;${env:PATH}"
+        }
+    },
+    "tasks": [
+        {
+            "label": "build (Debug)",
+            "type": "process",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "${workspaceFolder}\\app\\SoD2MapViewer.csproj",
+                "--nologo"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build (Release)",
+            "type": "process",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "${workspaceFolder}\\app\\SoD2MapViewer.csproj",
+                "-c",
+                "Release",
+                "--nologo"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "run GUI (Debug)",
+            "type": "process",
+            "command": "dotnet",
+            "args": [
+                "run",
+                "--project",
+                "${workspaceFolder}\\app\\SoD2MapViewer.csproj",
+                "--no-build"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "publish self-contained (exe)",
+            "type": "process",
+            "command": "dotnet",
+            "args": [
+                "publish",
+                "${workspaceFolder}\\app\\SoD2MapViewer.csproj",
+                "-c", "Release",
+                "-r", "win-x64",
+                "--self-contained", "true",
+                "-p:PublishSingleFile=true",
+                "-o", "${workspaceFolder}\\app\\publish"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "publish framework-dependent (single-file)",
+            "type": "process",
+            "command": "dotnet",
+            "args": [
+                "publish",
+                "${workspaceFolder}\\app\\SoD2MapViewer.csproj",
+                "-c", "Release",
+                "-r", "win-x64",
+                "--self-contained", "false",
+                "-p:PublishSingleFile=true",
+                "-o", "${workspaceFolder}\\app\\publish-framework"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "publish plain folder (antivirus-safe)",
+            "type": "process",
+            "command": "dotnet",
+            "args": [
+                "publish",
+                "${workspaceFolder}\\app\\SoD2MapViewer.csproj",
+                "-c", "Release",
+                "-r", "win-x64",
+                "--self-contained", "false",
+                "-p:PublishSingleFile=false",
+                "-o", "${workspaceFolder}\\app\\publish-framework-plain"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            // Convenience: bundle all three release variants in one task
+            "dependsOrder": "sequence",
+            "label": "publish all (release)",
+            "dependsOn": [
+                "publish self-contained (exe)",
+                "publish framework-dependent (single-file)",
+                "publish plain folder (antivirus-safe)"
+            ],
+            "problemMatcher": []
+        },
+        {
+            // Diagnostic: WorldTileInfo offsets of every region umap (no tile downloads)
+            "label": "tileinfo (region world positions)",
+            "type": "process",
+            "command": "dotnet",
+            "args": [
+                "${workspaceFolder}\\app\\bin\\Debug\\net10.0-windows\\SoD2MapViewer.dll",
+                "--tileinfo",
+                "D:\\Games\\State of Decay 2\\StateOfDecay2",
+                "region_map"
+            ],
+            "problemMatcher": []
+        }
+    ]
+}

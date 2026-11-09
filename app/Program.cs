@@ -75,15 +75,17 @@ internal static class Program
             // projection self-test: convert world meters -> tile coords, download + decode that tile
             var inv = System.Globalization.CultureInfo.InvariantCulture;
             var (mx, my) = (double.Parse(args[1], inv), double.Parse(args[2], inv));
+            var regCheck = (args.Length > 3 ? WandRegions.FromKey(args[3]) : null) ?? WandRegions.TrumbullValley;
             foreach (var z in new[] { WandTiles.MaxZoom, WandTiles.MinZoom })
             {
-                var (lng, lat) = WandTiles.LngLatFromWorld(mx * 100, my * 100);
+                var (lng, lat) = WandTiles.LngLatFromWorld(regCheck, mx * 100, my * 100);
                 var n = Math.Pow(2.0, z);
                 var tx = (int)Math.Floor((lng + 180.0) / 360.0 * n);
                 var ty = (int)Math.Floor((1.0 - Math.Log(Math.Tan(Math.PI / 4.0 + lat * Math.PI / 360.0)) / Math.PI) / 2.0 * n);
-                var rect = WandTiles.TileWorldRect(z, tx, ty);
-                Console.WriteLine($"[wandcheck] z{z} tile {tx},{ty}  lng/lat {lng:F4}/{lat:F4}  world rect ({rect.X0:F0},{rect.Y0:F0})..({rect.X1:F0},{rect.Y1:F0}) cm");
+                var rect = WandTiles.TileWorldRect(regCheck, z, tx, ty);
+                Console.WriteLine($"[wandcheck:{regCheck.Key}] z{z} tile {tx},{ty}  lng/lat {lng:F4}/{lat:F4}  world rect ({rect.X0:F0},{rect.Y0:F0})..({rect.X1:F0},{rect.Y1:F0}) cm");
                 var layer = new WandTileLayer();
+                layer.SetRegion(regCheck);
                 layer.EnsureLoaded(z, tx, ty);
                 WandTileLayer.Tile? tile = null;
                 for (var i = 0; i < 100 && tile == null; i++) { System.Threading.Thread.Sleep(200); tile = layer.Peek(z, tx, ty); }
@@ -143,10 +145,15 @@ internal static class Program
             g.Clear(System.Drawing.Color.FromArgb(32, 28, 28));
 
             var layer2 = new WandTileLayer();
+            var regRender = args.Length > 8
+                ? (WandRegions.FromKey(args[8]) ?? WandRegions.FromMapPath(mapPath))
+                : (WandRegions.FromMapPath(mapPath) ?? WandRegions.TrumbullValley);
+            layer2.SetRegion(regRender);
+            Console.WriteLine($"[wandrender] Wand region = {regRender} ({regRender.Key})");
             // request tiles for the rect
             int n = 1 << zoomLevel;
-            var (lngA, latA) = WandTiles.LngLatFromWorld(wminX, wminY);
-            var (lngB, latB) = WandTiles.LngLatFromWorld(wmaxX, wmaxY);
+            var (lngA, latA) = WandTiles.LngLatFromWorld(regRender, wminX, wminY);
+            var (lngB, latB) = WandTiles.LngLatFromWorld(regRender, wmaxX, wmaxY);
             int txA = (int)Math.Floor((Math.Min(lngA, lngB) + 180) / 360 * n), txB = (int)Math.Floor((Math.Max(lngA, lngB) + 180) / 360 * n);
             double MercNorm(double latDeg) { latDeg = Math.Clamp(latDeg, -85, 85); return (1 - Math.Log(Math.Tan(Math.PI / 4 + latDeg * Math.PI / 360.0)) / Math.PI) / 2; }
             int tyA = (int)Math.Floor(MercNorm(Math.Min(latA, latB)) * n), tyB = (int)Math.Floor(MercNorm(Math.Max(latA, latB)) * n);
@@ -208,7 +215,7 @@ internal static class Program
             bmp.Save(outPng, System.Drawing.Imaging.ImageFormat.Png);
             Console.WriteLine($"[wandrender] {outPng} ({pxW}x{pxH}, objects drawn)");
             // print coordinate sanity
-            var (lngNow, latNow) = WandTiles.LngLatFromWorld((minX + maxX) / 2, (minY + maxY) / 2);
+            var (lngNow, latNow) = WandTiles.LngLatFromWorld(regRender, (minX + maxX) / 2, (minY + maxY) / 2);
             Console.WriteLine($"[wandrender] center world = ({(minX + maxX) / 100:F1}, {(minY + maxY) / 100:F1}) m -> lng/lat {lngNow:F4}/{latNow:F4}");
             return 0;
         }
@@ -350,6 +357,20 @@ internal static class Program
             try
             {
                 return Smoke.ListFiles(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--tileinfo")
+        {
+            try
+            {
+                return Smoke.TileInfo(
                     args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
                     args.Length > 2 ? args[2] : "");
             }

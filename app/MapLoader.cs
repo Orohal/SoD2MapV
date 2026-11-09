@@ -209,25 +209,36 @@ public sealed class MapLoader
     /// </summary>
     private static void ReadWorldTileOffset(string name, byte[]? data, VersionContainer vc, MapModel model)
     {
-        try
+        if (TryReadWorldTileOffset(name, data, vc, out var x, out var y))
         {
-            if (data == null) return;
-            var uasset = new FByteArchive(name, data, vc);
-            var ar = new CUE4Parse.UE4.Assets.Readers.FAssetArchive(uasset, null);
-            var s = new CUE4Parse.UE4.Objects.UObject.FPackageFileSummary(ar);
-            var off = s.WorldTileInfoDataOffset;
-            if (off <= 0 || off + 8 > data.Length) return;
-            var x = BitConverter.ToInt32(data, off);
-            var y = BitConverter.ToInt32(data, off + 4);
-            // sanity: a plausible tile world position (< 200 km, keeps garbage readings out)
-            if (Math.Abs(x) > 20_000_000 || Math.Abs(y) > 20_000_000) return;
             model.WorldTileOffsetX = x;
             model.WorldTileOffsetY = y;
             model.HasWorldTileOffset = true;
         }
+    }
+
+    /// <summary>Header-only tile offset read for diagnostics (--tileinfo).</summary>
+    public static bool TryReadWorldTileOffset(string name, byte[]? data, VersionContainer vc, out int x, out int y)
+    {
+        x = 0; y = 0;
+        try
+        {
+            if (data == null) return false;
+            var uasset = new FByteArchive(name, data, vc);
+            var ar = new CUE4Parse.UE4.Assets.Readers.FAssetArchive(uasset, null);
+            var s = new CUE4Parse.UE4.Objects.UObject.FPackageFileSummary(ar);
+            var off = s.WorldTileInfoDataOffset;
+            if (off <= 0 || off + 8 > data.Length) return false;
+            x = BitConverter.ToInt32(data, off);
+            y = BitConverter.ToInt32(data, off + 4);
+            // sanity: a plausible tile world position (< 200 km, keeps garbage readings out)
+            if (Math.Abs(x) > 20_000_000 || Math.Abs(y) > 20_000_000) return false;
+            return true;
+        }
         catch
         {
             // header variants without tile info — ignore
+            return false;
         }
     }
 

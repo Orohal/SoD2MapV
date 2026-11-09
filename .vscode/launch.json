@@ -1,0 +1,42 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "SoD2MapViewer GUI",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build (Debug)",
+            "program": "${workspaceFolder}\\app\\bin\\Debug\\net10.0-windows\\SoD2MapViewer.exe",
+            "args": [
+                "D:\\Games\\State of Decay 2\\StateOfDecay2"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "internalConsole",
+            "env": {
+                "DOTNET_ROOT": "D:\\Tools\\dotnet",
+                "PATH": "D:\\Tools\\dotnet;${env:PATH}"
+            }
+        },
+        {
+            "name": "wandrender (headless render)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build (Debug)",
+            "program": "${workspaceFolder}\\app\\bin\\Debug\\net10.0-windows\\SoD2MapViewer.dll",
+            "dotnetPath": "D:\\Tools\\dotnet\\dotnet.exe",
+            "args": [
+                "--wandrender",
+                "D:\\Games\\State of Decay 2\\StateOfDecay2",
+                "faustite_x2_y3",
+                "${env:TEMP}\\wandrender_debug.png",
+                "4",
+                "0.9"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "env": {
+                "DOTNET_ROOT": "D:\\Tools\\dotnet"
+            }
+        }
+    ]
+}

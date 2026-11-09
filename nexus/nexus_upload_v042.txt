@@ -1,0 +1,99 @@
+==========================================================================
+ SoD2MapV — Nexus Upload Vorlage (v0.4.2, plain variant)
+ Seite: https://www.nexusmods.com/stateofdecay2/mods/1732?tab=files
+ Datei: D:\tmp\Stateofmap\app\publish-framework-plain\SoD2MapViewer-framework-dependent-plain.zip (6.7 MB)
+==========================================================================
+
+--------------------------------------------------------------------------
+TEIL 1 — FILE UPLOAD FORMULAR
+--------------------------------------------------------------------------
+Version number:        0.4.2
+File name:             SoD2MapViewer-framework-dependent-plain.zip
+(upload über "Let Nexus staff review this file" anfordern,
+ falls es erneut quarantined wird)
+
+OPTIONAL DESCRIPTION (kleines Beschreibungsfeld bei "Add a description"):
+
+[size=3][b]SoD2MapViewer v0.4.2 — framework-dependent (unpacked variant)[/b][/size]
+
+[b]This is the unpacked/preferred variant for users whose antivirus flags
+single-file executables as a false positive.[/b]
+
+Extract anywhere and run [b]SoD2MapViewer.exe[/b]. Requires the
+[b].NET 10 Desktop Runtime (x64)[/b]:
+https://dotnet.microsoft.com/download/dotnet/10.0
+
+What's new in v0.4.2:
+[list][*]Map background for all 5 regions — faustite (Trumbull Valley),
+amethyst (Cascade Hills), basalt (Drucker County), copper (Meagher
+Valley), danburite (Providence Ridge). The region is picked
+automatically from the loaded map path.
+[*]Tile cache is now pinned per region — an earlier cache mix-up could
+show foreign tiles/holes after switching regions.
+[*]Tile drawing: coarse level first, zoom limited to the reliable CDN
+levels (z4/z5), missing tiles upscaled from the parent level.
+[*]WORK IN PROGRESS: the background tile CDN is currently incomplete
+server-side (tiles vanish between requests) — holes in the background
+are possible. A community basemap fallback is planned.[/list]
+
+[b]SHA256 hashes[/b] (verify your download):
+[list][*]SoD2MapViewer-framework-dependent-plain.zip
+997FFD0E02C5DDE0C5E8786529BFF78401B23FB267CD22C060839854A371E05B
+[*]SoD2MapViewer.exe (inside, unpacked exe)
+B76CAE97D6C44E439E9633FFBA075821C153896B3352A3CCD343581301DCC14D[/list]
+
+[b]Antivirus note:[/b] Some engines generically flag unsigned .NET
+single-file apps (packer heuristic — no actual detection). If your AV
+complains, verify the SHA256 hash above, add an exclusion, or file a
+false-positive report. Windows Defender reports no threat.
+
+--------------------------------------------------------------------------
+TEIL 2 — CHANGELOG für die Versions-Historie (falls gefragt) — Kurzform
+--------------------------------------------------------------------------
+v0.4.2 — Map background for all 5 regions (auto region pick from map
+path); per-region tile cache (cross-region cache mix fixed); coarse
+level drawn first, zoom clamped to reliable CDN levels, missing tiles
+filled from parent level. Background CDN still incomplete server-side —
+improvements in progress.
+
+--------------------------------------------------------------------------
+TEIL 3 — MOD DESCRIPTION, zum ANHÄNGEN im Description-Tab ("Edit description")
+BBCode. Kurz halten und unter "CURRENT DEVELOPMENT STATUS" bzw. am Ende einfügen.
+--------------------------------------------------------------------------
+[size=4][b]v0.4.2 — Map Background: all 5 regions[/b][/size]
+
+[list=1][*][b]Background for every region[/b] — the "Wand map" checkbox
+now works for Trumbull Valley, Cascade Hills, Drucker County, Meagher
+Valley and Providence Ridge. The region is detected automatically from
+the loaded map path.
+[*][b]Cache & draw fixes[/b] — the tile cache is isolated per region
+(switching regions no longer bleeds foreign tiles in), and coarse tiles
+are drawn beneath the fine level so zooming never reveals bare holes.
+[*][b]Still in progress:[/b] the background tile CDN is currently
+incomplete server-side — holes in the background are possible. A
+community basemap fallback is planned; groundwork is being done.[/list]
+
+[size=3][b]Downloads & hash verification[/b][/size]
+
+All release assets, source code and SHA256 hashes of every published file:
+[url=https://github.com/Orohal/SoD2MapV/releases]GitHub Releases[/url]
+
+[size=3][b]Antivirus / false positives[/b][/size]
+
+Single-file .NET executables are generically flagged by a few antivirus
+engines (packer heuristic — no actual detection). This affects neither the
+unpacked variant nor the source build. Windows Defender reports no threat.
+Full hash table and reporting links:
+[url=https://github.com/Orohal/SoD2MapV#virenwarnung--false-positive]README — Antivirus section[/url]
+
+[size=3][b]Requirements[/b][/size]
+[list][*]Windows x64
+[*]A State of Decay 2 installation (the tool reads its .pak files read-only)
+[*].NET 10 Desktop Runtime x64 — bundled in the self-contained EXE variant[/list]
+
+--------------------------------------------------------------------------
+TEIL 4 — STATUS-ZEILE ERSETZEN (falls gewünscht)
+--------------------------------------------------------------------------
+Alt:  [b]Current version: v0.4.0[/b]
+Neu:  [b]Current version: v0.4.2[/b]
+==========================================================================

@@ -4,7 +4,7 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 
 <a href="https://www.buymeacoffee.com/Orohal" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-**Aktueller Stand: [v0.4.1](https://github.com/Orohal/SoD2MapV/releases/latest)** — Viewer + Voll-Editor + Fahrzeug-Injektion (GUI/CLI) + echte Karte als Hintergrund (auto-ausgerichtet). Details: [Repo-Status](#repo-status) (eingeklappt).
+**Aktueller Stand: [v0.4.2](https://github.com/Orohal/SoD2MapV/releases/latest)** — Viewer + Voll-Editor + Fahrzeug-Injektion (GUI/CLI) + Hintergrund-Karten für alle 5 Regionen (auto-ausgerichtet, Rohbau). Details: [Repo-Status](#repo-status) (eingeklappt).
 
 ## Features
 
@@ -117,6 +117,7 @@ SoD2MapViewer.exe --saves
 <details>
 <summary><b>Repo-Status / Versionshistorie</b></summary>
 
+- **v0.4.2** — **Hintergrund für alle 5 Regionen** (faustite→Trumbull Valley, amethyst→Cascade Hills, basalt→Drucker County, copper→Meagher Valley, danburite→Providence Ridge — Zuordnung verifiziert über Sublevel-Namen + Render-Checks); Region wird automatisch aus dem Kartenpfad gewählt. Kachel-Zeichnung: grobe Ebene zuerst, Zoom klemmt auf die verlässlichen CDN-Ebenen z4/z5 (z1–z3 der WeMod-CDN sind lückenhaft), fehlende Kacheln werden aus der Elternebene hochskaliert gefüllt. Fix: Kachel-Cache mischte vorher Dateien verschiedener Regionen (Cache-Dateinamen sind jetzt pro Region/GUID — war Ursache des „Flecken/Löcher-Mosaiks“). CLI: `--wandrender`, `--tileinfo` (WorldTileInfo-Offsets je Region). **⚠ Rohbau-Hinweis:** die WeMod-CDN-Pyramide ist derzeit serverseitig unvollständig (Kacheln verschwinden/werden nachgeladen) — Löcher/Flecken im Hintergrund sind bis auf weiteres möglich; an der Anbindung wird weitergearbeitet (Community-Basemap als Fallback geplant)
 - **v0.4.1** — **Wand-Hintergrund auto-ausgerichtet**: Kachel-Offset kommt aus dem UMAP-Header (`WorldTileInfo.Position`, pro Karte); keine manuelle Kalibrierung mehr (`--wandrender` ohne Offsets testbar)
 - **v0.4.0** — Echte Karte als Hintergrund (Wand-Tiles, pixelgenaue Projektion, `--wandcheck`); Fenstertitel zeigt Paketversion; ungepackte Variante gegen Viren-FP
 - **v0.3.5** — Framework-abhängiger Build als Release-Asset; `--saves`; Auto-Template-Injektion
@@ -135,15 +136,15 @@ Die gepackten Single-File-EXEs werden von einzelnen VirusTotal-Engines als gener
 
 **Wenn ungünstig:** Ordner-Variante ohne gepackte EXE nutzen — [SoD2MapViewer-framework-dependent-plain.zip](https://github.com/Orohal/SoD2MapV/releases/latest) (kleine EXE + DLLs, gleiche Funktion). Im eigenen Virenprogramm ggf. Ordner ausschließen.
 
-**Published Hashes (SHA256) — v0.4.1:**
+**Published Hashes (SHA256) — v0.4.2:**
 
 | Asset | SHA256 |
 |---|---|
-| `SoD2MapViewer.exe` (self-contained) | `0A4AF301F084636C88AE1238D3AC767E396BBC2DEF698ECD71660572152ACBE7` |
-| `SoD2MapViewer.exe` in framework-dependent.zip (single-file) | `D392E7735C2150E4E7AB8D2CE7C0AC1E3015E1EA68456C29AF99B28C156F7510` |
-| `SoD2MapViewer-framework-dependent.zip` | `7471469D0BF045E19B08F6A29E9BD7829E8BA40DC6C931528336250E411C9B27` |
-| `SoD2MapViewer-framework-dependent-plain.zip` | `9723E70B14A5350FCA157FA4E358857BB708B667F9FBC57EBEC8D1CB005C3A2B` |
-| `SoD2MapViewer.exe` (ungepackt, 162 kB, in plain.zip) | `D335F40684CB9AD206A3D4370F4A419B6BBD64170819EBB588E454CF01D7F9C8` |
+| `SoD2MapViewer.exe` (self-contained, ~126 MB) | `FBBA7FB7264688F47561B6B7A16333CDF2FAAFF64EEE361E09837CCEA0EE1FD4` |
+| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `86FBA4D85BDC05CB96303727FFAF249708B841F37041C7619FBFD0EE63977CC3` |
+| `SoD2MapViewer-framework-dependent.zip` | `18771BD1A22FE0D34F9F2497809904C29D88C8AD2653CF7F0896C0C80D202B0A` |
+| `SoD2MapViewer-framework-dependent-plain.zip` | `997FFD0E02C5DDE0C5E8786529BFF78401B23FB267CD22C060839854A371E05B` |
+| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `B76CAE97D6C44E439E9633FFBA075821C153896B3352A3CCD343581301DCC14D` |
 
 Historisch: die framework-dependent Single-File-EXE von **v0.4.0** (`9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A`) wurde von 9 VirusTotal-Engines generisch gemeldet (Packer-Heuristik der Single-File-Apphosts).
 

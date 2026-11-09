@@ -296,11 +296,16 @@ public sealed class MainForm : Form
         // tiled maps store local object coords; the Wand tiles are in world coords → shift tiles
         _canvas.WandWorldOffsetX = model.HasWorldTileOffset ? model.WorldTileOffsetX : 0;
         _canvas.WandWorldOffsetY = model.HasWorldTileOffset ? model.WorldTileOffsetY : 0;
+        // select the matching Wand background region from the map path (folder codename)
+        _canvas.WandRegion = WandRegions.FromMapPath(model.Path);
         var ok = model.Error == null;
         SetStatus(
             $"map: {Path.GetFileName(model.Path)}  |  exports: {model.TotalExports:N0}  objects: {model.Objects.Count:N0}  " +
             $"without position: {Math.Max(0, model.FailedExports):N0}  parse time: {model.LoadMs} ms" +
-            (ok ? "" : $"  |  ERROR: {model.Error}"));
+            (ok ? "" : $"  |  ERROR: {model.Error}") +
+            (ok && !model.HasWorldTileOffset && model.Path.Contains("maps/", StringComparison.OrdinalIgnoreCase)
+                ? "  |  kein Kachel-Offset (kein WorldTileInfo) — Wand-Hintergrund evtl. versetzt, Kachel-UMAP laden"
+                : ""));
         ApplyFilter();
         RenderLegend();
     }
@@ -458,7 +463,11 @@ public sealed class MainForm : Form
         {
             _wandLayer ??= new WandTileLayer();
             _canvas.WandLayer = _wandLayer;
-            _status.Text = "Wand-Karte aktiv (Trumbull Valley) — nur sinnvoll auf faustite; Tiles laden im Hintergrund.";
+            var region = _canvas.WandRegion ?? WandRegions.TrumbullValley;
+            if (region == WandRegions.TrumbullValley)
+                _status.Text = $"Wand-Karte aktiv: {region.Display} — Tiles laden im Hintergrund.";
+            else
+                _status.Text = $"Wand-Karte aktiv: {region.Display} — Tiles laden im Hintergrund.";
         }
         else
         {
