@@ -510,7 +510,8 @@ internal static class Program
                     args.Length > 2 ? args[2] : "StateOfDecay2/Content/maps/trumbull_valley/trumbull_valley/trumbull_valley_x0_y0.umap",
                     args.Length > 3 ? args[3] : "",
                     args.Length > 4 ? float.Parse(args[4]) : 1000f,
-                    args.Length > 5 ? float.Parse(args[5]) : 0f);
+                    args.Length > 5 ? float.Parse(args[5]) : 0f,
+                    movedFirst: args.Length > 6 && args[6] == "--moved");
             }
             catch (Exception e)
             {

@@ -15,6 +15,7 @@ namespace SoD2MapViewer;
         private float _zoom = 1f;               // pixels per world unit (world unit = UE cm)
         private PointF _center = new(0, 0);     // world coords at control center
         private int _selected = -1;
+        private readonly HashSet<int> _multi = new(); // additional selected indices (group selection)
         private int _hover = -1;
         private bool _panning;
         private Point _panStart;
@@ -86,6 +87,24 @@ namespace SoD2MapViewer;
 
         public event Action<int>? SelectionChanged; // index of selected object, -1 = none
 
+        /// <summary>Radius (cm) used by "Select house group" around the clicked anchor object. Default 40 m.</summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public float HouseSelectRadiusCm { get; set; } = 4000f;
+
+        /// <summary>Indices currently selected (primary selection first). Read-only copy.</summary>
+        public IReadOnlyList<int> Selection
+        {
+            get
+            {
+                if (_selected < 0 && _multi.Count == 0) return Array.Empty<int>();
+                var list = new List<int>(_multi.Count + 1);
+                if (_selected >= 0) list.Add(_selected);
+                list.AddRange(_multi);
+                return list;
+            }
+        }
+
+
         /// <summary>Optional player/character marker position in canvas-world cm (null = hidden).</summary>
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public PointF? PlayerWorldPos { get; set; }
@@ -97,6 +116,10 @@ namespace SoD2MapViewer;
         /// <summary>Fired after a drag moved an object: (index, oldX, oldY). Editing only.</summary>
         public event Action<int, float, float>? ObjectMoved;
 
+        /// <summary>Fired after a group drag moved several objects together (Move mode;
+        /// list of (index, oldX, oldY)). Editing only.</summary>
+        public event Action<IReadOnlyList<(int Idx, float OldX, float OldY)>>? ObjectsMovedTogether;
+
         /// <summary>Fired after a drag rotated an object: (index, oldQX, oldQY, oldQZ, oldQW). Editing only.</summary>
         public event Action<int, float, float, float, float>? ObjectRotated;
 
@@ -106,6 +129,9 @@ namespace SoD2MapViewer;
         /// <summary>Fired when the selected object is deleted: (index). Editing only.</summary>
         public event Action<int>? ObjectDeleted;
 
+        /// <summary>Fired when the whole selection is deleted (list of indices). Editing only.</summary>
+        public event Action<IReadOnlyList<int>>? ObjectsDeleted;
+
         /// <summary>When true, dragging an object edits it instead of panning the view.</summary>
         public bool EditingEnabled;
 
@@ -114,6 +140,16 @@ namespace SoD2MapViewer;
         private bool _dragMoved;
         private PointF _dragGrabOffset; // world offset mouse -> object at drag start
         private float _dragOldX, _dragOldY;
+
+        // group drag state: all selected members move by the same delta in Move mode
+        private readonly List<int> _dragMembers = new();
+        private readonly List<(PointF Grab, float OldX, float OldY)> _dragMemberSnap = new();
+
+        // rubber-band box selection state (Shift+Drag on empty space)
+        private bool _boxSelecting;
+        private Point _boxStart;
+        private Point _boxEnd;
+        private bool _boxAdditive;
 
         // rotate / scale drag state
         private float _dragOldQX, _dragOldQY, _dragOldQZ, _dragOldQW;
@@ -144,6 +180,7 @@ namespace SoD2MapViewer;
     {
         Objects = objects;
         _selected = -1;
+        _multi.Clear();
         _hover = -1;
         FitToObjects();
         Invalidate();
@@ -159,6 +196,7 @@ namespace SoD2MapViewer;
     public void SelectIndex(int index, bool centerOnSelection = true)
     {
         _selected = index;
+        _multi.Clear();
         if (centerOnSelection && _selected >= 0 && _selected < Objects.Count)
         {
             var o = Objects[_selected];
@@ -167,9 +205,74 @@ namespace SoD2MapViewer;
         Invalidate();
     }
 
-    public void CenterOn(float worldX, float worldY)
+    /// <summary>Clears the whole selection (primary + group members).</summary>
+    public void ClearSelection()
     {
-        _center = new PointF(worldX, worldY);
+        _selected = -1;
+        _multi.Clear();
+        SelectionChanged?.Invoke(-1);
+        Invalidate();
+    }
+
+    /// <summary>Adds/removes a single object from the group selection (Ctrl+Click toggle).</summary>
+    public void ToggleSelected(int index)
+    {
+        if (index < 0 || index >= Objects.Count) return;
+        if (_multi.Contains(index)) _multi.Remove(index);
+        else
+        {
+            _multi.Add(index);
+            if (_selected < 0) _selected = index;
+        }
+        SelectionChanged?.Invoke(_selected);
+        Invalidate();
+    }
+
+    /// <summary>Selects the anchor object plus every object within HouseSelectRadiusCm of it
+    /// ("complete house" = house prefab + surrounding scatter objects), then zooms to fit
+    /// the selected group ("autofit").</summary>
+    public void SelectHouseGroup(int anchorIndex)
+    {
+        if (anchorIndex < 0 || anchorIndex >= Objects.Count) return;
+        var a = Objects[anchorIndex];
+        _selected = anchorIndex;
+        _multi.Clear();
+        float r2 = HouseSelectRadiusCm * HouseSelectRadiusCm;
+        for (int i = 0; i < Objects.Count; i++)
+        {
+            if (i == anchorIndex) continue;
+            var o = Objects[i];
+            if (!o.HasTransform) continue;
+            float dx = o.X - a.X, dy = o.Y - a.Y;
+            if (dx * dx + dy * dy <= r2) _multi.Add(i);
+        }
+        SelectionChanged?.Invoke(anchorIndex);
+        ZoomToSelection();
+        _tip.SetToolTip(this, $"house group: {_multi.Count + 1} object(s) within {HouseSelectRadiusCm / 100:0} m of {a.Name}");
+    }
+
+    /// <summary>Zooms so the whole current selection fits in the view.</summary>
+    public void ZoomToSelection()
+    {
+        var sel = Selection;
+        if (sel.Count == 0) return;
+        float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+        foreach (var i in sel)
+        {
+            if (i < 0 || i >= Objects.Count) continue;
+            var o = Objects[i];
+            if (!o.HasTransform) continue;
+            if (o.X < minX) minX = o.X;
+            if (o.Y < minY) minY = o.Y;
+            if (o.X > maxX) maxX = o.X;
+            if (o.Y > maxY) maxY = o.Y;
+        }
+        if (minX > maxX) return;
+        _center = new PointF((minX + maxX) / 2f, (minY + maxY) / 2f);
+        float span = MathF.Max(maxX - minX, maxY - minY);
+        if (span <= 0) span = 1000;
+        _zoom = MathF.Min(Width, Height) / span * 0.55f;
+        if (!float.IsFinite(_zoom) || _zoom <= 0) _zoom = 0.01f;
         Invalidate();
     }
 
@@ -177,10 +280,27 @@ namespace SoD2MapViewer;
     public void DeleteSelected()
     {
         if (!EditingEnabled) return;
-        if (_selected < 0 || _selected >= Objects.Count) return;
-        Objects[_selected].Deleted = true;
+        DeleteSelection();
+    }
+
+    /// <summary>Deletes the whole selection (all group members or just the primary object).
+    /// The canvas does NOT set flags itself — the caller (MainForm) records undo state and
+    /// marks the objects, so undo can restore the pre-delete state.</summary>
+    public void DeleteSelection()
+    {
+        if (!EditingEnabled) return;
+        var sel = Selection;
+        if (sel.Count == 0) return;
+        if (sel.Count == 1)
+            ObjectDeleted?.Invoke(sel[0]);
+        else
+            ObjectsDeleted?.Invoke(sel);
+    }
+
+    public void CenterOn(float worldX, float worldY)
+    {
+        _center = new PointF(worldX, worldY);
         Invalidate();
-        ObjectDeleted?.Invoke(_selected);
     }
 
     public IReadOnlyDictionary<string, Color> Legend()
@@ -355,7 +475,7 @@ namespace SoD2MapViewer;
 
             var cat = ClassCategory.From(o.ClassName);
             var col = ColorFor(cat);
-            if (i == _hover || i == _selected)
+            if (i == _hover || i == _selected || _multi.Contains(i))
                 col = Color.FromArgb(255, col);
             if (o.Deleted)
                 col = Color.FromArgb(120, 120, 120); // grayed out for deleted
@@ -374,30 +494,74 @@ namespace SoD2MapViewer;
             }
 
             // selection highlight + edit-mode visualizations
-            if (i == _selected && EditingEnabled && !o.Deleted)
+            if (EditingEnabled && !o.Deleted && (i == _selected || (_multi.Contains(i) && _multi.Count > 0)))
             {
-                using var hl = new Pen(Color.White, 2f);
-                g.DrawEllipse(hl, p.X - size, p.Y - size, size * 2, size * 2);
+                if (i == _selected)
+                {
+                    using var hl = new Pen(Color.White, 2f);
+                    g.DrawEllipse(hl, p.X - size, p.Y - size, size * 2, size * 2);
 
-                if (Mode == EditMode.Rotate)
-                {
-                    // yaw arrow pointing in the object's forward direction
-                    float yaw = YawFromQuat(o.QX, o.QY, o.QZ, o.QW);
-                    float arrowLen = MathF.Max(dot * 3f, 12f);
-                    var end = new PointF(p.X + MathF.Cos(yaw) * arrowLen, p.Y - MathF.Sin(yaw) * arrowLen);
-                    using var arr = new Pen(Color.Yellow, 2f);
-                    g.DrawLine(arr, p.X, p.Y, end.X, end.Y);
-                    g.FillEllipse(new SolidBrush(Color.Yellow), end.X - 3, end.Y - 3, 6, 6);
+                    if (Mode == EditMode.Rotate)
+                    {
+                        // yaw arrow pointing in the object's forward direction
+                        float yaw = YawFromQuat(o.QX, o.QY, o.QZ, o.QW);
+                        float arrowLen = MathF.Max(dot * 3f, 12f);
+                        var end = new PointF(p.X + MathF.Cos(yaw) * arrowLen, p.Y - MathF.Sin(yaw) * arrowLen);
+                        using var arr = new Pen(Color.Yellow, 2f);
+                        g.DrawLine(arr, p.X, p.Y, end.X, end.Y);
+                        g.FillEllipse(new SolidBrush(Color.Yellow), end.X - 3, end.Y - 3, 6, 6);
+                    }
+                    else if (Mode == EditMode.Scale)
+                    {
+                        // scale indicator: square around the object sized by average scale
+                        float avgScale = (o.SX + o.SY + o.SZ) / 3f;
+                        float s = MathF.Max(dot * avgScale * 1.5f, 8f);
+                        using var sq = new Pen(Color.Cyan, 1.5f);
+                        g.DrawRectangle(sq, p.X - s / 2, p.Y - s / 2, s, s);
+                    }
                 }
-                else if (Mode == EditMode.Scale)
+                else
                 {
-                    // scale indicator: square around the object sized by average scale
-                    float avgScale = (o.SX + o.SY + o.SZ) / 3f;
-                    float s = MathF.Max(dot * avgScale * 1.5f, 8f);
-                    using var sq = new Pen(Color.Cyan, 1.5f);
-                    g.DrawRectangle(sq, p.X - s / 2, p.Y - s / 2, s, s);
+                    // group member: smaller orange dashed ring
+                    var selSize = (int)Math.Max(dot * 1.5f + 3f, 6f);
+                    using var hl2 = new Pen(Color.OrangeRed, 1.5f) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
+                    g.DrawEllipse(hl2, p.X - selSize, p.Y - selSize, selSize * 2, selSize * 2);
                 }
             }
+        }
+
+        // dashed bounding box around the whole group selection
+        if (_multi.Count > 1)
+        {
+            float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+            var ok = false;
+            foreach (var i in _multi)
+            {
+                if (i < 0 || i >= Objects.Count) continue;
+                var mo = Objects[i];
+                if (!mo.HasTransform) continue;
+                var sp = WorldToScreen(mo.X, mo.Y);
+                minX = MathF.Min(minX, sp.X); minY = MathF.Min(minY, sp.Y);
+                maxX = MathF.Max(maxX, sp.X); maxY = MathF.Max(maxY, sp.Y);
+                ok = true;
+            }
+            if (ok)
+            {
+                minX -= 12; minY -= 12; maxX += 12; maxY += 12;
+                using var grpPen = new Pen(Color.FromArgb(255, 140, 80), 1.5f)
+                    { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
+                g.DrawRectangle(grpPen, minX, minY, maxX - minX, maxY - minY);
+            }
+        }
+
+        // rubber-band box selection overlay
+        if (_boxSelecting)
+        {
+            var r = BoxRect(_boxStart, _boxEnd);
+            using var boxPen = new Pen(Color.White, 1f) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
+            using var boxFill = new SolidBrush(Color.FromArgb(30, 255, 255, 255));
+            g.FillRectangle(boxFill, r);
+            g.DrawRectangle(boxPen, r.X, r.Y, r.Width, r.Height);
         }
 
         // player/character marker (on top)
@@ -425,7 +589,7 @@ namespace SoD2MapViewer;
         using var hudFont = new Font("Segoe UI", 8.5f);
         using var hudBrush = new SolidBrush(Color.FromArgb(150, 200, 210));
         g.DrawString(
-            $"zoom {_zoom:0.000} px/cm   center [{_center.X / 100:0.#} m / {_center.Y / 100:0.#} m]   mode={Mode}   hover: {(_hover >= 0 ? Objects[_hover].Name : "-")}   (wheel/double-click: zoom, drag: pan, F: fit)",
+            $"zoom {_zoom:0.000} px/cm   center [{_center.X / 100:0.#} m / {_center.Y / 100:0.#} m]   mode={Mode}   sel={Selection.Count}   hover: {(_hover >= 0 ? Objects[_hover].Name : "-")}   (wheel/dbl-click: zoom, drag: pan, F: fit, Ctrl+click: multi-select, Shift+drag: box, right-click: select house group, Esc: clear)",
             hudFont, hudBrush, new PointF(8, Height - 24));
     }
 
@@ -469,8 +633,16 @@ namespace SoD2MapViewer;
         }
         if (e.Button == MouseButtons.Left)
         {
+            bool ctrl = (ModifierKeys & Keys.Control) != 0;
+            bool shift = (ModifierKeys & Keys.Shift) != 0;
             if (EditingEnabled && PickObject(e.Location) is int hit && hit >= 0)
             {
+                if (ctrl && !shift)
+                {
+                    // Ctrl+Click = toggle group membership (no drag)
+                    ToggleSelected(hit);
+                    return;
+                }
                 var o = Objects[hit];
                 var w = ScreenToWorld(e.X, e.Y);
                 _dragging = true;
@@ -483,6 +655,23 @@ namespace SoD2MapViewer;
                 _dragOldQX = o.QX; _dragOldQY = o.QY; _dragOldQZ = o.QZ; _dragOldQW = o.QW;
                 _dragOldSX = o.SX; _dragOldSY = o.SY; _dragOldSZ = o.SZ;
 
+                // snapshot group members (Move mode): everyone moves together
+                _dragMembers.Clear();
+                _dragMemberSnap.Clear();
+                if (Mode == EditMode.Move)
+                {
+                    var grab = new PointF(o.X - w.X, o.Y - w.Y);
+                    _dragMembers.Add(hit);
+                    _dragMemberSnap.Add((grab, o.X, o.Y));
+                    foreach (var m in _multi)
+                    {
+                        if (m == hit) continue;
+                        var mo = Objects[m];
+                        _dragMembers.Add(m);
+                        _dragMemberSnap.Add((new PointF(mo.X - w.X, mo.Y - w.Y), mo.X, mo.Y));
+                    }
+                }
+
                 if (Mode == EditMode.Rotate)
                 {
                     _dragStartYaw = YawFromQuat(o.QX, o.QY, o.QZ, o.QW);
@@ -494,6 +683,16 @@ namespace SoD2MapViewer;
                 }
 
                 Cursor = Cursors.SizeAll;
+                return;
+            }
+            if (shift)
+            {
+                // Shift+Drag on empty space = rubber-band box selection
+                _boxSelecting = true;
+                _boxAdditive = ctrl;
+                _boxStart = e.Location;
+                _boxEnd = e.Location;
+                Cursor = Cursors.Cross;
                 return;
             }
             _panning = true;
@@ -511,9 +710,25 @@ namespace SoD2MapViewer;
             cm.Items.Add("Mode: Rotate (R)", null, (s, ev) => { Mode = EditMode.Rotate; Invalidate(); });
             cm.Items.Add("Mode: Scale (S)", null, (s, ev) => { Mode = EditMode.Scale; Invalidate(); });
             cm.Items.Add("-");
-            cm.Items.Add("Delete object (Del)", null, (s, ev) => DeleteSelected());
+            cm.Items.Add($"Select house group ({HouseSelectRadiusCm / 100:0} m around object)", null,
+                (s, ev) => SelectHouseGroup(_hover));
+            if (_multi.Count > 0)
+            {
+                cm.Items.Add("Zoom to selection", null, (s, ev) => ZoomToSelection());
+                cm.Items.Add("Clear selection (Esc)", null, (s, ev) => ClearSelection());
+            }
+            cm.Items.Add("-");
+            cm.Items.Add(Selection.Count > 1 ? $"Delete selection ({Selection.Count}, Del)" : "Delete object (Del)",
+                null, (s, ev) => DeleteSelection());
             cm.Show(this, e.Location);
         }
+    }
+
+    private static RectangleF BoxRect(Point a, Point b)
+    {
+        var x = MathF.Min(a.X, b.X);
+        var y = MathF.Min(a.Y, b.Y);
+        return new RectangleF(x, y, MathF.Abs(a.X - b.X), MathF.Abs(a.Y - b.Y));
     }
 
     /// <summary>Nearest object within pick radius (screen px), or -1.</summary>
@@ -544,7 +759,15 @@ namespace SoD2MapViewer;
                 if (_dragMoved)
                 {
                     var o = Objects[_dragIndex];
-                    if (Mode == EditMode.Move)
+                    if (Mode == EditMode.Move && _dragMembers.Count > 1)
+                    {
+                        // group drag: fire one combined event so MainForm pushes a single undo entry
+                        var moves = new List<(int Idx, float OldX, float OldY)>(_dragMembers.Count);
+                        for (var k = 0; k < _dragMembers.Count; k++)
+                            moves.Add((_dragMembers[k], _dragMemberSnap[k].OldX, _dragMemberSnap[k].OldY));
+                        ObjectsMovedTogether?.Invoke(moves);
+                    }
+                    else if (Mode == EditMode.Move)
                         ObjectMoved?.Invoke(_dragIndex, _dragOldX, _dragOldY);
                     else if (Mode == EditMode.Rotate)
                         ObjectRotated?.Invoke(_dragIndex, _dragOldQX, _dragOldQY, _dragOldQZ, _dragOldQW);
@@ -553,11 +776,45 @@ namespace SoD2MapViewer;
                 }
                 else
                 {
-                    // click without move on a grabbed object = select it
+                    // click without move on a grabbed object = select it (single)
                     _selected = _dragIndex;
+                    _multi.Clear();
                     SelectionChanged?.Invoke(_dragIndex);
                     Invalidate();
                 }
+                _dragMembers.Clear();
+                _dragMemberSnap.Clear();
+                return;
+            }
+            if (_boxSelecting)
+            {
+                _boxSelecting = false;
+                Cursor = Cursors.Cross;
+                var r = BoxRect(_boxStart, e.Location);
+                if (r.Width < 5 && r.Height < 5)
+                {
+                    // tiny box = plain click
+                    var best = PickObject(e.Location);
+                    if ((ModifierKeys & Keys.Control) != 0 && best >= 0) ToggleSelected(best);
+                    else { _selected = best; _multi.Clear(); SelectionChanged?.Invoke(best); }
+                    Invalidate();
+                    return;
+                }
+                if (!_boxAdditive) _multi.Clear();
+                var count = 0;
+                for (int i = 0; i < Objects.Count; i++)
+                {
+                    var o = Objects[i];
+                    if (!o.HasTransform) continue;
+                    var s = WorldToScreen(o.X, o.Y);
+                    if (r.Contains(s)) { _multi.Add(i); count++; }
+                }
+                _selected = _multi.Count > 0 ? _multi.Min() : _selected;
+                // drop primary duplicate
+                _multi.Remove(_selected);
+                SelectionChanged?.Invoke(_selected);
+                _tip.SetToolTip(this, $"selected {count} object(s) by box");
+                Invalidate();
                 return;
             }
             if (_bgPanning)
@@ -594,15 +851,26 @@ namespace SoD2MapViewer;
             if (Math.Abs(e.X - _panStart.X) < 3 && Math.Abs(e.Y - _panStart.Y) < 3)
             {
                 int best = PickObject(e.Location);
-                _selected = best;
-                SelectionChanged?.Invoke(best);
+                if ((ModifierKeys & Keys.Control) != 0 && EditingEnabled && best >= 0)
+                    ToggleSelected(best);
+                else
+                {
+                    _selected = best;
+                    _multi.Clear();
+                    SelectionChanged?.Invoke(best);
+                }
                 Invalidate();
             }
         }
         else if (e.Button == MouseButtons.Right)
         {
-            var w = ScreenToWorld(e.X, e.Y);
-            WorldRightClicked?.Invoke(w);
+            // world position inject (MainForm opens an Inject dialog) only on empty map background;
+            // when an object is under the cursor the object/house context menu wins instead
+            if (_hover < 0 && PickObject(e.Location) < 0)
+            {
+                var w = ScreenToWorld(e.X, e.Y);
+                WorldRightClicked?.Invoke(w);
+            }
         }
     }
 
@@ -626,7 +894,18 @@ namespace SoD2MapViewer;
                     o.X = nx;
                     o.Y = ny;
                     _dragMoved = true;
-                    _tip.SetToolTip(this, Describe(o) + "\n(release to drop, Ctrl+Z to undo)");
+                    // move the whole group by the same delta
+                    if (_dragMembers.Count > 1)
+                    {
+                        for (var k = 1; k < _dragMembers.Count; k++)
+                        {
+                            var mo = Objects[_dragMembers[k]];
+                            mo.X = w.X + _dragMemberSnap[k].Grab.X;
+                            mo.Y = w.Y + _dragMemberSnap[k].Grab.Y;
+                        }
+                    }
+                    _tip.SetToolTip(this, Describe(o) + (_dragMembers.Count > 1 ? $"  [{_dragMembers.Count} objects]" : "")
+                        + "\n(release to drop, Ctrl+Z to undo)");
                 }
             }
             else if (Mode == EditMode.Rotate)
@@ -675,6 +954,13 @@ namespace SoD2MapViewer;
             FandomNudgeX = _fandomNudgeStartX + (e.X - _panStart.X) / _zoom;
             FandomNudgeY = _fandomNudgeStartY + (e.Y - _panStart.Y) / _zoom;
             _tip.SetToolTip(this, $"Fandom map nudge: X={FandomNudgeX:0} Y={FandomNudgeY:0} cm  (release to commit)");
+            Invalidate();
+            return;
+        }
+        if (_boxSelecting)
+        {
+            _boxEnd = e.Location;
+            _tip.SetToolTip(this, "release to select all objects in the box" + (_boxAdditive ? " (adding to selection)" : ""));
             Invalidate();
             return;
         }

@@ -24,6 +24,13 @@ public sealed class MapObject
 
     public bool HasTransform { get; set; }
 
+    // Original (pre-edit) transform as loaded — the UmapPatcher uses these to locate the
+    // location bytes inside the pristine map data, while X/Y/... hold the (possibly moved)
+    // current values. Both stay equal until the object is edited.
+    public float OrigX, OrigY, OrigZ;
+    public float OrigQX, OrigQY, OrigQZ, OrigQW;
+    public float OrigSX, OrigSY, OrigSZ;
+
     // internal bookkeeping for the patcher (fields on purpose: not bound to the grid)
     public int ExportIndex = -1;          // actor export index in the package's ExportMap
     public int ComponentExportIndex = -1; // root component export index (-1 = none/import)
@@ -103,4 +110,22 @@ public static class ClassCategory
                 return cat;
         return "Other";
     }
+
+    /// <summary>Identifies house prefabs in SoD2 tiled maps: whole houses are single
+    /// PrefabActor exports whose name starts with the housing keyword (e.g.
+    /// "house_01c_damp_prefab_26", "home_construction_site_01b_damp_prefab_62").
+    /// Surrounding scatter (garages, bins, barricades, decals, ...) are separate actors and
+    /// become part of the move-group via canvas radius selection, not this detector.</summary>
+    public static bool IsHousePrefab(MapObject o)
+    {
+        if (!o.ClassName.Contains("PrefabActor", StringComparison.OrdinalIgnoreCase)) return false;
+        var n = o.Name;
+        return n.StartsWith("house", StringComparison.OrdinalIgnoreCase)
+            || n.StartsWith("home", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Fallback for maps whose building prefabs use other name prefixes:
+    /// any PrefabActor (garage/warehouse/courthouse/etc.) is also a movable building.</summary>
+    public static bool IsPrefabBuilding(MapObject o) =>
+        o.ClassName.Contains("PrefabActor", StringComparison.OrdinalIgnoreCase);
 }

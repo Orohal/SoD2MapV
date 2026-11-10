@@ -28,9 +28,11 @@ public static class UmapPatcher
         { res.Error = "component serial range out of bounds"; return res; }
 
         var pattern = new byte[12];
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(0, 4), obj.X);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(4, 4), obj.Y);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(8, 4), obj.Z);
+        // search by the ORIGINAL (pre-edit) values — the pristine map bytes still contain them;
+        // X/Y/Z may already hold the moved values (in-place editing)
+        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(0, 4), obj.OrigX);
+        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(4, 4), obj.OrigY);
+        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(8, 4), obj.OrigZ);
 
         var from = obj.ComponentSerialOffset;
         var to = obj.ComponentSerialOffset + obj.ComponentSerialSize - pattern.Length;
@@ -47,7 +49,7 @@ public static class UmapPatcher
 
         if (hits.Count == 0)
         {
-            res.Error = $"location pattern (X={obj.X:0.##}, Y={obj.Y:0.##}, Z={obj.Z:0.##}) not found in component data";
+            res.Error = $"location pattern (X={obj.OrigX:0.##}, Y={obj.OrigY:0.##}, Z={obj.OrigZ:0.##}) not found in component data";
             return res;
         }
 
@@ -71,10 +73,10 @@ public static class UmapPatcher
         { res.Error = "component serial range out of bounds"; return res; }
 
         var pattern = new byte[16];
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(0, 4), obj.QX);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(4, 4), obj.QY);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(8, 4), obj.QZ);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(12, 4), obj.QW);
+        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(0, 4), obj.OrigQX);
+        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(4, 4), obj.OrigQY);
+        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(8, 4), obj.OrigQZ);
+        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(12, 4), obj.OrigQW);
 
         var from = obj.ComponentSerialOffset;
         var to = obj.ComponentSerialOffset + obj.ComponentSerialSize - pattern.Length;
@@ -91,7 +93,7 @@ public static class UmapPatcher
 
         if (hits.Count == 0)
         {
-            res.Error = $"rotation pattern (QX={obj.QX:0.##}, QY={obj.QY:0.##}, QZ={obj.QZ:0.##}, QW={obj.QW:0.##}) not found in component data";
+            res.Error = $"rotation pattern (QX={obj.OrigQX:0.##}, QY={obj.OrigQY:0.##}, QZ={obj.OrigQZ:0.##}, QW={obj.OrigQW:0.##}) not found in component data";
             return res;
         }
 
@@ -116,9 +118,9 @@ public static class UmapPatcher
         { res.Error = "component serial range out of bounds"; return res; }
 
         var pattern = new byte[12];
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(0, 4), obj.SX);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(4, 4), obj.SY);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(8, 4), obj.SZ);
+        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(0, 4), obj.OrigSX);
+        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(4, 4), obj.OrigSY);
+        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(8, 4), obj.OrigSZ);
 
         var from = obj.ComponentSerialOffset;
         var to = obj.ComponentSerialOffset + obj.ComponentSerialSize - pattern.Length;
@@ -135,7 +137,7 @@ public static class UmapPatcher
 
         if (hits.Count == 0)
         {
-            res.Error = $"scale pattern (SX={obj.SX:0.##}, SY={obj.SY:0.##}, SZ={obj.SZ:0.##}) not found in component data";
+            res.Error = $"scale pattern (SX={obj.OrigSX:0.##}, SY={obj.OrigSY:0.##}, SZ={obj.OrigSZ:0.##}) not found in component data";
             return res;
         }
 

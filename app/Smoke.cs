@@ -395,7 +395,7 @@ internal static class Smoke
     }
 
     /// <summary>End-to-end patch test: locate an object, patch its X/Y in the decoded bytes, re-parse and verify.</summary>
-    public static int PatchTest(string gameDir, string mapPath, string namePart, float dx, float dy)
+    public static int PatchTest(string gameDir, string mapPath, string namePart, float dx, float dy, bool movedFirst = false)
     {
         var loader = new MapLoader();
         var res = loader.InitializeAsync(gameDir, new Progress<string>(s => Console.WriteLine("[init] " + s))).GetAwaiter().GetResult();
@@ -417,9 +417,19 @@ internal static class Smoke
         var data = loader.ReadMapBytes(mapPath);
         Console.WriteLine($"        map bytes: {data.Length:N0}");
 
-        var patch = UmapPatcher.PatchLocation(data, obj, obj.X + dx, obj.Y + dy);
+        // GUI semantics option: move the object in memory BEFORE patching (like dragging in
+        // the editor does) and patch with the current values — exercises the OrigX* search path
+        if (movedFirst)
+        {
+            obj.X += dx;
+            obj.Y += dy;
+        }
+        var tx = movedFirst ? obj.X : obj.X + dx;
+        var ty = movedFirst ? obj.Y : obj.Y + dy;
+
+        var patch = UmapPatcher.PatchLocation(data, obj, tx, ty);
         if (patch.Error.Length > 0) { Console.Error.WriteLine("[patch] FAILED: " + patch.Error); return 4; }
-        Console.WriteLine($"        patched {patch.Hits} occurrence(s) at offset {patch.FirstOffset:N0} -> ({obj.X + dx:0.##}, {obj.Y + dy:0.##})");
+        Console.WriteLine($"        patched {patch.Hits} occurrence(s) at offset {patch.FirstOffset:N0} -> ({tx:0.##}, {ty:0.##}) (movedFirst={movedFirst})");
 
         // re-parse the patched bytes and confirm the new position
         var uasset = new FByteArchive(mapPath, data, loader.Provider.Versions);
@@ -429,12 +439,12 @@ internal static class Smoke
         if (again == null) { Console.Error.WriteLine("[verify] object not found after patch"); return 5; }
         var rootOk = again.TryGet<FPackageIndex>("RootComponent", out var ri);
         if (!rootOk || ri == null || !ri.IsExport) { Console.Error.WriteLine("[verify] root component missing"); return 5; }
-        var comp = pkg.GetExport(ri.Index);
+        var comp = pkg.GetExport(ri.Index - 1); // FPackageIndex is 1-based for exports (same fix as MapLoader)
         if (!MapLoader.TryGetComponentTransform(comp, out var tf))
         { Console.Error.WriteLine("[verify] transform missing"); return 5; }
         Console.WriteLine($"[verify] re-parsed: {again.Name} at {tf.Translation.X:0.##},{tf.Translation.Y:0.##},{tf.Translation.Z:0.##}");
-        var ok = MathF.Abs((float)tf.Translation.X - (obj.X + dx)) < 0.5f
-              && MathF.Abs((float)tf.Translation.Y - (obj.Y + dy)) < 0.5f;
+        var ok = MathF.Abs((float)tf.Translation.X - tx) < 0.5f
+              && MathF.Abs((float)tf.Translation.Y - ty) < 0.5f;
         Console.WriteLine(ok ? "[verify] OK" : "[verify] MISMATCH");
         return ok ? 0 : 6;
     }

@@ -179,9 +179,9 @@ public sealed class MapLoader
                 if (comp != null && TryGetComponentTransform(comp, out var tf))
                 {
                     obj.HasTransform = true;
-                    obj.X = tf.Translation.X; obj.Y = tf.Translation.Y; obj.Z = tf.Translation.Z;
-                    obj.QX = tf.Rotation.X; obj.QY = tf.Rotation.Y; obj.QZ = tf.Rotation.Z; obj.QW = tf.Rotation.W;
-                    obj.SX = tf.Scale3D.X; obj.SY = tf.Scale3D.Y; obj.SZ = tf.Scale3D.Z;
+                    obj.X = obj.OrigX = tf.Translation.X; obj.Y = obj.OrigY = tf.Translation.Y; obj.Z = obj.OrigZ = tf.Translation.Z;
+                    obj.QX = obj.OrigQX = tf.Rotation.X; obj.QY = obj.OrigQY = tf.Rotation.Y; obj.QZ = obj.OrigQZ = tf.Rotation.Z; obj.QW = obj.OrigQW = tf.Rotation.W;
+                    obj.SX = obj.OrigSX = tf.Scale3D.X; obj.SY = obj.OrigSY = tf.Scale3D.Y; obj.SZ = obj.OrigSZ = tf.Scale3D.Z;
 
                     if (comp.TryGet<FPackageIndex>("StaticMesh", out var meshIdx)
                         && meshIdx != null && !meshIdx.IsNull)

@@ -69,7 +69,7 @@ dotnet app/bin/Release/net10.0-windows/SoD2MapViewer.dll
 | Doppelklick | Zoom auf Cursor |
 | Rechtsklick | Kontextmenü (Location kopieren, Modus, Delete) |
 
-**Export mod .pak…** schreibt alle Änderungen in eine `.pak` für `StateOfDecay2\Content\Paks\` (das `_P`-Suffix gibt dem Mod den Vorzug).
+**Export mod .pak…** schreibt alle Änderungen in eine `.pak` für `%LocalAppData%\StateOfDecay2\Saved\Paks\` (Steam/Epic-Modordner; das `_P`-Suffix gibt dem Mod den Vorzug).
 
 ### Fahrzeug injizieren
 

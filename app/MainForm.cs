@@ -29,15 +29,34 @@ public sealed class MainForm : Form
     private CheckBox _chkFandom = null!;
     private CheckBox _chkBg = null!;
     private CheckBox _chkEditBg = null!;
+    private readonly ComboBox _cmbHouses;
+    private bool _houseComboUpdating;
     private readonly Stack<UndoEntry> _undo = new();
 
-    private sealed class UndoEntry
+    private sealed class HouseItem
+    {
+        public MapObject? Obj;
+        public bool Fallback;     // listed via generic prefab fallback (not house/home-named)
+        public string? Label;
+        public override string ToString()
+        {
+            if (Obj == null) return Label ?? "(house: none — click or right-click the map)";
+            return (Fallback ? "[prefab] " : "") + $"{Obj.Name}  ({Obj.X / 100:0.#}, {Obj.Y / 100:0.#} m)";
+        }
+    }
+
+    private sealed class UndoItem
     {
         public int Idx;
         public float OldX, OldY;
         public float OldQX, OldQY, OldQZ, OldQW;
         public float OldSX, OldSY, OldSZ;
         public bool OldDeleted;
+    }
+
+    private sealed class UndoEntry
+    {
+        public List<UndoItem> Items = new();
     }
 
     public MainForm()
@@ -65,7 +84,8 @@ public sealed class MainForm : Form
                 if (e.KeyCode == Keys.M) { _canvas.Mode = MapCanvas.EditMode.Move; e.Handled = true; }
                 else if (e.KeyCode == Keys.R) { _canvas.Mode = MapCanvas.EditMode.Rotate; e.Handled = true; }
                 else if (e.KeyCode == Keys.S) { _canvas.Mode = MapCanvas.EditMode.Scale; e.Handled = true; }
-                else if (e.KeyCode == Keys.Delete) { _canvas.DeleteSelected(); e.Handled = true; }
+                else if (e.KeyCode == Keys.Delete) { _canvas.DeleteSelection(); e.Handled = true; }
+                else if (e.KeyCode == Keys.Escape) { _canvas.ClearSelection(); e.Handled = true; }
             }
         };
 
@@ -135,9 +155,11 @@ public sealed class MainForm : Form
         _canvas = new MapCanvas { Dock = DockStyle.Fill };
         _canvas.SelectionChanged += CanvasSelection;
         _canvas.ObjectMoved += CanvasObjectMoved;
+        _canvas.ObjectsMovedTogether += CanvasObjectsMovedTogether;
         _canvas.ObjectRotated += CanvasObjectRotated;
         _canvas.ObjectScaled += CanvasObjectScaled;
         _canvas.ObjectDeleted += CanvasObjectDeleted;
+        _canvas.ObjectsDeleted += CanvasObjectsDeleted;
         right.Panel1.Controls.Add(_grid);
         right.Panel2.Controls.Add(_canvas);
 
@@ -167,6 +189,30 @@ public sealed class MainForm : Form
         var labelMap = new Label { AutoSize = true, Text = "Object filter:", ForeColor = Color.Gainsboro, Margin = new Padding(0, 8, 4, 0) };
         _search = new TextBox { Width = 320, PlaceholderText = "name/class/mesh contains...", Height = 30, Margin = new Padding(0, 0, 12, 0) };
         _search.TextChanged += (s, e) => ApplyFilter();
+        var labelHouse = new Label { AutoSize = true, Text = "House:", ForeColor = Color.Gainsboro, Margin = new Padding(0, 8, 4, 0) };
+        _cmbHouses = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            DropDownWidth = 420,
+            Width = 300,
+            Height = 30,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(30, 32, 38),
+            ForeColor = Color.Gainsboro,
+            Margin = new Padding(0, 4, 12, 0),
+        };
+        _cmbHouses.SelectedIndexChanged += (s, e) =>
+        {
+            if (_houseComboUpdating) return;
+            if (_cmbHouses.SelectedItem is HouseItem { Obj: { } h })
+            {
+                var idx = _visible.IndexOf(h);
+                if (idx < 0) { SetStatus("house not in current view — clear the object filter"); return; }
+                _canvas.SelectHouseGroup(idx);
+                SetStatus($"house group selected: {h.Name} — {_canvas.Selection.Count} objects within {_canvas.HouseSelectRadiusCm / 100:0} m. " +
+                          "Drag in Move mode to relocate, then 'Export mod .pak' to let the house appear in-game at the new spot.");
+            }
+        };
         _chkEdit = new CheckBox
         {
             Text = "Enable editing (drag objects)",
@@ -205,7 +251,7 @@ public sealed class MainForm : Form
         _canvas.ShowBgBase = true;
         _chkEditBg = new CheckBox { Text = "Edit base-map pos", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkEditBg.CheckedChanged += (s, e) => { _canvas.EditBgOffset = _chkEditBg.Checked; _canvas.Invalidate(); };
-        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit, btnExport, btnInjectMenu, btnChar, _chkFandom, _chkBg, _chkEditBg });
+        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, _chkEdit, btnExport, btnInjectMenu, btnChar, _chkFandom, _chkBg, _chkEditBg });
         top.Controls.Add(flow);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
 
@@ -459,6 +505,28 @@ public sealed class MainForm : Form
         }
         _visible = q.ToList();
 
+        // house identification: list all house prefabs of the current view for quick selection
+        _houseComboUpdating = true;
+        _cmbHouses.Items.Clear();
+        var houses = _visible.Where(ClassCategory.IsHousePrefab).ToList();
+        var fallback = false;
+        if (houses.Count == 0)
+        {
+            // map without house/home-prefixed names: offer all building prefabs instead
+            houses = _visible.Where(ClassCategory.IsPrefabBuilding).ToList();
+            fallback = houses.Count > 0;
+        }
+        if (houses.Count == 0)
+            _cmbHouses.Items.Add(new HouseItem { Obj = null, Label = "(no prefabs in this view — check object filter / map)" });
+        else
+        {
+            _cmbHouses.Items.Add(new HouseItem { Obj = null, Label = $"(select a house — {houses.Count} found)" });
+            foreach (var o in houses)
+                _cmbHouses.Items.Add(new HouseItem { Obj = o, Fallback = fallback });
+        }
+        _cmbHouses.SelectedIndex = 0;
+        _houseComboUpdating = false;
+
         var binding = new BindingList<MapObject>(_visible) { AllowNew = false };
         _source.DataSource = binding;
         if (_grid.DataSource == null)
@@ -492,27 +560,65 @@ public sealed class MainForm : Form
             if (_grid.Columns[col] is DataGridViewTextBoxColumn cm2) cm2.HeaderText = col + " (m)";
     }
 
+    private UndoItem Snapshot(int idx)
+    {
+        var o = _visible[idx];
+        return new UndoItem
+        {
+            Idx = idx,
+            OldX = o.X, OldY = o.Y,
+            OldQX = o.QX, OldQY = o.QY, OldQZ = o.QZ, OldQW = o.QW,
+            OldSX = o.SX, OldSY = o.SY, OldSZ = o.SZ,
+            OldDeleted = o.Deleted,
+        };
+    }
+
+    private static UndoEntry Entry(params UndoItem[] items)
+    {
+        var e = new UndoEntry();
+        e.Items.AddRange(items);
+        return e;
+    }
+
     private void CanvasObjectMoved(int idx, float oldX, float oldY)
     {
         if (idx < 0 || idx >= _visible.Count) return;
+        var item = Snapshot(idx);
+        item.OldX = oldX;
+        item.OldY = oldY;
         var o = _visible[idx];
-        _undo.Push(new UndoEntry { Idx = idx, OldX = o.X, OldY = o.Y,
-            OldQX = o.QX, OldQY = o.QY, OldQZ = o.QZ, OldQW = o.QW,
-            OldSX = o.SX, OldSY = o.SY, OldSZ = o.SZ,
-            OldDeleted = o.Deleted });
+        _undo.Push(Entry(item));
         o.Edited = true;
         _source.ResetItem(idx);
         SetStatus($"moved {o.Name}: ({oldX / 100:0.##}, {oldY / 100:0.##}) m   |   undo: {_undo.Count}  (Ctrl+Z)");
     }
 
+    private void CanvasObjectsMovedTogether(IReadOnlyList<(int Idx, float OldX, float OldY)> moves)
+    {
+        if (moves.Count == 0) return;
+        var items = new List<UndoItem>();
+        foreach (var m in moves)
+        {
+            if (m.Idx < 0 || m.Idx >= _visible.Count) continue;
+            var item = Snapshot(m.Idx);
+            item.OldX = m.OldX;
+            item.OldY = m.OldY;
+            items.Add(item);
+            _visible[m.Idx].Edited = true;
+        }
+        _undo.Push(new UndoEntry { Items = items });
+        SetStatus($"moved {items.Count} objects together (house group)   |   undo: {_undo.Count}  (Ctrl+Z)");
+        foreach (var m in moves)
+            _source.ResetItem(m.Idx);
+    }
+
     private void CanvasObjectRotated(int idx, float oldQX, float oldQY, float oldQZ, float oldQW)
     {
         if (idx < 0 || idx >= _visible.Count) return;
+        var item = Snapshot(idx);
+        item.OldQX = oldQX; item.OldQY = oldQY; item.OldQZ = oldQZ; item.OldQW = oldQW;
         var o = _visible[idx];
-        _undo.Push(new UndoEntry { Idx = idx, OldX = o.X, OldY = o.Y,
-            OldQX = oldQX, OldQY = oldQY, OldQZ = oldQZ, OldQW = oldQW,
-            OldSX = o.SX, OldSY = o.SY, OldSZ = o.SZ,
-            OldDeleted = o.Deleted });
+        _undo.Push(Entry(item));
         o.EditedRotation = true;
         _source.ResetItem(idx);
         var yaw = YawDeg(o.QX, o.QY, o.QZ, o.QW);
@@ -523,11 +629,10 @@ public sealed class MainForm : Form
     private void CanvasObjectScaled(int idx, float oldSX, float oldSY, float oldSZ)
     {
         if (idx < 0 || idx >= _visible.Count) return;
+        var item = Snapshot(idx);
+        item.OldSX = oldSX; item.OldSY = oldSY; item.OldSZ = oldSZ;
         var o = _visible[idx];
-        _undo.Push(new UndoEntry { Idx = idx, OldX = o.X, OldY = o.Y,
-            OldQX = o.QX, OldQY = o.QY, OldQZ = o.QZ, OldQW = o.QW,
-            OldSX = oldSX, OldSY = oldSY, OldSZ = oldSZ,
-            OldDeleted = o.Deleted });
+        _undo.Push(Entry(item));
         o.EditedScale = true;
         _source.ResetItem(idx);
         SetStatus($"scaled {o.Name}: ({oldSX:0.##},{oldSY:0.##},{oldSZ:0.##}) -> ({o.SX:0.##},{o.SY:0.##},{o.SZ:0.##})   |   undo: {_undo.Count}  (Ctrl+Z)");
@@ -537,13 +642,32 @@ public sealed class MainForm : Form
     {
         if (idx < 0 || idx >= _visible.Count) return;
         var o = _visible[idx];
-        _undo.Push(new UndoEntry { Idx = idx, OldX = o.X, OldY = o.Y,
-            OldQX = o.QX, OldQY = o.QY, OldQZ = o.QZ, OldQW = o.QW,
-            OldSX = o.SX, OldSY = o.SY, OldSZ = o.SZ,
-            OldDeleted = o.Deleted });
+        // snapshot BEFORE marking deleted (canvas now delegates flag setting to us)
+        var item = Snapshot(idx);
+        _undo.Push(Entry(item));
         o.Deleted = true;
         _source.ResetItem(idx);
         SetStatus($"deleted {o.Name} (component data will be zeroed on export)   |   undo: {_undo.Count}  (Ctrl+Z)");
+    }
+
+    private void CanvasObjectsDeleted(IReadOnlyList<int> idxs)
+    {
+        if (idxs.Count == 0) return;
+        var items = new List<UndoItem>();
+        foreach (var idx in idxs)
+        {
+            if (idx < 0 || idx >= _visible.Count) continue;
+            var o = _visible[idx];
+            if (o.Deleted) continue;
+            items.Add(Snapshot(idx));
+            o.Deleted = true;
+        }
+        if (items.Count == 0) return;
+        _undo.Push(new UndoEntry { Items = items });
+        foreach (var idx in idxs)
+            _source.ResetItem(idx);
+        _canvas.Invalidate();
+        SetStatus($"deleted {items.Count} objects (selection)   |   undo: {_undo.Count}  (Ctrl+Z)");
     }
 
     private static float YawDeg(float qx, float qy, float qz, float qw)
@@ -636,46 +760,34 @@ public sealed class MainForm : Form
             return;
         }
 
+        var failures = new List<string>();
         foreach (var o in edited)
         {
             if (o.Deleted)
             {
                 var r = UmapPatcher.PatchErase(data, o);
-                if (r.Error.Length > 0)
-                {
-                    MessageBox.Show(this, $"Failed to erase {o.Name}:\n{r.Error}", "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
+                if (r.Error.Length > 0) failures.Add($"{o.Name}: erase: {r.Error}");
                 continue;
             }
             if (o.Edited)
             {
                 var r = UmapPatcher.PatchLocation(data, o, o.X, o.Y, o.Z);
-                if (r.Error.Length > 0)
-                {
-                    MessageBox.Show(this, $"Failed to patch location {o.Name}:\n{r.Error}", "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
+                if (r.Error.Length > 0) failures.Add($"{o.Name}: move: {r.Error}");
             }
             if (o.EditedRotation)
             {
                 var r = UmapPatcher.PatchRotation(data, o, o.QX, o.QY, o.QZ, o.QW);
-                if (r.Error.Length > 0)
-                {
-                    MessageBox.Show(this, $"Failed to patch rotation {o.Name}:\n{r.Error}", "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
+                if (r.Error.Length > 0) failures.Add($"{o.Name}: rotate: {r.Error}");
             }
             if (o.EditedScale)
             {
                 var r = UmapPatcher.PatchScale(data, o, o.SX, o.SY, o.SZ);
-                if (r.Error.Length > 0)
-                {
-                    MessageBox.Show(this, $"Failed to patch scale {o.Name}:\n{r.Error}", "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
+                if (r.Error.Length > 0) failures.Add($"{o.Name}: scale: {r.Error}");
             }
         }
+
+        if (failures.Count > 0)
+            SetStatus($"export: {failures.Count} object(s) could not be patched — details in the dialog");
 
         string mountPoint, rel;
         try
@@ -709,14 +821,20 @@ public sealed class MainForm : Form
             foreach (var o in _map.Objects)
                 o.Edited = o.EditedRotation = o.EditedScale = o.Deleted = false;
 
-            SetStatus($"exported {edited.Count:N0} object(s) -> {dlg.FileName}");
+            SetStatus($"exported {edited.Count - failures.Count}/{edited.Count:N0} object(s) -> {dlg.FileName}");
             MessageBox.Show(this,
                 $"Mod pak written:\n{dlg.FileName}\n\n" +
-                $"Objects modified: {edited.Count:N0}\n\n" +
-                "To use it in the game, copy the file into the game's Paks folder:\n" +
-                "StateOfDecay2\\Content\\Paks\\\n\n" +
+                $"Objects modified: {edited.Count - failures.Count:N0} / {edited.Count:N0}\n" +
+                (failures.Count > 0
+                    ? "\nUn-patched (stayed at original position):\n" + string.Join("\n", failures.Take(8)) + (failures.Count > 8 ? $"\n... and {failures.Count - 8} more" : "")
+                    : "") +
+                "\n\nTo use it in the game, copy the file to:\n" +
+                "%LocalAppData%\\StateOfDecay2\\Saved\\Paks\n" +
+                "(Steam/Epic mod folder — Win+R: %LocalAppData%\\StateOfDecay2\\Saved\\Paks)\n\n" +
                 "The '_P' suffix makes the game prefer this pak over the original map.",
-                "Export complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                failures.Count > 0 ? "Export complete (with warnings)" : "Export complete",
+                MessageBoxButtons.OK,
+                failures.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
         }
         catch (Exception e)
         {
@@ -744,22 +862,29 @@ public sealed class MainForm : Form
             return;
         }
         var entry = _undo.Pop();
-        if (entry.Idx < 0 || entry.Idx >= _visible.Count) return;
-        var o = _visible[entry.Idx];
-        o.X = entry.OldX;
-        o.Y = entry.OldY;
-        o.QX = entry.OldQX;
-        o.QY = entry.OldQY;
-        o.QZ = entry.OldQZ;
-        o.QW = entry.OldQW;
-        o.SX = entry.OldSX;
-        o.SY = entry.OldSY;
-        o.SZ = entry.OldSZ;
-        o.Deleted = entry.OldDeleted;
-        o.Edited = o.EditedRotation = o.EditedScale = false;
-        _source.ResetItem(entry.Idx);
+        string first = "";
+        var restored = 0;
+        foreach (var it in entry.Items)
+        {
+            if (it.Idx < 0 || it.Idx >= _visible.Count) continue;
+            var o = _visible[it.Idx];
+            o.X = it.OldX;
+            o.Y = it.OldY;
+            o.QX = it.OldQX;
+            o.QY = it.OldQY;
+            o.QZ = it.OldQZ;
+            o.QW = it.OldQW;
+            o.SX = it.OldSX;
+            o.SY = it.OldSY;
+            o.SZ = it.OldSZ;
+            o.Deleted = it.OldDeleted;
+            o.Edited = o.EditedRotation = o.EditedScale = false;
+            _source.ResetItem(it.Idx);
+            if (first.Length == 0) first = o.Name;
+            restored++;
+        }
         _canvas.Invalidate();
-        SetStatus($"undo: {o.Name} back to pos=({entry.OldX / 100:0.##},{entry.OldY / 100:0.##}) rot=({entry.OldQX:0.##},{entry.OldQY:0.##},{entry.OldQZ:0.##},{entry.OldQW:0.##}) scale=({entry.OldSX:0.##},{entry.OldSY:0.##},{entry.OldSZ:0.##})   |   undo: {_undo.Count}");
+        SetStatus($"undo: {restored} object(s) restored ({first}{(restored > 1 ? $" +{restored - 1} more" : "")})   |   undo: {_undo.Count}");
     }
 
     private void CanvasSelection(int idx)
