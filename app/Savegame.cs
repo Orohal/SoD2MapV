@@ -214,6 +214,31 @@ public static class Savegame
         return (s2, pos + 4 + chars * 2);
     }
 
+    /// <summary>
+    /// Reads the enum FName of a 1-byte ByteProperty if present ("None" or an enum name
+    /// stored as printable ASCII FString, incl. trailing NUL). Returns ("", pos) when the
+    /// bytes do not look like a string (legacy PAD+value layout) — caller then pads first.
+    /// </summary>
+    private static (string, int) TryReadByteEnumName(byte[] d, int pos)
+    {
+        if (pos + 4 <= d.Length)
+        {
+            var len = BitConverter.ToInt32(d, pos);
+            if (len is > 1 and <= 130 && pos + 4 + len <= d.Length)
+            {
+                var ok = true;
+                for (var i = pos + 4; i < pos + 4 + len - 1; i++)      // text must be printable
+                    if (d[i] is < 0x20 or > 0x7E) { ok = false; break; }
+                if (ok && d[pos + 4 + len - 1] == 0)                   // and NUL-terminated
+                {
+                    var (s, next) = ReadFString(d, pos);
+                    return (s, next);
+                }
+            }
+        }
+        return ("", pos);
+    }
+
     private static GvasNode? ParseProperty(byte[] d, int pos, int depth, out int next)
     {
         next = pos;
@@ -262,8 +287,14 @@ public static class Savegame
                 // [size][enumName FString][PAD][value of `size` bytes].
                 if (size == 1)
                 {
-                    q++;                                     // pad, then the plain byte
-                    node.DataStart = q; node.DataEnd = q + 1; q = node.DataEnd;
+                    // Two layouts exist for 1-byte ByteProperty: new saves store an
+                    // FName ("None" or an enum name) after the size field, followed by
+                    // pad + value byte; older ones have just PAD + value. Decide by
+                    // probing whether the bytes form a printable NUL-terminated string.
+                    var (en, q2) = TryReadByteEnumName(d, q);
+                    node.EnumName = en;
+                    q2++;                                    // pad, then the plain byte
+                    node.DataStart = q2; node.DataEnd = q2 + 1; q = node.DataEnd;
                 }
                 else
                 {
@@ -527,7 +558,41 @@ public static class Savegame
                 }
                 else if (tag == "ByteProperty")
                 {
-                    node.DataEnd = q + count; q = node.DataEnd;
+                    // Two element layouts exist: raw bytes (count one-byte values) and
+                    // new-style enum-name FStrings (e.g. ItemOrder's
+                    // "EItemTypeIndex::Miscellaneous"). Try the FString form first and
+                    // fall back to raw bytes when it doesn't add up to the declared size.
+                    var strStart = q;
+                    var strOk = size > 0;
+                    try
+                    {
+                        var w = q;
+                        for (var i = 0; i < count && strOk; i++)
+                        {
+                            var (sv, q3) = ReadFString(d, w);
+                            if (sv.Length == 0 || sv.Length > 256) { strOk = false; break; }
+                            w = q3;
+                        }
+                        if (strOk && w - node.CountPos != size) strOk = false;
+                    }
+                    catch { strOk = false; }
+                    if (strOk)
+                    {
+                        // consume again properly (ReadFString positions above were
+                        // only used for validation now redone count times)
+                        var w = q;
+                        for (var i = 0; i < count; i++)
+                        {
+                            var (sv, q3) = ReadFString(d, w);
+                            w = q3;
+                        }
+                        node.DataEnd = w;
+                    }
+                    else
+                    {
+                        node.DataEnd = strStart + count;
+                    }
+                    q = node.DataEnd;
                 }
                 else if (tag == "ObjectProperty")
                 {
@@ -555,6 +620,33 @@ public static class Savegame
                 break;
             }
 
+            case "MapProperty":
+            {
+                // EnclaveRelationships layout (verified byte-exact against the live save):
+                // [1 pad byte][4 null bytes][int32 count][elements][...]. Size covers
+                // [4 nulls][count][element bytes] but NOT the pad byte — i.e. the whole
+                // footprint is Size + 1. Element form does not matter for save traversal
+                // (observed: [int32 key][value]; values are bare FStrings or whole nested
+                // properties), so the counted payload is consumed as one raw block while
+                // the count field is still decoded for diagnostics.
+                var payload = q;
+                q++;                                             // pad byte, excluded from Size
+                if (q + 8 > d.Length)
+                    throw new FormatException($"MapProperty '{name}': truncated count field at 0x{start:X}");
+                q += 4;                                          // 4 null bytes
+                node.CountPos = q;
+                var count = BitConverter.ToInt32(d, q);
+                node.Count = count;
+                node.DataStart = payload;                        // incl. pad
+                node.DataEnd = payload + 1 + (int)size;
+                q = node.DataEnd;
+                if (q > d.Length)
+                    throw new FormatException($"MapProperty '{name}': payload {size} overruns block at 0x{start:X}");
+                if (Environment.GetEnvironmentVariable("SOD2_TRACE") == "1")
+                    Console.WriteLine($"    [map '{name}' @0x{start:X}] count={count}, payload 0x{payload:X}..0x{q:X}");
+                break;
+            }
+
             default:
                 throw new FormatException($"property '{name}' type '{type}' (size {size}) at 0x{start:X} not supported");
         }
@@ -571,7 +663,10 @@ public static class Savegame
         if (dumpNodeName != null)
         {
             var node = FindNamedStatic(root, dumpNodeName);
+            var path = FindPath(root, dumpNodeName);
             if (node == null) { Console.WriteLine($"[saveprops] no node named '{dumpNodeName}'"); return 3; }
+            if (path != null)
+                Console.WriteLine("[saveprops] path: <root> / " + string.Join(" / ", path.Select(p => $"{p.Name} ({p.Type} '{p.StructType}')")));
             Console.WriteLine($"[saveprops] node '{dumpNodeName}' ({node.Type}) '{node.StructType}' size={node.Size:N0}:");
             // special mode: SiteCollection -> list every element's Guid + OutpostId
             if (dumpNodeName == "SiteCollection" && args4 == "guids")
