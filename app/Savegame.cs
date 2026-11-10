@@ -660,10 +660,15 @@ public static class Savegame
         return node;
     }
 
-    /// <summary>Parses a decompressed GVAS properties block into a tree and prints the vehicle subtree.</summary>
+    /// <summary>Parses a decompressed GVAS properties block (or a .sav) into a tree and prints the vehicle subtree.</summary>
     public static int SaveProps(string gvasPath, int dumpEntry = -1, string? dumpNodeName = null, string? args4 = null)
     {
-        var data = File.ReadAllBytes(gvasPath);
+        var bytes = File.ReadAllBytes(gvasPath);
+        byte[] data;
+        if (bytes.Length >= HeaderEnd + FooterSize && Encoding.ASCII.GetString(bytes, 0, 4) == "GVAS")
+            data = DecompressProps(bytes);
+        else
+            data = bytes;
         var root = ParseRoot(data, out var pos);
         if (dumpNodeName != null)
         {
@@ -808,6 +813,9 @@ public static class Savegame
         Console.WriteLine($"{pad}{n.Name} ({n.Type}) {st}size={n.Size} @0x{n.DataStart:X}..0x{n.DataEnd:X}{val}");
         foreach (var c in n.Children) DumpNode(data, c, depth + 1);
     }
+
+    /// <summary>Parses the decompressed properties block into a pseudo-root node (public for debug tooling).</summary>
+    public static GvasNode ParseRootForDebug(byte[] data) { var r = ParseRoot(data, out _); return r; }
 
     /// <summary>Parses the decompressed properties block into a pseudo-root node.</summary>
     private static GvasNode ParseRoot(byte[] data, out int endPos)
@@ -1199,17 +1207,27 @@ public static class Savegame
             }
         }
 
-        // ---- clone the template instance and locate StackCount / ClassIndex ----
-        var tpl = instances.Children[^1];
-        var elemLen = tpl.DataEnd - tpl.HeaderStart;
-        var stackNode = tpl.Children.SelectMany(c => c.Children).FirstOrDefault(c => c.Name == "StackCount");
-        var classNode = tpl.Children.FirstOrDefault(c => c.Name == "ClassIndex");
-        if (stackNode == null || classNode == null)
-        { Console.Error.WriteLine("[saveitems] template instance lacks StackCount/ClassIndex"); return 3; }
-        var stackOff = stackNode.DataStart - tpl.HeaderStart;
-        var classOff = classNode.DataStart - tpl.HeaderStart;
-        var tplBytes = new byte[elemLen];
-        Array.Copy(data, tpl.HeaderStart, tplBytes, 0, elemLen);
+        // ---- helpers for template cloning ----
+        static GvasNode? FindDesc(GvasNode n, string name)
+        {
+            foreach (var c in n.Children)
+            {
+                if (c.Name == name) return c;
+                var r = FindDesc(c, name);
+                if (r != null) return r;
+            }
+            return null;
+        }
+        GvasNode? FindTemplateForClass(int classIndex)
+        {
+            foreach (var inst in instances.Children)
+            {
+                var cn = inst.Children.FirstOrDefault(c => c.Name == "ClassIndex") ?? FindDesc(inst, "ClassIndex");
+                if (cn != null && cn.DataStart + 4 <= data.Length && BitConverter.ToInt32(data, cn.DataStart) == classIndex)
+                    return inst;
+            }
+            return instances.Children[^1];
+        }
 
         // ---- build the three insertion payloads ----
         var classInsert = new List<byte>();
@@ -1227,9 +1245,22 @@ public static class Savegame
                 classInsert.AddRange(enc);
                 newClassCount++;
             }
+            var tpl = FindTemplateForClass(idx);
+            var elemLen = tpl.DataEnd - tpl.HeaderStart;
+            var stackNode = FindDesc(tpl, "StackCount");
+            var classNode = tpl.Children.FirstOrDefault(c => c.Name == "ClassIndex") ?? FindDesc(tpl, "ClassIndex");
+            if (classNode == null)
+            { Console.Error.WriteLine("[saveitems] template instance lacks ClassIndex"); return 3; }
+            var classOff = classNode.DataStart - tpl.HeaderStart;
+            var tplBytes = new byte[elemLen];
+            Array.Copy(data, tpl.HeaderStart, tplBytes, 0, elemLen);
             var e = (byte[])tplBytes.Clone();
-            BitConverter.GetBytes(stacks[i]).CopyTo(e, stackOff);
             BitConverter.GetBytes(idx).CopyTo(e, classOff);
+            if (stackNode != null)
+            {
+                var stackOff = stackNode.DataStart - tpl.HeaderStart;
+                BitConverter.GetBytes(stacks[i]).CopyTo(e, stackOff);
+            }
             instanceInsert.AddRange(e);
         }
         var orderInsert = new List<byte>();
@@ -1565,5 +1596,47 @@ public static class Savegame
             .Select(f => new FileInfo(f))
             .OrderByDescending(f => f.LastWriteTime)
             .ToArray();
+    }
+
+    /// <summary>Lists injectable item classes from a save's CommunitySave.ItemLibrary.
+    /// Returns (itemType, classPath) pairs for types that have a non-empty header-once instance array.</summary>
+    public static List<(string ItemType, string ClassPath)> ReadItemClasses(string savPath)
+    {
+        var result = new List<(string ItemType, string ClassPath)>();
+        try
+        {
+            var bytes = File.ReadAllBytes(savPath);
+            var data = DecompressProps(bytes);
+            var root = ParseRoot(data, out _);
+            var community = FindNamedStatic(root, "CommunitySave");
+            var itemLibrary = community?.Children.FirstOrDefault(c => c.Name == "ItemLibrary")
+                              ?? FindNamedStatic(root, "ItemLibrary");
+            if (itemLibrary == null) return result;
+
+            foreach (var child in itemLibrary.Children)
+            {
+                const string suffix = "ItemClasses";
+                if (!child.Name.EndsWith(suffix, StringComparison.Ordinal)) continue;
+                var itemType = child.Name[..^suffix.Length];
+                if (itemType.Length == 0) continue;
+                var instances = itemLibrary.Children.FirstOrDefault(c => c.Name == itemType + "ItemInstances");
+                if (instances == null || instances.Layout != "header-once" || instances.Children.Count == 0)
+                    continue;
+
+                var p = child.DataStart;
+                for (var i = 0; i < child.Count && p + 4 <= child.DataEnd; i++)
+                {
+                    var (s, p2) = ReadFString(data, p);
+                    p = p2;
+                    if (!string.IsNullOrEmpty(s))
+                        result.Add((itemType, s));
+                }
+            }
+        }
+        catch
+        {
+            // best-effort: return what we have (possibly empty)
+        }
+        return result;
     }
 }

@@ -227,6 +227,31 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--saveitemlist")
+        {
+            try
+            {
+                var sav = args.Length > 1 ? args[1] : "";
+                if (sav.Length == 0) { Console.Error.WriteLine("[saveitemlist] usage: --saveitemlist <sav> [filter]"); return 2; }
+                var filter = args.Length > 2 ? args[2] : "";
+                var items = Savegame.ReadItemClasses(sav);
+                var n = 0;
+                foreach (var (t, c) in items)
+                {
+                    if (filter.Length > 0 && !t.Contains(filter, StringComparison.OrdinalIgnoreCase) && !c.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    Console.WriteLine($"{t}\t{c}");
+                    n++;
+                }
+                Console.Error.WriteLine($"[saveitemlist] {n} entries (of {items.Count} total)");
+                return 0;
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--saveitems")
         {
             try

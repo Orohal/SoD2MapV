@@ -19,7 +19,7 @@ public sealed class ItemInjectDialog : Form
         public override string ToString() => Label;
     }
 
-    private static readonly Preset[] Presets =
+    private static readonly Preset[] BuiltinPresets =
     {
         new() { Label = "Benzinkanister (Fuel)", ItemType = "Miscellaneous", ClassPath = "/Game/Items/MiscellaneousItems/MiscItemRefuelVehicle.MiscItemRefuelVehicle_C" },
         new() { Label = "Auto-Reparaturkasten (Repair)", ItemType = "Miscellaneous", ClassPath = "/Game/Items/MiscellaneousItems/MiscItemRepairVehicle.MiscItemRepairVehicle_C" },
@@ -36,10 +36,12 @@ public sealed class ItemInjectDialog : Form
     private readonly Button _btnInject = new() { Text = "Inject", AutoSize = true };
     private readonly Button _btnAdd = new() { Text = "Hinzufügen", AutoSize = true };
     private readonly Button _btnRemove = new() { Text = "Entfernen", AutoSize = true };
+    private readonly Button _btnLoadFromSave = new() { Text = "Items aus Save laden", AutoSize = true };
     private readonly Button _btnCancel = new() { Text = "Schließen", AutoSize = true, DialogResult = DialogResult.Cancel };
 
     private FileInfo[] _saves = Array.Empty<FileInfo>();
     private readonly List<(string ItemType, string ClassPath, int Stack)> _queue = new();
+    private readonly HashSet<string> _seenPresetKeys = new(StringComparer.Ordinal);
 
     public ItemInjectDialog()
     {
@@ -71,15 +73,15 @@ public sealed class ItemInjectDialog : Form
         saveRow.Controls.AddRange(new Control[] { _cboSave, btnRefresh });
         AddRow("Savegame:", saveRow);
 
-        _cboSave.SelectedIndexChanged += (s, e) => UpdateInfo();
+        _cboSave.SelectedIndexChanged += (s, e) => { UpdateInfo(); LoadItemsFromSelectedSave(auto: true); };
         AddRow("Survivor-ID:", _txtSurvivor);
         AddRow("", new Label { Text = "(-1 = LastPlayedSurvivorID)", AutoSize = true, ForeColor = Color.Gray, Margin = new Padding(0, 0, 0, 4) });
 
-        _cboPreset.Items.AddRange(Presets);
-        _cboPreset.Items.Add("(Manuell)");
-        _cboPreset.SelectedIndex = 0;
+        ResetPresets();
         _cboPreset.SelectedIndexChanged += (s, e) => ApplyPreset();
-        AddRow("Preset:", _cboPreset);
+        var presetRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty };
+        presetRow.Controls.AddRange(new Control[] { _cboPreset, _btnLoadFromSave });
+        AddRow("Preset:", presetRow);
         AddRow("Item-Typ:", _txtItemType);
         AddRow("Class-Path:", _txtClass);
         AddRow("Stack:", _numStack);
@@ -101,6 +103,7 @@ public sealed class ItemInjectDialog : Form
         _btnAdd.Click += (s, e) => AddCurrent();
         _btnRemove.Click += (s, e) => RemoveSelected();
         _btnInject.Click += (s, e) => DoInject();
+        _btnLoadFromSave.Click += (s, e) => LoadItemsFromSelectedSave(auto: false);
 
         ApplyPreset();
         LoadSaves();
@@ -150,6 +153,85 @@ public sealed class ItemInjectDialog : Form
         return i >= 0 && i + 1 < classPath.Length ? classPath[(i + 1)..] : classPath;
     }
 
+    private void ResetPresets()
+    {
+        _cboPreset.BeginUpdate();
+        try
+        {
+            _cboPreset.Items.Clear();
+            _seenPresetKeys.Clear();
+            foreach (var p in BuiltinPresets)
+            {
+                _cboPreset.Items.Add(p);
+                _seenPresetKeys.Add(p.ItemType + "\n" + p.ClassPath);
+            }
+            _cboPreset.Items.Add("(Manuell)");
+            if (_cboPreset.Items.Count > 0) _cboPreset.SelectedIndex = 0;
+        }
+        finally { _cboPreset.EndUpdate(); }
+    }
+
+    private void LoadItemsFromSelectedSave(bool auto)
+    {
+        var sav = SelectedSave();
+        if (sav == null)
+        {
+            if (!auto) MessageBox.Show(this, "Kein Savegame gewählt.", "Items aus Save", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        try
+        {
+            var items = Savegame.ReadItemClasses(sav);
+            var manual = _cboPreset.Items.OfType<string>().FirstOrDefault(s => s == "(Manuell)");
+            var selType = _txtItemType.Text.Trim();
+            var selClass = _txtClass.Text.Trim();
+            _cboPreset.BeginUpdate();
+            try
+            {
+                // keep builtins, remove previous dynamic entries (Preset instances not in BuiltinPresets except identity)
+                var keep = new List<object>();
+                foreach (var it in _cboPreset.Items)
+                {
+                    if (it is Preset p && BuiltinPresets.Contains(p)) keep.Add(it);
+                }
+                _cboPreset.Items.Clear();
+                _seenPresetKeys.Clear();
+                foreach (var it in keep)
+                {
+                    _cboPreset.Items.Add(it);
+                    if (it is Preset p) _seenPresetKeys.Add(p.ItemType + "\n" + p.ClassPath);
+                }
+                int added = 0;
+                foreach (var (itemType, classPath) in items)
+                {
+                    var key = itemType + "\n" + classPath;
+                    if (!_seenPresetKeys.Add(key)) continue;
+                    _cboPreset.Items.Add(new Preset { Label = $"[{itemType}] {ShortName(classPath)}", ItemType = itemType, ClassPath = classPath });
+                    added++;
+                }
+                if (manual != null) _cboPreset.Items.Add(manual); else _cboPreset.Items.Add("(Manuell)");
+                // restore selection if possible
+                int sel = -1;
+                for (int i = 0; i < _cboPreset.Items.Count; i++)
+                    if (_cboPreset.Items[i] is Preset p && p.ItemType == selType && p.ClassPath == selClass) { sel = i; break; }
+                _cboPreset.SelectedIndex = sel >= 0 ? sel : 0;
+            }
+            finally { _cboPreset.EndUpdate(); }
+
+            if (!auto)
+            {
+                UpdateInfo();
+                var total = _cboPreset.Items.OfType<Preset>().Count();
+                _lblInfo.Text = (_lblInfo.Text?.Length > 0 ? _lblInfo.Text + " | " : "") + $"{items.Count} Item-Klassen aus Save geladen ({total} auswählbar). Neue Items im Save erscheinen nach erneutem Laden.";
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!auto)
+                MessageBox.Show(this, "Items konnten nicht aus dem Save gelesen werden:\n" + ex.Message, "Items aus Save", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
     private void LoadSaves()
     {
         _saves = Savegame.FindSavegames();
@@ -160,6 +242,7 @@ public sealed class ItemInjectDialog : Form
         {
             _lblInfo.Text = "Keine Savegames unter %LOCALAPPDATA%\\StateOfDecay2\\Saved\\Steam\\...\\Release gefunden.";
             _btnInject.Enabled = false;
+            ResetPresets();
         }
         else
         {
