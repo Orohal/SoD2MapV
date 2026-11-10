@@ -177,12 +177,13 @@ public sealed class MainForm : Form
         _chkEdit.CheckedChanged += (s, e) => _canvas.EditingEnabled = _chkEdit.Checked;
         var btnExport = new Button { Text = "Export mod .pak...", AutoSize = true, Height = 30 };
         btnExport.Click += (s, e) => ExportModPak();
-        var btnInject = new Button { Text = "Inject vehicle...", AutoSize = true, Height = 30 };
-        btnInject.Click += (s, e) => OpenInjectDialog(null);
         var btnChar = new Button { Text = "Show character", AutoSize = true, Height = 30 };
         btnChar.Click += (s, e) => ShowCharacterPosition();
-        var btnInjectAtPlayer = new Button { Text = "Inject at player", AutoSize = true, Height = 30 };
-        btnInjectAtPlayer.Click += (s, e) =>
+
+        var injectMenu = new ContextMenuStrip();
+        injectMenu.Items.Add("Inject vehicle...", null, (s, e) => OpenInjectDialog(null));
+        injectMenu.Items.Add("Inject item...", null, (s, e) => OpenItemInjectDialog());
+        injectMenu.Items.Add("Inject at player", null, (s, e) =>
         {
             if (_canvas.PlayerWorldPos is { } p)
             {
@@ -194,7 +195,9 @@ public sealed class MainForm : Form
             }
             else
                 SetStatus("No player position known — click 'Show character' first.");
-        };
+        });
+        var btnInjectMenu = new Button { Text = "Inject ▾", AutoSize = true, Height = 30 };
+        btnInjectMenu.Click += (s, e) => injectMenu.Show(btnInjectMenu, new Point(0, btnInjectMenu.Height));
         _chkFandom = new CheckBox { Text = "Fandom map (offline)", AutoSize = true, Checked = false, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkFandom.CheckedChanged += (s, e) => { _canvas.ShowFandomBase = _chkFandom.Checked; _canvas.Invalidate(); };
         _chkBg = new CheckBox { Text = "Vector map (asset)", AutoSize = true, Checked = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
@@ -202,7 +205,7 @@ public sealed class MainForm : Form
         _canvas.ShowBgBase = true;
         _chkEditBg = new CheckBox { Text = "Edit base-map pos", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkEditBg.CheckedChanged += (s, e) => { _canvas.EditBgOffset = _chkEditBg.Checked; _canvas.Invalidate(); };
-        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit, btnExport, btnInject, btnChar, btnInjectAtPlayer, _chkFandom, _chkBg, _chkEditBg });
+        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, _chkEdit, btnExport, btnInjectMenu, btnChar, _chkFandom, _chkBg, _chkEditBg });
         top.Controls.Add(flow);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
 
@@ -551,6 +554,9 @@ public sealed class MainForm : Form
 
     private void OpenInjectDialog(System.Drawing.PointF? worldCm, float? zCm = null, float yawDeg = 0f, string? hint = null) =>
         new InjectDialog(worldCm, zCm, yawDeg, hint).ShowDialog(this);
+
+    private void OpenItemInjectDialog() =>
+        new ItemInjectDialog().ShowDialog(this);
 
     private void ShowCharacterPosition()
     {

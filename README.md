@@ -133,7 +133,8 @@ SoD2MapViewer.exe --saves
 
 </details>
 
-## Virenwarnung / False Positive
+<details>
+<summary><b>Virenwarnung / False Positive</b></summary>
 
 Die gepackten Single-File-EXEs werden von einzelnen VirusTotal-Engines als generisch verdächtig gemeldet — bekanntes Muster für **unsignte** .NET-Apps („Packer"-Heuristik, kein echter Befund). Windows Defender meldet: **keine Bedrohung**.
 
@@ -153,6 +154,8 @@ Historisch: die framework-dependent Single-File-EXE von **v0.4.0** (`9FE1E0954E2
 
 - Selbst bauen: `dotnet build app/SoD2MapViewer.csproj -c Release`
 - False-Positive melden (alle Engines): [Microsoft WDSI-Filesubmission](https://www.microsoft.com/wdsi/filesubmission); bei anderen Engines jeweils deren FP-Portal nutzen
+
+</details>
 
 ## Lizenz
 
