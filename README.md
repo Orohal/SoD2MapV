@@ -40,7 +40,8 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 
 ## To do …
 
-1. **Map Hintergrund zum Laufen bringen** — Hintergrunds-Ausrichtung fortführen (offene Punkte: präzise Ausrichtung je Region/Karten-Variante, Darstellungsprobleme im Kachel-Bild)
+1. **Komplette Häuser verschieben** — Rechtsklick auf ein Haus (oder Auswahl im **„House:"**-Dropdown) wählt Haus-Prefab + alle Objekte im 40-m-Umkreis als Gruppe, gemeinsamer Drag, Undo, Export als Mod-`.pak`. *(implementiert, aber noch nicht ausreichend getestet — Feedback willkommen)*
+2. **Map Hintergrund zum Laufen bringen** — Hintergrunds-Ausrichtung fortführen (offene Punkte: präzise Ausrichtung je Region/Karten-Variante, Darstellungsprobleme im Kachel-Bild)
 
 ## Voraussetzungen & Build
 
