@@ -1084,6 +1084,252 @@ public static class Savegame
         return 0;
     }
 
+    private static byte[] EncodeFString(string s)
+    {
+        var text = Encoding.ASCII.GetBytes(s);
+        var buf = new byte[4 + text.Length + 1];
+        BitConverter.GetBytes(text.Length + 1).CopyTo(buf, 0);   // length includes the NUL
+        Array.Copy(text, 0, buf, 4, text.Length);
+        return buf;
+    }
+
+    /// <summary>Offset of the wrapped element-size field of a header-once struct array.</summary>
+    private static int WrappedHsizeOffset(byte[] d, GvasNode arr)
+    {
+        var hn = BitConverter.ToInt32(d, arr.DataStart);
+        var ht = BitConverter.ToInt32(d, arr.DataStart + 4 + hn);
+        return arr.DataStart + 4 + hn + 4 + ht;
+    }
+
+    /// <summary>
+    /// Adds item stacks to a survivor's backpack: for each (classPath, stack) pair, ensures the
+    /// item class exists in the CommunitySave ItemLibrary, appends an item instance (cloned from
+    /// the last existing instance of that type), appends an ItemOrder entry and assigns a free
+    /// inventory slot. survivorId &lt; 0 = LastPlayedSurvivorID. Writes outPath; input untouched.
+    /// </summary>
+    public static int SaveItems(string savPath, string outPath, int survivorId,
+        string itemType, string[] classPaths, int[] stacks)
+    {
+        if (classPaths.Length == 0 || classPaths.Length != stacks.Length)
+        { Console.Error.WriteLine("[saveitems] classPaths/stacks length mismatch or empty"); return 2; }
+
+        var bytes = File.ReadAllBytes(savPath);
+        if (bytes.Length < HeaderEnd + FooterSize || Encoding.ASCII.GetString(bytes, 0, 4) != "GVAS")
+        { Console.Error.WriteLine("[saveitems] not a GVAS savegame (bad signature)"); return 2; }
+        var compressedLen = BitConverter.ToInt32(bytes, 0x25d);
+        var uncompressedLen = BitConverter.ToInt32(bytes, 0x261);
+        if (compressedLen <= 0 || HeaderEnd + compressedLen + FooterSize != bytes.Length)
+        {
+            Console.Error.WriteLine($"[saveitems] implausible header: compressed={compressedLen} uncompressed={uncompressedLen} fileSize={bytes.Length}");
+            return 2;
+        }
+        byte[] data;
+        try
+        {
+            var src = new byte[compressedLen];
+            Array.Copy(bytes, HeaderEnd, src, 0, compressedLen);
+            data = Lz4Linked.DecodeSingleBlock(src, uncompressedLen);
+        }
+        catch (Exception e)
+        { Console.Error.WriteLine("[saveitems] LZ4 decode failed: " + e.Message); return 2; }
+
+        var root = ParseRoot(data, out _);
+
+        // ---- locate the survivor ----
+        var community = FindNamedStatic(root, "CommunitySave");
+        if (community == null) { Console.Error.WriteLine("[saveitems] no CommunitySave found"); return 3; }
+        var activeId = survivorId;
+        if (activeId < 0)
+        {
+            var lp = FindNamedStatic(root, "LastPlayedSurvivorID");
+            if (lp == null || lp.DataStart + 4 > data.Length)
+            { Console.Error.WriteLine("[saveitems] no LastPlayedSurvivorID found"); return 3; }
+            activeId = BitConverter.ToInt32(data, lp.DataStart);
+        }
+        var enclave = community.Children.FirstOrDefault(c => c.Name == "Enclave");
+        var survivorSaves = enclave?.Children.FirstOrDefault(c => c.Name == "SurvivorSaves");
+        GvasNode? survivor = null;
+        if (survivorSaves != null)
+            foreach (var s in survivorSaves.Children)
+            {
+                var id = s.Children.FirstOrDefault(c => c.Name == "ID");
+                if (id != null && id.DataStart + 4 <= data.Length && BitConverter.ToInt32(data, id.DataStart) == activeId)
+                { survivor = s; break; }
+            }
+        if (survivor == null) { Console.Error.WriteLine($"[saveitems] no survivor with ID {activeId}"); return 3; }
+        var inv = survivor.Children.FirstOrDefault(c => c.Name == "Inventory");
+        var slots = inv?.Children.FirstOrDefault(c => c.Name == "Slots");
+        if (slots == null || slots.Type != "ArrayProperty")
+        { Console.Error.WriteLine("[saveitems] survivor has no Inventory.Slots array"); return 3; }
+        var emptySlots = new List<GvasNode>();
+        foreach (var sl in slots.Children)
+        {
+            var idx = sl.Children.FirstOrDefault(c => c.Name == "Index");
+            if (idx != null && idx.DataStart + 4 <= data.Length && BitConverter.ToInt32(data, idx.DataStart) == -1)
+                emptySlots.Add(idx);
+        }
+        if (emptySlots.Count < classPaths.Length)
+        {
+            Console.Error.WriteLine($"[saveitems] survivor {activeId} has only {emptySlots.Count} free slots ({classPaths.Length} needed)");
+            return 3;
+        }
+
+        // ---- locate the item library arrays ----
+        var itemLibrary = community.Children.FirstOrDefault(c => c.Name == "ItemLibrary");
+        var classes = itemLibrary?.Children.FirstOrDefault(c => c.Name == itemType + "ItemClasses");
+        var instances = itemLibrary?.Children.FirstOrDefault(c => c.Name == itemType + "ItemInstances");
+        var itemOrder = itemLibrary?.Children.FirstOrDefault(c => c.Name == "ItemOrder");
+        if (classes == null || instances == null || itemOrder == null)
+        {
+            Console.Error.WriteLine($"[saveitems] item library lacks {itemType}ItemClasses/{itemType}ItemInstances/ItemOrder");
+            return 3;
+        }
+        if (instances.Layout != "header-once" || instances.Children.Count == 0)
+        { Console.Error.WriteLine("[saveitems] item instance array is not a non-empty header-once struct array"); return 3; }
+
+        // ---- read the existing class paths (AssetObjectProperty arrays are bare FStrings) ----
+        var known = new List<string>();
+        {
+            var p = classes.DataStart;
+            for (var i = 0; i < classes.Count && p + 4 <= classes.DataEnd; i++)
+            {
+                var (s, p2) = ReadFString(data, p);
+                known.Add(s);
+                p = p2;
+            }
+        }
+
+        // ---- clone the template instance and locate StackCount / ClassIndex ----
+        var tpl = instances.Children[^1];
+        var elemLen = tpl.DataEnd - tpl.HeaderStart;
+        var stackNode = tpl.Children.SelectMany(c => c.Children).FirstOrDefault(c => c.Name == "StackCount");
+        var classNode = tpl.Children.FirstOrDefault(c => c.Name == "ClassIndex");
+        if (stackNode == null || classNode == null)
+        { Console.Error.WriteLine("[saveitems] template instance lacks StackCount/ClassIndex"); return 3; }
+        var stackOff = stackNode.DataStart - tpl.HeaderStart;
+        var classOff = classNode.DataStart - tpl.HeaderStart;
+        var tplBytes = new byte[elemLen];
+        Array.Copy(data, tpl.HeaderStart, tplBytes, 0, elemLen);
+
+        // ---- build the three insertion payloads ----
+        var classInsert = new List<byte>();
+        var instanceInsert = new List<byte>();
+        var newClassCount = 0;
+        for (var i = 0; i < classPaths.Length; i++)
+        {
+            var cp = classPaths[i];
+            var idx = known.IndexOf(cp);
+            if (idx < 0)
+            {
+                idx = known.Count;
+                known.Add(cp);
+                var enc = EncodeFString(cp);
+                classInsert.AddRange(enc);
+                newClassCount++;
+            }
+            var e = (byte[])tplBytes.Clone();
+            BitConverter.GetBytes(stacks[i]).CopyTo(e, stackOff);
+            BitConverter.GetBytes(idx).CopyTo(e, classOff);
+            instanceInsert.AddRange(e);
+        }
+        var orderInsert = new List<byte>();
+        for (var i = 0; i < classPaths.Length; i++)
+            orderInsert.AddRange(EncodeFString("EItemTypeIndex::" + itemType));
+
+        var classBytes = classInsert.ToArray();
+        var instBytes = instanceInsert.ToArray();
+        var orderBytes = orderInsert.ToArray();
+        var total = classBytes.Length + instBytes.Length + orderBytes.Length;
+
+        // ---- patch counts/sizes at their ORIGINAL offsets (values shift with the bytes) ----
+        BitConverter.GetBytes(classes.Count + newClassCount).CopyTo(data, classes.CountPos);
+        BitConverter.GetBytes(classes.Size + classBytes.Length).CopyTo(data, SizeFieldOffset(data, classes));
+        BitConverter.GetBytes(instances.Count + classPaths.Length).CopyTo(data, instances.CountPos);
+        BitConverter.GetBytes(instances.Size + instBytes.Length).CopyTo(data, SizeFieldOffset(data, instances));
+        BitConverter.GetBytes(BitConverter.ToInt64(data, WrappedHsizeOffset(data, instances)) + instBytes.Length)
+            .CopyTo(data, WrappedHsizeOffset(data, instances));
+        BitConverter.GetBytes(itemOrder.Count + classPaths.Length).CopyTo(data, itemOrder.CountPos);
+        BitConverter.GetBytes(itemOrder.Size + orderBytes.Length).CopyTo(data, SizeFieldOffset(data, itemOrder));
+        BitConverter.GetBytes(itemLibrary.Size + total).CopyTo(data, SizeFieldOffset(data, itemLibrary));
+        BitConverter.GetBytes(community.Size + total).CopyTo(data, SizeFieldOffset(data, community));
+
+        // ---- assign the free slots to the new ItemOrder positions ----
+        for (var i = 0; i < classPaths.Length; i++)
+            BitConverter.GetBytes(itemOrder.Count + i).CopyTo(data, emptySlots[i].DataStart);
+
+        // ---- splice insertions from highest offset to lowest ----
+        byte[] Splice(byte[] buf, int pos, byte[] payload)
+        {
+            if (payload.Length == 0) return buf;
+            var nb = new byte[buf.Length + payload.Length];
+            Array.Copy(buf, 0, nb, 0, pos);
+            Array.Copy(payload, 0, nb, pos, payload.Length);
+            Array.Copy(buf, pos, nb, pos + payload.Length, buf.Length - pos);
+            return nb;
+        }
+        data = Splice(data, itemOrder.DataEnd, orderBytes);
+        data = Splice(data, instances.DataEnd, instBytes);
+        data = Splice(data, classes.DataEnd, classBytes);
+
+        // ---- recompress and rebuild the file ----
+        var block = Lz4LiteralBlock(data);
+        var outFile = new byte[HeaderEnd + block.Length + FooterSize];
+        Array.Copy(bytes, 0, outFile, 0, HeaderEnd);
+        BitConverter.GetBytes(block.Length).CopyTo(outFile, 0x25d);
+        BitConverter.GetBytes(data.Length).CopyTo(outFile, 0x261);
+        Array.Copy(block, 0, outFile, HeaderEnd, block.Length);
+        Array.Copy(bytes, HeaderEnd + compressedLen, outFile, HeaderEnd + block.Length, FooterSize);
+        File.WriteAllBytes(outPath, outFile);
+        Console.WriteLine($"[saveitems] wrote {outPath}: file {outFile.Length:N0} B, block {block.Length:N0} B, props {data.Length:N0} B (+{total}), survivor={activeId}");
+
+        // ---- self-check: re-decode and re-parse ----
+        var check = File.ReadAllBytes(outPath);
+        var c2 = BitConverter.ToInt32(check, 0x25d);
+        var u2 = BitConverter.ToInt32(check, 0x261);
+        var src2 = new byte[c2];
+        Array.Copy(check, HeaderEnd, src2, 0, c2);
+        var data2 = Lz4Linked.DecodeSingleBlock(src2, u2);
+        var root2 = ParseRoot(data2, out var end2);
+        if (end2 != data2.Length && end2 + 4 != data2.Length)
+            Console.WriteLine($"[saveitems] WARNING: reparse ended at 0x{end2:X} of 0x{data2.Length:X}");
+        var comm2 = FindNamedStatic(root2, "CommunitySave");
+        var il2 = comm2?.Children.FirstOrDefault(c => c.Name == "ItemLibrary");
+        var cl2 = il2?.Children.FirstOrDefault(c => c.Name == itemType + "ItemClasses");
+        var in2 = il2?.Children.FirstOrDefault(c => c.Name == itemType + "ItemInstances");
+        var io2 = il2?.Children.FirstOrDefault(c => c.Name == "ItemOrder");
+        var encl2 = comm2?.Children.FirstOrDefault(c => c.Name == "Enclave");
+        var ss2 = encl2?.Children.FirstOrDefault(c => c.Name == "SurvivorSaves");
+        GvasNode? surv2 = null;
+        if (ss2 != null)
+            foreach (var s in ss2.Children)
+            {
+                var id = s.Children.FirstOrDefault(c => c.Name == "ID");
+                if (id != null && BitConverter.ToInt32(data2, id.DataStart) == activeId) { surv2 = s; break; }
+            }
+        var slots2 = surv2?.Children.FirstOrDefault(c => c.Name == "Inventory")
+                             ?.Children.FirstOrDefault(c => c.Name == "Slots");
+        var assigned = new List<int>();
+        if (slots2 != null)
+            foreach (var sl in slots2.Children)
+            {
+                var idx = sl.Children.FirstOrDefault(c => c.Name == "Index");
+                if (idx != null && BitConverter.ToInt32(data2, idx.DataStart) >= itemOrder.Count)
+                    assigned.Add(BitConverter.ToInt32(data2, idx.DataStart));
+            }
+        Console.WriteLine($"[saveitems] self-check: classes={cl2?.Count.ToString() ?? "?"} (want {classes.Count + newClassCount}), " +
+                          $"instances={in2?.Count.ToString() ?? "?"} (want {instances.Count + classPaths.Length}), " +
+                          $"itemOrder={io2?.Count.ToString() ?? "?"} (want {itemOrder.Count + classPaths.Length}), " +
+                          $"slots=[{string.Join(",", assigned)}]");
+        var ok = cl2 != null && in2 != null && io2 != null
+                 && cl2.Count == classes.Count + newClassCount
+                 && in2.Count == instances.Count + classPaths.Length
+                 && io2.Count == itemOrder.Count + classPaths.Length
+                 && assigned.Count == classPaths.Length;
+        if (!ok) { Console.Error.WriteLine("[saveitems] self-check FAILED"); return 3; }
+        Console.WriteLine("[saveitems] self-check OK");
+        return 0;
+    }
+
     /// <summary>
     /// Reads the player's last breadcrumb position from a .sav (save coords, cm) and the map archetype.
     /// Returns null if the save can't be read or has no PlayerBreadcrumbs.

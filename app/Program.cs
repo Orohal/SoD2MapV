@@ -227,6 +227,37 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--saveitems")
+        {
+            try
+            {
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                // --saveitems <savIn> <savOut> <survivorId|-1> <itemType> <classPath1> <stack1> [<classPath2> <stack2> ...]
+                var sIn = args.Length > 1 ? args[1] : "";
+                var sOut = args.Length > 2 ? args[2] : "";
+                var sid = args.Length > 3 && int.TryParse(args[3], ci, out var p0) ? p0 : -1;
+                var itype = args.Length > 4 ? args[4] : "";
+                var rest = args.Length > 5 ? args[5..] : Array.Empty<string>();
+                if (rest.Length == 0 || rest.Length % 2 != 0)
+                {
+                    Console.Error.WriteLine("[saveitems] usage: --saveitems <savIn> <savOut> <survivorId|-1> <itemType> <classPath1> <stack1> [...]");
+                    return 2;
+                }
+                var paths = new string[rest.Length / 2];
+                var stacks = new int[rest.Length / 2];
+                for (var i = 0; i < paths.Length; i++)
+                {
+                    paths[i] = rest[i * 2];
+                    stacks[i] = int.Parse(rest[i * 2 + 1], ci);
+                }
+                return Savegame.SaveItems(sIn, sOut, sid, itype, paths, stacks);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--umapinfo")
         {
             try
