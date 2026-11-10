@@ -27,7 +27,15 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 
 </details>
 
-- **Item-Injektion in Live-Savegames**: Dialog „Inject item…" (Menü **Inject ▾**) — Item-Stacks in den Rucksack eines Überlebenden; **Item-Presets automatisch aus dem gewählten Save** abgeleitet (z. B. Benzinkanister, Reparaturkasten, Waffen wie Assault_FAL), Backup + Self-Check; CLI `--saveitems` / `--saveitemlist`
+<details>
+<summary><b>Item-Injektion in Live-Savegames</b></summary>
+
+- Dialog „Inject item…" (Menü **Inject ▾**) — Item-Stacks in den Rucksack eines Überlebenden
+- **Item-Presets automatisch aus dem gewählten Save** abgeleitet (z. B. Benzinkanister, Reparaturkasten, Waffen wie Assault_FAL)
+- Backup + Self-Check; CLI `--saveitems` / `--saveitemlist`
+
+</details>
+
 - Headless-CLI für alle Funktionen (siehe unten)
 
 ## To do …
