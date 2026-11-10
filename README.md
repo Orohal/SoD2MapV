@@ -71,7 +71,8 @@ dotnet app/bin/Release/net10.0-windows/SoD2MapViewer.dll
 
 **Export mod .pak…** schreibt alle Änderungen in eine `.pak` für `%LocalAppData%\StateOfDecay2\Saved\Paks\` (Steam/Epic-Modordner; das `_P`-Suffix gibt dem Mod den Vorzug).
 
-### Fahrzeug injizieren
+<details>
+<summary><b>Fahrzeug injizieren</b></summary>
 
 Einmalig **Kalibrierung** (pro Save): Toolbar **„Inject vehicle…"** oder **Rechtsklick auf der Karte** → Slot/Klasse/Position prüfen → **Calibrate…** → Sonde ins Spiel, beobachteten Versatz (Ost/Nord in m) im Dialog eingeben → Fertig. Danach injizieren echte Fahrzeuge exakt an der gewählten Stelle.
 
@@ -81,9 +82,14 @@ Einmalig **Kalibrierung** (pro Save): Toolbar **„Inject vehicle…"** oder **R
 
 **Schnell: „Inject at player“ (ab v0.5.3):** Zuerst **„Show character"** klicken (liest die zuletzt gespeicherte Spielerposition aus dem Save, `PlayerBreadcrumbs`, nutzt die Save-Kalibrierung) → dann **„Inject at player"**. Der Injekt-Dialog wird mit Spieler-Pos/Höhe (+10 m Offset) vorausgefüllt. **Hinweis:** Möglichst auf einer **freien Fläche** stehen, sonst kann das Fahrzeug in einem Objekt spawnen. Die Blickrichtung ist aus dem Save nicht ablesbar — **Yaw/Position/Höhe** im Dialog bei Bedarf anpassen. Zahlenfelder akzeptieren `,` oder `.`; leere Z-/Shift-/Yaw-Felder = `0`.
 
-### Echte Karte als Hintergrund
+</details>
+
+<details>
+<summary><b>Echte Karte als Hintergrund</b></summary>
 
 Toolbar **„Vector map (asset)"** — blendet die eigene Vektor-Karte aus den Ingame-`MapBackgroundData`-Assets (`StateOfDecay2/Content/maps/Backgrounds/*`) ein: Straßen, Flüsse, Seen, Gebäude und die Karten-Grenze, in den echten Ingame-Farben (`MapUIInfo_BP`). Komplett offline, für alle 5 Regionen. Bei Abweichung: Checkbox **„Edit base-map pos"** einschalten und die Karte per Drag ausrichten (Loslassen speichert die Kalibrierung). CLI: `--bgrender` (PNG-Render), `--bgset` (manuelle Transform-Werte).
+
+</details>
 
 <details>
 <summary><b>Headless-Modi (CLI)</b></summary>
