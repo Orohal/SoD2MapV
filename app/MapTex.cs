@@ -99,7 +99,7 @@ public static class MapTex
             }
             else
             {
-                objs = loader.Provider.LoadPackageObjects(assetPath).ToList();
+                objs = loader.Provider.LoadPackage(assetPath).GetExports().ToList();
             }
             var tex = objs.OfType<UTexture2D>().FirstOrDefault();
             if (tex == null)

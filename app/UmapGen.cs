@@ -56,7 +56,7 @@ public static class UmapGen
         for (var i = 0; i < imports.Length && i < 24; i++)
         {
             var im = imports[i];
-            Console.WriteLine($"  [{i,3}] class='{im.ClassPackage.PlainText}.{im.ClassName.PlainText}' outer={im.OuterIndex.Index} name='{im.ObjectName.PlainText}'");
+            Console.WriteLine($"  [{i,3}] class='{im.ClassPackage!.PlainText}.{im.ClassName!.PlainText}' outer={im.OuterIndex!.Index} name='{im.ObjectName!.PlainText}'");
         }
 
         var exports = package.ExportMap;
@@ -64,8 +64,8 @@ public static class UmapGen
         for (var i = 0; i < exports.Length; i++)
         {
             var e = exports[i];
-            var cls = ResolveIndex(package, e.ClassIndex);
-            var outer = ResolveIndex(package, e.OuterIndex);
+            var cls = ResolveIndex(package, e.ClassIndex!);
+            var outer = ResolveIndex(package, e.OuterIndex!);
             if (exportFilter.Length > 0
                 && !e.ObjectName.PlainText.Contains(exportFilter, StringComparison.OrdinalIgnoreCase)
                 && !cls.Contains(exportFilter, StringComparison.OrdinalIgnoreCase))
@@ -92,7 +92,7 @@ public static class UmapGen
                 var ce = exports[rootIdx.Index - 1]; // FPackageIndex raw N -> ExportMap[N-1]
                 Console.WriteLine($"[rootcomp] of '{e.Name}' ({e.ExportType}): raw={rootIdx.Index} export #{rootIdx.Index - 1} '{ce.ObjectName.PlainText}' " +
                                   FormattableString.Invariant($"serial=[0x{ce.SerialOffset:X} .. 0x{ce.SerialOffset + ce.SerialSize:X}) ({ce.SerialSize:N0} B)"));
-                if (ce.OuterIndex.IsExport && ce.OuterIndex.Index - 1 < exports.Length)
+                if (ce.OuterIndex!.IsExport && ce.OuterIndex.Index - 1 < exports.Length)
                 {
                     var ae = exports[ce.OuterIndex.Index - 1];
                     Console.WriteLine($"[actor]    export #{ce.OuterIndex.Index - 1} '{ae.ObjectName.PlainText}' " +
@@ -142,7 +142,7 @@ public static class UmapGen
         var names = package.NameMap;
         var pos = (int)e.SerialOffset;
         var end = (int)(e.SerialOffset + e.SerialSize);
-        string N(int idx) => idx >= 0 && idx < names.Length ? names[idx].Name : $"<{idx}?>";
+        string N(int idx) => idx >= 0 && idx < names!.Length ? (names[idx].Name ?? $"<{idx}?>") : $"<{idx}?>";
 
         while (pos + 8 <= end)
         {

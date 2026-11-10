@@ -7,6 +7,9 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Version>0.5.4</Version>
+    <!-- CUE4Parse pins Microsoft.Bcl.Memory 9.0.0 and SixLabors.ImageSharp 3.1.12, whose known
+         advisories (NU190*) are not actionable here without breaking the parser. -->
+    <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
 
   <ItemGroup>

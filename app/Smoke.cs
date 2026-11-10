@@ -440,7 +440,7 @@ internal static class Smoke
         var rootOk = again.TryGet<FPackageIndex>("RootComponent", out var ri);
         if (!rootOk || ri == null || !ri.IsExport) { Console.Error.WriteLine("[verify] root component missing"); return 5; }
         var comp = pkg.GetExport(ri.Index - 1); // FPackageIndex is 1-based for exports (same fix as MapLoader)
-        if (!MapLoader.TryGetComponentTransform(comp, out var tf))
+        if (!MapLoader.TryGetComponentTransform(comp!, out var tf))
         { Console.Error.WriteLine("[verify] transform missing"); return 5; }
         Console.WriteLine($"[verify] re-parsed: {again.Name} at {tf.Translation.X:0.##},{tf.Translation.Y:0.##},{tf.Translation.Z:0.##}");
         var ok = MathF.Abs((float)tf.Translation.X - tx) < 0.5f
@@ -565,8 +565,8 @@ internal static class Smoke
             if (again == null) { Console.Error.WriteLine($"[verify] {obj.Name}: not found in mod pak"); ok = false; continue; }
             if (!again.TryGet<FPackageIndex>("RootComponent", out var ri) || ri == null || !ri.IsExport)
             { Console.Error.WriteLine($"[verify] {obj.Name}: root component missing"); ok = false; continue; }
-            var comp = pkg2.GetExport(ri.Index);
-            if (!MapLoader.TryGetComponentTransform(comp, out var tf))
+            var comp = pkg2.GetExport(ri.Index - 1);
+            if (!MapLoader.TryGetComponentTransform(comp!, out var tf))
             { Console.Error.WriteLine($"[verify] {obj.Name}: transform missing"); ok = false; continue; }
             var vOk = MathF.Abs((float)tf.Translation.X - nx) < 0.5f
                    && MathF.Abs((float)tf.Translation.Y - ny) < 0.5f

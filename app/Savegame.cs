@@ -1246,7 +1246,7 @@ public static class Savegame
                 newClassCount++;
             }
             var tpl = FindTemplateForClass(idx);
-            var elemLen = tpl.DataEnd - tpl.HeaderStart;
+            var elemLen = tpl!.DataEnd - tpl.HeaderStart;
             var stackNode = FindDesc(tpl, "StackCount");
             var classNode = tpl.Children.FirstOrDefault(c => c.Name == "ClassIndex") ?? FindDesc(tpl, "ClassIndex");
             if (classNode == null)
@@ -1281,7 +1281,7 @@ public static class Savegame
             .CopyTo(data, WrappedHsizeOffset(data, instances));
         BitConverter.GetBytes(itemOrder.Count + classPaths.Length).CopyTo(data, itemOrder.CountPos);
         BitConverter.GetBytes(itemOrder.Size + orderBytes.Length).CopyTo(data, SizeFieldOffset(data, itemOrder));
-        BitConverter.GetBytes(itemLibrary.Size + total).CopyTo(data, SizeFieldOffset(data, itemLibrary));
+        BitConverter.GetBytes(itemLibrary!.Size + total).CopyTo(data, SizeFieldOffset(data, itemLibrary!));
         BitConverter.GetBytes(community.Size + total).CopyTo(data, SizeFieldOffset(data, community));
 
         // ---- assign the free slots to the new ItemOrder positions ----

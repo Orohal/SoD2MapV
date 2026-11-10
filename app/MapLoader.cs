@@ -128,7 +128,7 @@ public sealed class MapLoader
                         { pkgData = d; break; }
                 }
             }
-            exports = package.GetExports().ToArray();
+            exports = package!.GetExports().ToArray();
         }
         catch (Exception e)
         {

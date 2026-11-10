@@ -14,22 +14,22 @@ public sealed class MainForm : Form
     private readonly MapLoader _loader = new();
     private static readonly string DefaultGameDir = @"D:\Games\State of Decay 2\StateOfDecay2";
 
-    private readonly TreeView _mapTree;
-    private readonly DataGridView _grid;
-    private readonly MapCanvas _canvas;
-    private readonly TextBox _search;
-    private readonly TextBox _status;
-    private readonly Panel _legendHost;
+    private readonly TreeView _mapTree = null!;
+    private readonly DataGridView _grid = null!;
+    private readonly MapCanvas _canvas = null!;
+    private readonly TextBox _search = null!;
+    private readonly TextBox _status = null!;
+    private readonly Panel _legendHost = null!;
 
     private MapModel? _map;
     private readonly BindingSource _source = new();
     private List<MapObject> _visible = new();
-    private readonly TextBox _mapFilter;
-    private readonly CheckBox _chkEdit;
+    private readonly TextBox _mapFilter = null!;
+    private readonly CheckBox _chkEdit = null!;
     private CheckBox _chkFandom = null!;
     private CheckBox _chkBg = null!;
     private CheckBox _chkEditBg = null!;
-    private readonly ComboBox _cmbHouses;
+    private readonly ComboBox _cmbHouses = null!;
     private bool _houseComboUpdating;
     private readonly Stack<UndoEntry> _undo = new();
 
