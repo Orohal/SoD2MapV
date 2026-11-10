@@ -249,6 +249,11 @@ public static class Savegame
         if (name == "None") { next = p; return null; }          // terminator: only len+name
         var (type, p2) = ReadFString(d, p);
         var size = BitConverter.ToInt64(d, p2);
+        // SoD2 sometimes stores an extra key/index in the high dword of the size field
+        // (e.g. CommunityResources FloatProperty entries carry the resource index there:
+        // 0x0000000100000004). Legitimate sizes never exceed 2 GB in these saves, so the
+        // low 32 bits are the real payload size.
+        if (size > int.MaxValue) size &= 0xFFFFFFFF;
         if (Environment.GetEnvironmentVariable("SOD2_TRACE") == "1" && depth <= 2)
             Console.WriteLine($"  [prop d{depth}] @0x{pos:X} '{name}' ({type}) size={size}");
         var node = new GvasNode { Name = name, Type = type, Size = size, HeaderStart = start };
