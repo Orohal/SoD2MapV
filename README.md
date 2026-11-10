@@ -11,8 +11,22 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 - **888 Karten** aus allen 35 PAKs, fehlerfrei lesbar (eigener LZ4-Linked-Blocks-Decoder)
 - **2D-Top-Down-Viewer**: Objekte mit Positionen; Grid, Suchfilter, Legende
 - **Voller Editor**: verschieben / rotieren / skalieren / löschen per Drag & Drop, Undo, Export als Mod-`.pak`
-- **Echte Karte als Hintergrund**: (a) **Vektor-Basemap** aus den Ingame-`MapBackgroundData`-Assets (Straßen/Flüsse/Seen/Gebäude/Border), offline, alle 5 Regionen, per Drag kalibrierbar; (b) öffentliche WeMod/Wand-Kacheln, pixelgenau in Weltkoordinaten projiziert
-- **Fahrzeug-Injektion in Live-Savegames**: Rechtsklick auf der Karte → Position → Fahrzeug in Save schreiben; per-Save-Kalibrierung, Auto-Backup, Spiel-läuft-Check
+<details>
+<summary><b>Echte Karte als Hintergrund</b></summary>
+
+- (a) **Vektor-Basemap** aus den Ingame-`MapBackgroundData`-Assets (Straßen/Flüsse/Seen/Gebäude/Border), offline, alle 5 Regionen, per Drag kalibrierbar
+- (b) öffentliche WeMod/Wand-Kacheln, pixelgenau in Weltkoordinaten projiziert
+
+</details>
+
+<details>
+<summary><b>Fahrzeug-Injektion in Live-Savegames</b></summary>
+
+- Rechtsklick auf der Karte → Position → Fahrzeug in Save schreiben
+- Per-Save-Kalibrierung, Auto-Backup, Spiel-läuft-Check
+
+</details>
+
 - **Item-Injektion in Live-Savegames**: Dialog „Inject item…" (Menü **Inject ▾**) — Item-Stacks in den Rucksack eines Überlebenden; **Item-Presets automatisch aus dem gewählten Save** abgeleitet (z. B. Benzinkanister, Reparaturkasten, Waffen wie Assault_FAL), Backup + Self-Check; CLI `--saveitems` / `--saveitemlist`
 - Headless-CLI für alle Funktionen (siehe unten)
 
