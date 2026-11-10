@@ -13,7 +13,13 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 - **Voller Editor**: verschieben / rotieren / skalieren / löschen per Drag & Drop, Undo, Export als Mod-`.pak`
 - **Echte Karte als Hintergrund**: (a) **Vektor-Basemap** aus den Ingame-`MapBackgroundData`-Assets (Straßen/Flüsse/Seen/Gebäude/Border), offline, alle 5 Regionen, per Drag kalibrierbar; (b) öffentliche WeMod/Wand-Kacheln, pixelgenau in Weltkoordinaten projiziert
 - **Fahrzeug-Injektion in Live-Savegames**: Rechtsklick auf der Karte → Position → Fahrzeug in Save schreiben; per-Save-Kalibrierung, Auto-Backup, Spiel-läuft-Check
+- **Item-Injektion in Live-Savegames**: Dialog „Inject item…" (Menü **Inject ▾**) — Item-Stacks in den Rucksack eines Überlebenden; **Item-Presets automatisch aus dem gewählten Save** abgeleitet (z. B. Benzinkanister, Reparaturkasten, Waffen wie Assault_FAL), Backup + Self-Check; CLI `--saveitems` / `--saveitemlist`
 - Headless-CLI für alle Funktionen (siehe unten)
+
+## To do …
+
+1. **Komplette Häuser verschieben** — Rechtsklick auf ein Haus wählt das Haus-Prefab plus alle Objekte im Umkreis als Gruppe, gemeinsamer Drag, Undo, Export als Mod-`.pak` *(in Arbeit)*
+2. **Map Hintergrund zum Laufen bringen** — Hintergrunds-Ausrichtung fortführen (offene Punkte: präzise Ausrichtung je Region/Karten-Variante, Darstellungsprobleme im Kachel-Bild)
 
 ## Voraussetzungen & Build
 
