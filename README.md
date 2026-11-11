@@ -1,6 +1,6 @@
 # SoD2MapV — State of Decay 2 Map Viewer und Editor
 
-Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinForms + [CUE4Parse](https://github.com/FabianFG/CUE4Parse). Liest alle Spielmappen ohne AES-Key, zeigt sie top-down, editiert Objekte und injiziert Fahrzeuge in Live-Savegames.
+Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinForms + [CUE4Parse](https://github.com/FabianFG/CUE4Parse). Liest alle Spielmappen ohne AES-Key, zeigt sie top-down, editiert Objekte und injiziert Fahrzeuge & Items in Live-Savegames.
 
 <a href="https://www.buymeacoffee.com/Orohal" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
@@ -33,6 +33,13 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 - Dialog „Inject item…" (Menü **Inject ▾**) — Item-Stacks in den Rucksack eines Überlebenden
 - **Item-Presets automatisch aus dem gewählten Save** abgeleitet (z. B. Benzinkanister, Reparaturkasten, Waffen wie Assault_FAL)
 - Backup + Self-Check; CLI `--saveitems` / `--saveitemlist`
+
+Was beim Injizieren passiert (pro Item):
+
+- Item-Klasse wird in der **ItemLibrary** des Saves ergänzt, falls sie dort noch nicht existiert
+- Eine Item-Instanz wird aus dem letzten vorhandenen Eintrag desselben Typs geklont (volle Eigenschaften wie Klassenvorlage/Werte bleiben erhalten)
+- Ein **ItemOrder**-Eintrag wird angehängt und ein **freier Inventar-Slot** im Rucksack des Ziel-Überlebenden belegt
+- Ziel-Überlebender: beliebige Survivor-ID oder `-1` = **zuletzt gespielter** Überlebender (`LastPlayedSurvivorID`); es werden so viele freie Slots benötigt, wie Items injiziert werden
 
 </details>
 
@@ -85,6 +92,18 @@ Einmalig **Kalibrierung** (pro Save): Toolbar **„Inject vehicle…"** oder **R
 </details>
 
 <details>
+<summary><b>Item injizieren</b></summary>
+
+Menü **Inject ▾** → **„Inject item…"**: Save wählen (automatisches Backup, Spiel muss geschlossen sein, danach Self-Check) → Ziel-Überlebenden wählen (Default: **zuletzt gespielter**) → Item(s) setzen.
+
+- **Presets** (z. B. Benzinkanister, Reparaturkasten) sind vorbereitet und werden **automatisch aus dem gewählten Save abgeleitet** — die Liste enthält nur Item-Klassen, die es in diesem Save wirklich gibt (Typ + Klassenpfad)
+- Manuelle Eingabe möglich: Item-Klassenpfad + Stack-Anzahl; **StackCount ist bei Waffen optional** (Waffen werden über eine klassenbezogene Vorlage injiziert, Stacks über Zahl-Feld)
+- Es werden freie Rucksack-Slots im Ziel-Überlebenden benötigt (einer pro Item); fehlen sie, bricht der Vorgang sauber ab
+- CLI-Äquivalent: `--saveitems` (injizieren), `--saveitemlist` (Item-Klassen des Saves auflisten)
+
+</details>
+
+<details>
 <summary><b>Echte Karte als Hintergrund</b></summary>
 
 Toolbar **„Vector map (asset)"** — blendet die eigene Vektor-Karte aus den Ingame-`MapBackgroundData`-Assets (`StateOfDecay2/Content/maps/Backgrounds/*`) ein: Straßen, Flüsse, Seen, Gebäude und die Karten-Grenze, in den echten Ingame-Farben (`MapUIInfo_BP`). Komplett offline, für alle 5 Regionen. Bei Abweichung: Checkbox **„Edit base-map pos"** einschalten und die Karte per Drag ausrichten (Loslassen speichert die Kalibrierung). CLI: `--bgrender` (PNG-Render), `--bgset` (manuelle Transform-Werte).
@@ -127,6 +146,16 @@ SoD2MapViewer.exe --saveinject <save.sav> <out.sav> <classIndex> <x> <y> <z> [ya
 
 # Fahrzeugeinträge per Index löschen (Bereiche "24-56" oder Liste "24,27")
 SoD2MapViewer.exe --savedelete <save.sav> <out.sav> <indexSpec>
+
+# Item-Klassen aus der ItemLibrary des Saves auflisten (Ausgabe: <itemType>\t<classPath>; optional Filter auf Typ oder Pfad)
+# -> liefert die gültigen <itemType>-Werte und <classPath>s für --saveitems
+SoD2MapViewer.exe --saveitemlist <save.sav> [filter]
+
+# Item-Stacks in den Rucksack eines Überlebenden injizieren: pro Item ein Paar <classPath> <stack>.
+# <itemType> = Typ-Präfix aus der Save-ItemLibrary (z. B. Weapon, Resource, Consumable — siehe --saveitemlist);
+# <survivorId> -1 = zuletzt gespielter Überlebender (LastPlayedSurvivorID); pro Item wird ein freier Inventar-Slot benötigt.
+# Schreibt <out.sav>, das Eingabe-Save bleibt unverändert.
+SoD2MapViewer.exe --saveitems <save.sav> <out.sav> <survivorId> <itemType> <classPath1> <stack1> [<classPath2> <stack2> ...]
 
 # Live-Savegames auflisten (%LOCALAPPDATA%\StateOfDecay2, neueste zuerst)
 SoD2MapViewer.exe --saves
