@@ -565,9 +565,11 @@ namespace SoD2MapViewer;
         }
 
         // player/character marker (on top)
+        // PlayerWorldPos is in save/world coords; tiled maps draw objects in tile-local
+        // coords (world = local + MapWorldOffset) → shift the marker into object space.
         if (PlayerWorldPos is { } pw)
         {
-            var pp = WorldToScreen(pw.X, pw.Y);
+            var pp = WorldToScreen(pw.X - MapWorldOffsetX, pw.Y - MapWorldOffsetY);
             float r = Math.Max(7f, 10f * _zoom < 1f ? 8f : Math.Min(14f, 8f + _zoom * 200f));
             using var fill = new SolidBrush(Color.FromArgb(230, 60, 220, 255));
             using var pen = new Pen(Color.White, 2f);
@@ -870,7 +872,8 @@ namespace SoD2MapViewer;
             if (_hover < 0 && PickObject(e.Location) < 0)
             {
                 var w = ScreenToWorld(e.X, e.Y);
-                WorldRightClicked?.Invoke(w);
+                // canvas space is tile-local for tiled maps; the inject dialog expects save/world coords
+                WorldRightClicked?.Invoke(new PointF(w.X + MapWorldOffsetX, w.Y + MapWorldOffsetY));
             }
         }
     }

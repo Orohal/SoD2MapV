@@ -836,7 +836,8 @@ public sealed class MainForm : Form
             _canvas.PlayerWorldPos = new System.Drawing.PointF(wx, wy);
             _canvas.PlayerWorldZCm = wz;
             _canvas.PlayerLabel = "Player";
-            _canvas.CenterOn(wx, wy);
+            // canvas centers/edits in tile-local coords for tiled maps (world = local + offset)
+            _canvas.CenterOn(wx - _canvas.MapWorldOffsetX, wy - _canvas.MapWorldOffsetY);
             _canvas.Invalidate();
             var calNote = cal == null ? " (keine Kalibrierung — evtl. versetzt; wie bei Fahrzeug-Injektion kalibrieren)" : "";
             SetStatus($"Character: save({sx / 100:0.#}, {sy / 100:0.#}, {sz / 100:0.#}) m, world({wx / 100:0.#}, {wy / 100:0.#}, {wz / 100:0.#}) m, map={arch}, save={Path.GetFileName(savPath)}{calNote}");
