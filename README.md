@@ -208,7 +208,13 @@ Die gepackten Single-File-EXEs werden von einzelnen VirusTotal-Engines als gener
 
 **Published Hashes (SHA256) — v0.5.7:**
 
-Die SHA256-Prüfsummen der Release-Artefakte werden mit den veröffentlichten GitHub-Release-Assets ergänzt.
+| Asset | SHA256 |
+|---|---|
+| `SoD2MapViewer.exe` (self-contained, ~146 MB) | `FE4D59F91F24CEEC09667E4B35212CAAF9A23C06B6EB48BBB6C730D166015F8D` |
+| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `4203DC1E8E63164690C067F264E9BA167378C240EB944E4465041B87B53F9324` |
+| `SoD2MapViewer-framework-dependent.zip` | `B4078268BC96EF12102EFA621CD17416CDA0D8DA531169D2E204B1B9B70BFE24` |
+| `SoD2MapViewer-framework-dependent-plain.zip` | `920D90747FFE6E12DBF50D81E7E53F3E1B2CC06D0CB5185C67C8C8C8D0146699` |
+| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `3C29D9CC3AE7FB396B6360395FF41AFC07E6BE2342416F5FB0D864B58911C0E4` |
 
 Historisch: v0.5.6-Artefakte siehe [Release v0.5.6](https://github.com/Orohal/SoD2MapV/releases/tag/v0.5.6). Die framework-dependent Single-File-EXE von **v0.4.0** (`9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A`) wurde von 9 VirusTotal-Engines generisch gemeldet (Packer-Heuristik der Single-File-Apphosts).
 
