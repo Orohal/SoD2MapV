@@ -283,6 +283,29 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--playerpos")
+        {
+            var pos = Savegame.GetPlayerPosition(args.Length > 1 ? args[1] : @"C:\Users\johoho\AppData\Local\StateOfDecay2\Saved");
+            if (pos == null) { Console.Error.WriteLine("[playerpos] no PlayerBreadcrumbs"); return 3; }
+            var (sx, sy, sz, arch) = pos.Value;
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            Console.WriteLine("[playerpos] save=" + sx.ToString("0.##", ci) + "," + sy.ToString("0.##", ci) + "," + sz.ToString("0.##", ci) + " cm  archetype=" + arch);
+            return 0;
+        }
+        if (args.Length >= 1 && args[0] == "--levels")
+        {
+            try
+            {
+                return Smoke.Levels(
+                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 2 ? args[2] : "");
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--umapinfo")
         {
             try

@@ -150,6 +150,31 @@ internal static class Smoke
         return 0;
     }
 
+    /// <summary>Dumps the imports of a package whose object name/class references an umap (streaming levels).</summary>
+    public static int Levels(string gameDir, string path)
+    {
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+
+        var data = loader.ReadMapBytes(path);
+        var uasset = new CUE4Parse.UE4.Readers.FByteArchive(Path.GetFileName(path), data, loader.Provider.Versions);
+        var package = new CUE4Parse.UE4.Assets.Package(uasset, null, null, null, loader.Provider, useLazySerialization: true);
+        Console.WriteLine($"[levels] {path}: {package.Summary.ExportCount} exports, {package.ImportMap.Length} imports");
+        var shown = 0;
+        foreach (var im in package.ImportMap)
+        {
+            var cls = im.ClassPackage.PlainText;
+            var name = im.ObjectName.PlainText;
+            if (!name.EndsWith(".umap", StringComparison.OrdinalIgnoreCase) && !cls.Contains("Level", StringComparison.OrdinalIgnoreCase))
+                continue;
+            Console.WriteLine($"  import class='{cls}.{im.ClassName.PlainText}' name='{name}'");
+            shown++;
+        }
+        Console.WriteLine($"[levels] {shown} umap/level import(s)");
+        return 0;
+    }
+
     /// <summary>Dumps all properties of exports whose name/class matches the filter (recursive, shallow).</summary>
     public static int DumpProps(string gameDir, string path, string filter)
     {
@@ -364,7 +389,7 @@ internal static class Smoke
                     && !o.MeshPath.Contains(filter, StringComparison.OrdinalIgnoreCase))
                     continue;
                 hits++;
-                Console.WriteLine($"{Path.GetFileName(path)}  |  {o.Name}  ({o.ClassName})  at {o.X / 100:0.#},{o.Y / 100:0.#},{o.Z / 100:0.#} m  mesh={o.MeshPath}");
+                Console.WriteLine($"{Path.GetFileName(path)}  |  {o.Name}  ({o.ClassName})  at {(o.X / 100.0).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)},{(o.Y / 100.0).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)},{(o.Z / 100.0).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)} m  mesh={o.MeshPath}");
             }
         }
         Console.WriteLine($"[find] {hits} match(es) for '{filter}' across {total} maps");
