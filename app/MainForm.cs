@@ -32,6 +32,9 @@ public sealed class MainForm : Form
     private readonly ComboBox _cmbHouses = null!;
     private bool _houseComboUpdating;
     private readonly Stack<UndoEntry> _undo = new();
+    private SessionStateData _session = SessionState.Load();
+    private List<string>? _pendingRestoreSelectionNames;
+    private string? _pendingRestorePrimaryName;
 
     private sealed class HouseItem
     {
@@ -48,7 +51,7 @@ public sealed class MainForm : Form
     private sealed class UndoItem
     {
         public int Idx;
-        public float OldX, OldY;
+        public float OldX, OldY, OldZ;
         public float OldQX, OldQY, OldQZ, OldQW;
         public float OldSX, OldSY, OldSZ;
         public bool OldDeleted;
@@ -223,6 +226,8 @@ public sealed class MainForm : Form
         _chkEdit.CheckedChanged += (s, e) => _canvas.EditingEnabled = _chkEdit.Checked;
         var btnExport = new Button { Text = "Export mod .pak...", AutoSize = true, Height = 30 };
         btnExport.Click += (s, e) => ExportModPak();
+        var btnAdjustZ = new Button { Text = "Adjust height (Z)…", AutoSize = true, Height = 30 };
+        btnAdjustZ.Click += (s, e) => AdjustSelectionHeight();
         var btnChar = new Button { Text = "Show character", AutoSize = true, Height = 30 };
         btnChar.Click += (s, e) => ShowCharacterPosition();
 
@@ -251,9 +256,11 @@ public sealed class MainForm : Form
         _canvas.ShowBgBase = true;
         _chkEditBg = new CheckBox { Text = "Edit base-map pos", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkEditBg.CheckedChanged += (s, e) => { _canvas.EditBgOffset = _chkEditBg.Checked; _canvas.Invalidate(); };
-        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, _chkEdit, btnExport, btnInjectMenu, btnChar, _chkFandom, _chkBg, _chkEditBg });
+        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, _chkEdit, btnExport, btnAdjustZ, btnInjectMenu, btnChar, _chkFandom, _chkBg, _chkEditBg });
         top.Controls.Add(flow);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
+        _canvas.SelectionChanged += _ => SaveSessionStateLight();
+        FormClosing += (s, e) => SaveSessionState();
 
         _status = new TextBox
         {
@@ -291,6 +298,14 @@ public sealed class MainForm : Form
             outer.SplitterDistance = Math.Clamp(360, omin, omax);
         };
 
+        // restore session (filters + game dir) before first init
+        if (!string.IsNullOrWhiteSpace(_session.LastObjectFilter))
+            _search.Text = _session.LastObjectFilter;
+        if (!string.IsNullOrWhiteSpace(_session.LastMapFilter))
+            _mapFilter.Text = _session.LastMapFilter;
+        if (!string.IsNullOrWhiteSpace(_session.LastGameDir) && System.IO.Directory.Exists(_session.LastGameDir))
+            _loader.GameDirectory = _session.LastGameDir!;
+
         BeginInitGame();
     }
 
@@ -322,6 +337,7 @@ public sealed class MainForm : Form
         }
         SetStatus($"mounted paks: {res.MountedPaks}, files: {res.TotalFiles:N0}, maps found: {res.MapCount}");
         ApplyMapFilter();
+        RestoreLastMapSelection();
 
         if (res.NeedsKey)
         {
@@ -407,6 +423,97 @@ public sealed class MainForm : Form
         }
     }
 
+    private void SaveSessionStateLight()
+    {
+        try
+        {
+            _session.LastGameDir = _loader.GameDirectory;
+            _session.LastObjectFilter = _search?.Text;
+            _session.LastMapFilter = _mapFilter?.Text;
+            if (_map != null) _session.LastMapPath = _map.Path;
+            var sel = _canvas?.Selection;
+            if (sel != null)
+            {
+                var names = new List<string>();
+                foreach (var idx in sel)
+                {
+                    if (idx < 0 || idx >= _visible.Count) continue;
+                    names.Add(_visible[idx].Name);
+                }
+                _session.SelectedNames = names;
+                _session.PrimarySelectedName = names.Count > 0 ? names[0] : null;
+            }
+            SessionState.Save(_session);
+        }
+        catch { }
+    }
+
+    private void SaveSessionState() => SaveSessionStateLight();
+
+    private void RestoreLastMapSelection()
+    {
+        var path = _session.LastMapPath;
+        if (string.IsNullOrWhiteSpace(path)) return;
+        var node = FindNodeByTag(_mapTree.Nodes, path);
+        if (node == null) return;
+        _pendingRestoreSelectionNames = _session.SelectedNames != null ? new List<string>(_session.SelectedNames) : null;
+        _pendingRestorePrimaryName = _session.PrimarySelectedName;
+        node.Parent?.Expand();
+        _mapTree.SelectedNode = node;
+        node.EnsureVisible();
+    }
+
+    private static TreeNode? FindNodeByTag(TreeNodeCollection nodes, string tag)
+    {
+        foreach (TreeNode n in nodes)
+        {
+            if (n.Tag is string s && string.Equals(s, tag, StringComparison.OrdinalIgnoreCase))
+                return n;
+            var child = FindNodeByTag(n.Nodes, tag);
+            if (child != null) return child;
+        }
+        return null;
+    }
+
+    private void RestorePendingSelection(string mapPath)
+    {
+        if (_pendingRestoreSelectionNames == null) return;
+        if (!string.Equals(_session.LastMapPath, mapPath, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(_pendingRestoreSelectionNames.Count > 0 ? mapPath : mapPath, mapPath, StringComparison.Ordinal)) { }
+        var names = _pendingRestoreSelectionNames;
+        var primary = _pendingRestorePrimaryName;
+        _pendingRestoreSelectionNames = null;
+        _pendingRestorePrimaryName = null;
+        if (names.Count == 0 && string.IsNullOrEmpty(primary)) return;
+
+        // try to select primary; if multiple, select group via multi-select logic
+        int primaryIdx = -1;
+        var idxs = new List<int>();
+        for (int i = 0; i < _visible.Count; i++)
+        {
+            if (names.Contains(_visible[i].Name, StringComparer.OrdinalIgnoreCase) ||
+                (!string.IsNullOrEmpty(primary) && string.Equals(_visible[i].Name, primary, StringComparison.OrdinalIgnoreCase)))
+            {
+                idxs.Add(i);
+            }
+        }
+        if (idxs.Count == 0) return;
+        if (!string.IsNullOrEmpty(primary))
+            primaryIdx = idxs.FirstOrDefault(i => string.Equals(_visible[i].Name, primary, StringComparison.OrdinalIgnoreCase));
+        if (primaryIdx < 0) primaryIdx = idxs[0];
+
+        // select primary and toggle others into multi-selection
+        _canvas.ClearSelection();
+        _canvas.SelectIndex(primaryIdx, centerOnSelection: true);
+        foreach (var i in idxs)
+        {
+            if (i == primaryIdx) continue;
+            _canvas.ToggleSelected(i);
+        }
+        _canvas.Invalidate();
+        SetStatus($"restored selection: {idxs.Count} object(s)");
+    }
+
     private void PickGameDir()
     {
         using var dlg = new FolderBrowserDialog
@@ -454,6 +561,8 @@ public sealed class MainForm : Form
                     : ""));
         ApplyFilter();
         RenderLegend();
+        RestorePendingSelection(model.Path);
+        SaveSessionStateLight();
     }
 
     private void RenderLegend()
@@ -566,7 +675,7 @@ public sealed class MainForm : Form
         return new UndoItem
         {
             Idx = idx,
-            OldX = o.X, OldY = o.Y,
+            OldX = o.X, OldY = o.Y, OldZ = o.Z,
             OldQX = o.QX, OldQY = o.QY, OldQZ = o.QZ, OldQW = o.QW,
             OldSX = o.SX, OldSY = o.SY, OldSZ = o.SZ,
             OldDeleted = o.Deleted,
@@ -586,6 +695,8 @@ public sealed class MainForm : Form
         var item = Snapshot(idx);
         item.OldX = oldX;
         item.OldY = oldY;
+        // Z unchanged by 2D drag
+        item.OldZ = _visible[idx].Z;
         var o = _visible[idx];
         _undo.Push(Entry(item));
         o.Edited = true;
@@ -603,6 +714,7 @@ public sealed class MainForm : Form
             var item = Snapshot(m.Idx);
             item.OldX = m.OldX;
             item.OldY = m.OldY;
+            item.OldZ = _visible[m.Idx].Z;
             items.Add(item);
             _visible[m.Idx].Edited = true;
         }
@@ -735,6 +847,78 @@ public sealed class MainForm : Form
         }
     }
 
+    private void AdjustSelectionHeight()
+    {
+        if (_map == null)
+        {
+            MessageBox.Show(this, "Load a map first.", "Adjust height", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        var sel = _canvas.Selection;
+        if (sel.Count == 0)
+        {
+            MessageBox.Show(this, "Select one or more objects first (click the map or pick a house group).", "Adjust height", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        using var dlg = new Form
+        {
+            Text = "Adjust height (Z)",
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent,
+            ClientSize = new Size(360, 150),
+            MaximizeBox = false,
+            MinimizeBox = false,
+        };
+        var lbl = new Label
+        {
+            AutoSize = false,
+            Text = $"Delta Z for {sel.Count} selected object(s) in meters\n(positive = up, negative = down). Use ',' or '.'.",
+            Left = 12, Top = 12, Width = 336, Height = 40,
+        };
+        var tb = new TextBox { Left = 12, Top = 56, Width = 336, Text = "0" };
+        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Left = 192, Top = 100, Width = 75 };
+        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Left = 273, Top = 100, Width = 75 };
+        dlg.Controls.AddRange(new Control[] { lbl, tb, ok, cancel });
+        dlg.AcceptButton = ok;
+        dlg.CancelButton = cancel;
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+
+        var s = (tb.Text ?? "").Trim().Replace(',', '.');
+        if (!float.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var dzM))
+        {
+            MessageBox.Show(this, "Invalid number.", "Adjust height", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        var dzCm = dzM * 100f;
+        if (Math.Abs(dzCm) < 0.0001f)
+        {
+            SetStatus("height unchanged (delta 0)");
+            return;
+        }
+
+        var items = new List<UndoItem>();
+        foreach (var idx in sel)
+        {
+            if (idx < 0 || idx >= _visible.Count) continue;
+            var o = _visible[idx];
+            if (o.Deleted) continue;
+            items.Add(Snapshot(idx));
+            o.Z += dzCm;
+            o.Edited = true;
+        }
+        if (items.Count == 0)
+        {
+            SetStatus("no editable objects in selection");
+            return;
+        }
+        _undo.Push(new UndoEntry { Items = items });
+        foreach (var it in items) _source.ResetItem(it.Idx);
+        _canvas.Invalidate();
+        var sign = dzCm >= 0 ? "+" : "";
+        SetStatus($"height adjusted: {items.Count} object(s) by {sign}{dzM:0.###} m   |   undo: {_undo.Count}  (Ctrl+Z)");
+    }
+
     private void ExportModPak()    {
         if (_map == null || _map.Error != null)
         {
@@ -805,11 +989,13 @@ public sealed class MainForm : Form
         }
 
         var mapName = Path.GetFileNameWithoutExtension(_map.Path);
+        var chunkPak = MapChunk.GetChunkPakFileName(_map.Path);
+        var isChunkPatch = chunkPak != null;
         using var dlg = new SaveFileDialog
         {
             Title = "Save mod pak",
             Filter = "PAK archive (*.pak)|*.pak",
-            FileName = $"mod_{mapName}_P.pak",
+            FileName = chunkPak ?? $"mod_{mapName}_P.pak",
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
 
@@ -822,15 +1008,21 @@ public sealed class MainForm : Form
                 o.Edited = o.EditedRotation = o.EditedScale = o.Deleted = false;
 
             SetStatus($"exported {edited.Count - failures.Count}/{edited.Count:N0} object(s) -> {dlg.FileName}");
+            var installHint = isChunkPatch
+                ? "To use it in the game, copy the file into the game's Content\\Paks folder as a chunk patch\n" +
+                  "(same folder as pakchunk*.pak, e.g. <game>\\StateOfDecay2\\Content\\Paks).\n" +
+                  "Use the exact chunk-patch filename so SoD2 loads it for this map tile.\n" +
+                  "Remove the file again to revert."
+                : "To use it in the game, copy the file to:\n" +
+                  "%LocalAppData%\\StateOfDecay2\\Saved\\Paks\n" +
+                  "(Steam/Epic mod folder — Win+R: %LocalAppData%\\StateOfDecay2\\Saved\\Paks)";
             MessageBox.Show(this,
                 $"Mod pak written:\n{dlg.FileName}\n\n" +
                 $"Objects modified: {edited.Count - failures.Count:N0} / {edited.Count:N0}\n" +
                 (failures.Count > 0
                     ? "\nUn-patched (stayed at original position):\n" + string.Join("\n", failures.Take(8)) + (failures.Count > 8 ? $"\n... and {failures.Count - 8} more" : "")
                     : "") +
-                "\n\nTo use it in the game, copy the file to:\n" +
-                "%LocalAppData%\\StateOfDecay2\\Saved\\Paks\n" +
-                "(Steam/Epic mod folder — Win+R: %LocalAppData%\\StateOfDecay2\\Saved\\Paks)\n\n" +
+                "\n\n" + installHint + "\n\n" +
                 "The '_P' suffix makes the game prefer this pak over the original map.",
                 failures.Count > 0 ? "Export complete (with warnings)" : "Export complete",
                 MessageBoxButtons.OK,
@@ -870,6 +1062,7 @@ public sealed class MainForm : Form
             var o = _visible[it.Idx];
             o.X = it.OldX;
             o.Y = it.OldY;
+            o.Z = it.OldZ;
             o.QX = it.OldQX;
             o.QY = it.OldQY;
             o.QZ = it.OldQZ;

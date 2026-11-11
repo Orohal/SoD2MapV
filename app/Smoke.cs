@@ -568,8 +568,11 @@ internal static class Smoke
 
         var outDir = Path.Combine(Path.GetTempPath(), "sod2mapv_paktest");
         Directory.CreateDirectory(outDir);
-        var outPak = Path.Combine(outDir, "pakchunk999-WindowsNoEditor_P.pak");
+        var chunkPak = MapChunk.GetChunkPakFileName(mapPath);
+        var outPak = Path.Combine(outDir, chunkPak ?? "pakchunk999-WindowsNoEditor_P.pak");
         var wr = PakWriter.Write(outPak, writeMount, new[] { new PakWriter.Entry { Path = rel, Data = data } });
+        if (chunkPak != null)
+            Console.WriteLine($"[pak]   chunk patch: {chunkPak} (install to ...\\StateOfDecay2\\Content\\Paks)");
         Console.WriteLine($"[pak]   wrote {outPak}: {wr.FileSize:N0} bytes, index [{wr.IndexOffset:N0} +{wr.IndexSize:N0}], {wr.Entries.Count} entry");
 
         // fresh provider over ONLY the mod pak
