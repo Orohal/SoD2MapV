@@ -11,6 +11,7 @@ public sealed class MapObject
     public string ClassName { get; set; } = "";      // actor class name (e.g. "StaticMeshActor")
     public string ComponentClass { get; set; } = ""; // root component class (e.g. "StaticMeshComponent")
     public string MeshPath { get; set; } = "";       // static mesh asset path when resolvable
+    public string Owner { get; set; } = "";          // owner actor name (e.g. OutpostInteractable_C -> building prefab)
     public float X { get; set; }                     // translation in UE centimeters
     public float Y { get; set; }
     public float Z { get; set; }

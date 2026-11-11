@@ -145,6 +145,12 @@ namespace SoD2MapViewer;
         private readonly List<int> _dragMembers = new();
         private readonly List<(PointF Grab, float OldX, float OldY)> _dragMemberSnap = new();
 
+        // owner-linked function actors (e.g. OutpostInteractable_C owned by a building prefab):
+        // not part of the visual selection, but moved by the same delta so the claim/outpost
+        // function follows the building mesh
+        private readonly List<int> _dragLinks = new();
+        private readonly List<(int Idx, float OldX, float OldY)> _dragLinkSnap = new();
+
         // rubber-band box selection state (Shift+Drag on empty space)
         private bool _boxSelecting;
         private Point _boxStart;
@@ -226,6 +232,26 @@ namespace SoD2MapViewer;
         }
         SelectionChanged?.Invoke(_selected);
         Invalidate();
+    }
+
+    /// <summary>Objects whose Owner references the given object (e.g. OutpostInteractable_C /
+    /// HomesiteInteractable_C owned by a building prefab). These carry the claim/outpost function
+    /// and are moved together with their owner when the owner is dragged.</summary>
+    public List<int> FindOwnerLinked(int ownerIndex)
+    {
+        var result = new List<int>();
+        if (ownerIndex < 0 || ownerIndex >= Objects.Count) return result;
+        var owner = Objects[ownerIndex].Name;
+        if (owner.Length == 0) return result;
+        for (int i = 0; i < Objects.Count; i++)
+        {
+            if (i == ownerIndex) continue;
+            var o = Objects[i];
+            if (!o.HasTransform) continue;
+            if (o.Owner.Length > 0 && string.Equals(o.Owner, owner, StringComparison.Ordinal))
+                result.Add(i);
+        }
+        return result;
     }
 
     /// <summary>Selects the anchor object plus every object within HouseSelectRadiusCm of it
@@ -661,6 +687,8 @@ namespace SoD2MapViewer;
                 // snapshot group members (Move mode): everyone moves together
                 _dragMembers.Clear();
                 _dragMemberSnap.Clear();
+                _dragLinks.Clear();
+                _dragLinkSnap.Clear();
                 if (Mode == EditMode.Move)
                 {
                     var grab = new PointF(o.X - w.X, o.Y - w.Y);
@@ -672,6 +700,18 @@ namespace SoD2MapViewer;
                         var mo = Objects[m];
                         _dragMembers.Add(m);
                         _dragMemberSnap.Add((new PointF(mo.X - w.X, mo.Y - w.Y), mo.X, mo.Y));
+                    }
+                    // owner-linked function actors (outpost/homesite interactables) follow their
+                    // building prefab so the claim/outpost function moves with the mesh
+                    var movedSet = new HashSet<int>(_dragMembers);
+                    foreach (var mi in _dragMembers)
+                    {
+                        foreach (var li in FindOwnerLinked(mi))
+                        {
+                            if (!movedSet.Add(li)) continue;
+                            _dragLinks.Add(li);
+                            _dragLinkSnap.Add((li, Objects[li].X, Objects[li].Y));
+                        }
                     }
                 }
 
@@ -762,12 +802,15 @@ namespace SoD2MapViewer;
                 if (_dragMoved)
                 {
                     var o = Objects[_dragIndex];
-                    if (Mode == EditMode.Move && _dragMembers.Count > 1)
+                    if (Mode == EditMode.Move && (_dragMembers.Count > 1 || _dragLinks.Count > 0))
                     {
-                        // group drag: fire one combined event so MainForm pushes a single undo entry
-                        var moves = new List<(int Idx, float OldX, float OldY)>(_dragMembers.Count);
+                        // group drag: fire one combined event so MainForm pushes a single undo entry;
+                        // includes owner-linked function actors (outpost/homesite interactables)
+                        var moves = new List<(int Idx, float OldX, float OldY)>(_dragMembers.Count + _dragLinks.Count);
                         for (var k = 0; k < _dragMembers.Count; k++)
                             moves.Add((_dragMembers[k], _dragMemberSnap[k].OldX, _dragMemberSnap[k].OldY));
+                        for (var k = 0; k < _dragLinks.Count; k++)
+                            moves.Add((_dragLinkSnap[k].Idx, _dragLinkSnap[k].OldX, _dragLinkSnap[k].OldY));
                         ObjectsMovedTogether?.Invoke(moves);
                     }
                     else if (Mode == EditMode.Move)
@@ -787,6 +830,8 @@ namespace SoD2MapViewer;
                 }
                 _dragMembers.Clear();
                 _dragMemberSnap.Clear();
+                _dragLinks.Clear();
+                _dragLinkSnap.Clear();
                 return;
             }
             if (_boxSelecting)
@@ -908,7 +953,19 @@ namespace SoD2MapViewer;
                             mo.Y = w.Y + _dragMemberSnap[k].Grab.Y;
                         }
                     }
+                    // owner-linked function actors (outpost/homesite interactables) follow the same delta
+                    if (_dragLinks.Count > 0)
+                    {
+                        float ddx = nx - _dragOldX, ddy = ny - _dragOldY;
+                        for (var k = 0; k < _dragLinks.Count; k++)
+                        {
+                            var lo = Objects[_dragLinks[k]];
+                            lo.X = _dragLinkSnap[k].OldX + ddx;
+                            lo.Y = _dragLinkSnap[k].OldY + ddy;
+                        }
+                    }
                     _tip.SetToolTip(this, Describe(o) + (_dragMembers.Count > 1 ? $"  [{_dragMembers.Count} objects]" : "")
+                        + (_dragLinks.Count > 0 ? $"  (+{_dragLinks.Count} function actor(s))" : "")
                         + "\n(release to drop, Ctrl+Z to undo)");
                 }
             }

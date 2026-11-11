@@ -187,6 +187,17 @@ public sealed class MapLoader
                         && meshIdx != null && !meshIdx.IsNull)
                         obj.MeshPath = meshIdx.Name;
 
+                    // Owner reference (FPackageIndex): outpost/homesite interactables point at
+                    // their building prefab — used to move the "function" together with the mesh.
+                    if (e.TryGet<FPackageIndex>("Owner", out var ownerIdx)
+                        && ownerIdx != null && !ownerIdx.IsNull)
+                    {
+                        if (ownerIdx.IsExport)
+                            obj.Owner = package.GetExport(ownerIdx.Index - 1)?.Name ?? "";
+                        else if (ownerIdx.IsImport)
+                            obj.Owner = package.FindObject(ownerIdx)?.Value?.Name ?? "";
+                    }
+
                     obj.ComponentClass = comp.ExportType ?? "";
                 }
                 else

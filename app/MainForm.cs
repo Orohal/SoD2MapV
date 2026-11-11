@@ -899,6 +899,7 @@ public sealed class MainForm : Form
         }
 
         var items = new List<UndoItem>();
+        var touched = new HashSet<int>(sel);
         foreach (var idx in sel)
         {
             if (idx < 0 || idx >= _visible.Count) continue;
@@ -907,6 +908,17 @@ public sealed class MainForm : Form
             items.Add(Snapshot(idx));
             o.Z += dzCm;
             o.Edited = true;
+            // owner-linked function actors (outpost/homesite interactables) follow the height
+            foreach (var li in _canvas.FindOwnerLinked(idx))
+            {
+                if (li < 0 || li >= _visible.Count) continue;
+                if (!touched.Add(li)) continue;
+                var lo = _visible[li];
+                if (lo.Deleted) continue;
+                items.Add(Snapshot(li));
+                lo.Z += dzCm;
+                lo.Edited = true;
+            }
         }
         if (items.Count == 0)
         {
