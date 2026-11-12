@@ -4,7 +4,7 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 
 <a href="https://www.buymeacoffee.com/Orohal" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-**Aktueller Stand: [v0.5.7](https://github.com/Orohal/SoD2MapV/releases/latest)** — Viewer + Voll-Editor + Fahrzeug- & **Item-Injektion** (GUI/CLI, Presets aus Save) + **Häuser/Objekte verschieben** (Gruppen-Auswahl, Undo, **Chunk-Patch-Export** für spielwirksame Tile-Mods) + **Höhenanpassung (Z)** + **Session-Wiederherstellung** + **Koordinaten-Fix** (Welt vs. Kachel-lokal für Spieler-Marker, Ansicht, Injektion) + **Funktion-Actoren** (Outpost-/Homesite-Interactables wandern mit dem Gebäude) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen). Details: [Repo-Status](#repo-status) (eingeklappt).
+**Aktueller Stand: [v0.5.8](https://github.com/Orohal/SoD2MapV/releases/latest)** — Viewer + Voll-Editor + Fahrzeug- & **Item-Injektion** (GUI/CLI, Presets aus Save) + **Häuser/Objekte verschieben** (Gruppen-Auswahl, Undo, **Chunk-Patch-Export** für spielwirksame Tile-Mods, **Multi-Map-Export**: Tile + `*_sites.umap` in einem Patch) + **Höhenanpassung (Z)** + **Session-Wiederherstellung** + **Koordinaten-Fix** (Welt vs. Kachel-lokal für Spieler-Marker, Ansicht, Injektion) + **Funktion-Actoren** (Outpost-/Homesite-Interactables wandern mit dem Gebäude) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen). Details: [Repo-Status](#repo-status) (eingeklappt).
 
 ## Features
 
@@ -179,6 +179,7 @@ SoD2MapViewer.exe --saves
 <details>
 <summary><b>Repo-Status / Versionshistorie</b></summary>
 
+- **v0.5.8** — **Multi-Map-Export**: Checkbox **„Multi-Map“** + Button **„Finalize Export (N)“** kombinieren mehrere gepatchte Maps in **einen** Chunk-Patch (`pakchunk<id>-WindowsNoEditor_P.pak`). Hintergrund: die Ingame-Kartenanzeige eines Outposts hängt am `TaggedSitePrimaryBuildingMarker` in `<region>_sites.umap`, der Claim-Prompt am `OutpostInteractable_C` im Tile — beide Maps müssen in **einem** Patch landen (Workflow: „Multi-Map“ anhaken → Sites-Map bearbeiten → Export → Tile-Map bearbeiten → Export → Finalize). Gleiche Map ersetzt einen vorhandenen Pending-Eintrag; Edit-Flags werden nach dem Hinzufügen zurückgesetzt. GUI-Fix: Checkbox-Lesbarkeit im Dark-Theme.
 - **v0.5.7** — **Koordinaten-Raum-Fix + Funktions-Actoren:** Spieler-Marker, Ansichtszentrierung und Rechtsklick-Injektionspunkt werden jetzt im Kachel-lokalen Raum gezeichnet (Welt → lokal über Tile-Offset); zuvor wurden Welt-Koordinaten in den Kachelraum geschrieben, was beim Ziehen von Objekten auf den Spieler-Marker zu falschen Ingame-Positionen führte. **Outpost-/Homesite-Interactables** (`OutpostInteractable_C`, `HomesiteInteractable_C`) sind jetzt über die `Owner`-Referenz mit ihrem Gebäude-Prefab verknüpft und wandern beim Ziehen (sowie bei „Adjust height (Z)…“) automatisch mit dem Gebäude mit (inkl. Undo/Export). Bugfix: Delta der verknüpften Actoren wird absolut (nicht mehr pro Mouse-Move kumulativ) angewendet. Hinweis: Ob das claimbare Outpost im Spiel funktioniert, hängt zusätzlich von der Site-Mechanik (Save-Site-Registrierung) ab; das Verschieben der Interactables ist Voraussetzung.\n- **v0.5.6** — **Tile-Verschiebungen spielwirksam**: Map-Edits werden als **Chunk-Patch** exportiert (`pakchunk<chunkId>-WindowsNoEditor_P.pak` nach `…\StateOfDecay2\Content\Paks`, z. B. Faustite = 004600), damit SoD2 die geänderten Tiles tatsächlich lädt. **Höhenanpassung (Z):** Button „Adjust height (Z)…“ verschiebt die Auswahl/Haus-Gruppe in der Höhe (Meter, Undo) — behebt Schweben/Versinken am Ziel. **Spielerhöhe im Marker:** „Show character“ zeigt Z auch am Karten-Marker. **Session-Wiederherstellung:** letzter Spielordner, Map, Filter und Auswahl werden gemerkt (`%LOCALAPPDATA%\SoD2MapViewer\session.json`). Hinweis: Tile-Chunk-Patches gehören nach `Content\Paks` (nicht `Saved\Paks`).
 - **v0.5.5** — **Komplette Häuser verschieben**: Rechtsklick auf ein Haus (oder Auswahl im neuen **„House:"**-Dropdown) wählt das Haus-Prefab plus alle Objekte im 40-m-Umkreis als Gruppe, gemeinsamer Drag, Undo, Export als Mod-`.pak`. Strg+Klick / Shift+Drag-Box für Mehrfachauswahl. **Export-Fix**: Patcher sucht jetzt die Original-Koordinaten im pristinen Map-Bytes (Fix für verschobene Objekte). **Build:** 0 Warnungen (nullable/obsolete/API-Audit bereinigt). **Mod-Ordner korrigiert:** `%LocalAppData%\StateOfDecay2\Saved\Paks` (Steam/Epic).
 - **v0.5.4** — **Item-Injektion & Savegame-Fixes**: GUI-Dialog „Inject item…" (im neuen **„Inject ▾"**-Menü) injiziert Item-Stacks in den Rucksack eines Überlebenden (Presets Benzinkanister/Reparaturkasten, **Item-Presets automatisch aus dem gewählten Save** abgeleitet/aktualisierbar, manuelle Eingabe, Backup/Self-Check). CLI: `--saveitems`, `--saveitemlist`. **Waffen-Injektion** gefixt (klassenbezogene Vorlage, `StackCount` optional). **Savegame-Parsing** robuster (`ByteProperty`-Enum-Namen, sized Arrays, `MapProperty`, Maskierung bogus High-Dword in Größenfeldern). README: Virenwarnung einklappbar.
@@ -206,17 +207,17 @@ Die gepackten Single-File-EXEs werden von einzelnen VirusTotal-Engines als gener
 
 **Wenn ungünstig:** Ordner-Variante ohne gepackte EXE nutzen — [SoD2MapViewer-framework-dependent-plain.zip](https://github.com/Orohal/SoD2MapV/releases/latest) (kleine EXE + DLLs, gleiche Funktion). Im eigenen Virenprogramm ggf. Ordner ausschließen.
 
-**Published Hashes (SHA256) — v0.5.7:**
+**Published Hashes (SHA256) - v0.5.8:**
 
 | Asset | SHA256 |
 |---|---|
-| `SoD2MapViewer.exe` (self-contained, ~146 MB) | `FE4D59F91F24CEEC09667E4B35212CAAF9A23C06B6EB48BBB6C730D166015F8D` |
-| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `4203DC1E8E63164690C067F264E9BA167378C240EB944E4465041B87B53F9324` |
-| `SoD2MapViewer-framework-dependent.zip` | `B4078268BC96EF12102EFA621CD17416CDA0D8DA531169D2E204B1B9B70BFE24` |
-| `SoD2MapViewer-framework-dependent-plain.zip` | `920D90747FFE6E12DBF50D81E7E53F3E1B2CC06D0CB5185C67C8C8C8D0146699` |
-| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `3C29D9CC3AE7FB396B6360395FF41AFC07E6BE2342416F5FB0D864B58911C0E4` |
+| `SoD2MapViewer.exe` (self-contained, ~146 MB) | `C1F74F6D161164C790A0D96D30C61B9795E16B459753746C2CA19C22CFF8B2D3` |
+| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `E796BD92C58F05BD872CDBCCBD577DF8ABC4AFB8C800275F0E45A9324C89AB66` |
+| `SoD2MapViewer-framework-dependent.zip` | `38999BC7C8F9752DBDA6CC752DCE16297CC8C9FB92F563A5D7D2E41D741ABA6C` |
+| `SoD2MapViewer-framework-dependent-plain.zip` | `F25779D49C487182362E26356E7B105122BCB609ACE71D5EB730277C4C3C69A1` |
+| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `EB6EC82542BFDBBA3C5E0A187414C542ECFB8C354918773FB2347408D1CF456B` |
 
-Historisch: v0.5.6-Artefakte siehe [Release v0.5.6](https://github.com/Orohal/SoD2MapV/releases/tag/v0.5.6). Die framework-dependent Single-File-EXE von **v0.4.0** (`9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A`) wurde von 9 VirusTotal-Engines generisch gemeldet (Packer-Heuristik der Single-File-Apphosts).
+Historisch: v0.5.7-Artefakte siehe [Release v0.5.7](https://github.com/Orohal/SoD2MapV/releases/tag/v0.5.7). Die framework-dependent Single-File-EXE von **v0.4.0** (`9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A`) wurde von 9 VirusTotal-Engines generisch gemeldet (Packer-Heuristik der Single-File-Apphosts).
 
 - Selbst bauen: `dotnet build app/SoD2MapViewer.csproj -c Release`
 - False-Positive melden (alle Engines): [Microsoft WDSI-Filesubmission](https://www.microsoft.com/wdsi/filesubmission); bei anderen Engines jeweils deren FP-Portal nutzen

@@ -35,6 +35,11 @@ public sealed class MainForm : Form
     private SessionStateData _session = SessionState.Load();
     private List<string>? _pendingRestoreSelectionNames;
     private string? _pendingRestorePrimaryName;
+    private Button _btnFinalize = null!;
+
+    // Multi-map export: stores patched map data for maps edited across multiple sessions
+    private readonly List<(string Path, byte[] Data)> _pendingMaps = new();
+    private bool _multiMapMode;
 
     private sealed class HouseItem
     {
@@ -226,6 +231,11 @@ public sealed class MainForm : Form
         _chkEdit.CheckedChanged += (s, e) => _canvas.EditingEnabled = _chkEdit.Checked;
         var btnExport = new Button { Text = "Export mod .pak...", AutoSize = true, Height = 30 };
         btnExport.Click += (s, e) => ExportModPak();
+        var chkMultiMap = new CheckBox { Text = "Multi-Map", AutoSize = true, Height = 30, Margin = new Padding(0, 4, 0, 0), ForeColor = Color.Gainsboro };
+        chkMultiMap.CheckedChanged += (s, e) => { _multiMapMode = chkMultiMap.Checked; UpdateFinalizeButton(); };
+        var btnFinalize = new Button { Text = "Finalize Export (0)", AutoSize = true, Height = 30, Enabled = false };
+        _btnFinalize = btnFinalize;
+        btnFinalize.Click += (s, e) => FinalizeMultiMapExport();
         var btnAdjustZ = new Button { Text = "Adjust height (Z)…", AutoSize = true, Height = 30 };
         btnAdjustZ.Click += (s, e) => AdjustSelectionHeight();
         var btnChar = new Button { Text = "Show character", AutoSize = true, Height = 30 };
@@ -256,7 +266,7 @@ public sealed class MainForm : Form
         _canvas.ShowBgBase = true;
         _chkEditBg = new CheckBox { Text = "Edit base-map pos", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkEditBg.CheckedChanged += (s, e) => { _canvas.EditBgOffset = _chkEditBg.Checked; _canvas.Invalidate(); };
-        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, _chkEdit, btnExport, btnAdjustZ, btnInjectMenu, btnChar, _chkFandom, _chkBg, _chkEditBg });
+        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, _chkEdit, btnExport, chkMultiMap, btnFinalize, btnAdjustZ, btnInjectMenu, btnChar, _chkFandom, _chkBg, _chkEditBg });
         top.Controls.Add(flow);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
         _canvas.SelectionChanged += _ => SaveSessionStateLight();
@@ -932,7 +942,73 @@ public sealed class MainForm : Form
         SetStatus($"height adjusted: {items.Count} object(s) by {sign}{dzM:0.###} m   |   undo: {_undo.Count}  (Ctrl+Z)");
     }
 
-    private void ExportModPak()    {
+    private void UpdateFinalizeButton()
+    {
+        if (_btnFinalize != null)
+        {
+            _btnFinalize.Text = $"Finalize Export ({_pendingMaps.Count})";
+            _btnFinalize.Enabled = _pendingMaps.Count > 0;
+        }
+    }
+
+    private void FinalizeMultiMapExport()
+    {
+        if (_pendingMaps.Count == 0)
+        {
+            MessageBox.Show(this, "No pending maps. Use 'Export mod .pak...' with 'Multi-Map' checked to add maps.", "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        // Determine chunk pak name from first pending map
+        var firstMap = _pendingMaps[0].Path;
+        var chunkPak = MapChunk.GetChunkPakFileName(firstMap);
+        var mapName = Path.GetFileNameWithoutExtension(firstMap);
+
+        using var dlg = new SaveFileDialog
+        {
+            Title = "Save combined mod pak",
+            Filter = "PAK archive (*.pak)|*.pak",
+            FileName = chunkPak ?? $"mod_{mapName}_P.pak",
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+
+        try
+        {
+            var mountPoint = "";
+            var entries = new List<PakWriter.Entry>();
+            foreach (var (path, data) in _pendingMaps)
+            {
+                // Resolve mount point and relative path for each map
+                string mp, rel;
+                try
+                {
+                    var pe = _loader.Provider[path] as CUE4Parse.UE4.Pak.Objects.FPakEntry
+                        ?? throw new InvalidOperationException("map is not inside a pak");
+                    mp = ((CUE4Parse.UE4.Pak.PakFileReader)pe.Vfs).MountPoint;
+                    mp = mp.StartsWith("../") ? mp : "../../../" + mp;
+                    rel = StripMount(path, mp);
+                }
+                catch (Exception e)
+                {
+                    MessageBox.Show(this, $"Failed to resolve pak mount point for {path}:\n" + e.Message, "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                if (mountPoint.Length == 0) mountPoint = mp;
+                entries.Add(new PakWriter.Entry { Path = rel, Data = data });
+            }
+
+            PakWriter.Write(dlg.FileName, mountPoint, entries);
+            SetStatus($"exported {_pendingMaps.Count} map(s) -> {dlg.FileName}");
+            _pendingMaps.Clear();
+            UpdateFinalizeButton();
+        }
+        catch (Exception e)
+        {
+            MessageBox.Show(this, "Export failed:\n" + e.Message, "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+    private void ExportModPak()
+    {
         if (_map == null || _map.Error != null)
         {
             MessageBox.Show(this, "Load a map first.", "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -943,6 +1019,37 @@ public sealed class MainForm : Form
         {
             MessageBox.Show(this, "No objects were moved, rotated, scaled, or deleted. Enable editing, modify an object, then export.",
                 "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        if (_multiMapMode)
+        {
+            // Multi-map mode: patch current map and add to pending list
+            byte[] mmData;
+            try { mmData = _loader.ReadMapBytes(_map.Path); }
+            catch (Exception e) { MessageBox.Show(this, "Failed to read map bytes:\n" + e.Message, "Export", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+
+            var mmFailures = new List<string>();
+            foreach (var o in edited)
+            {
+                if (o.Deleted) { var r = UmapPatcher.PatchErase(mmData, o); if (r.Error.Length > 0) mmFailures.Add($"{o.Name}: erase: {r.Error}"); continue; }
+                if (o.Edited) { var r = UmapPatcher.PatchLocation(mmData, o, o.X, o.Y, o.Z); if (r.Error.Length > 0) mmFailures.Add($"{o.Name}: move: {r.Error}"); }
+                if (o.EditedRotation) { var r = UmapPatcher.PatchRotation(mmData, o, o.QX, o.QY, o.QZ, o.QW); if (r.Error.Length > 0) mmFailures.Add($"{o.Name}: rotate: {r.Error}"); }
+                if (o.EditedScale) { var r = UmapPatcher.PatchScale(mmData, o, o.SX, o.SY, o.SZ); if (r.Error.Length > 0) mmFailures.Add($"{o.Name}: scale: {r.Error}"); }
+            }
+
+            // Replace existing entry for same map
+            _pendingMaps.RemoveAll(p => p.Path == _map.Path);
+            _pendingMaps.Add((_map.Path, mmData));
+
+            // Reset edit flags
+            foreach (var o in _map.Objects)
+                o.Edited = o.EditedRotation = o.EditedScale = o.Deleted = false;
+
+            SetStatus($"added {_map.Path} to pending export ({_pendingMaps.Count} map(s))");
+            UpdateFinalizeButton();
+            if (mmFailures.Count > 0)
+                MessageBox.Show(this, string.Join("\n", mmFailures), "Patch warnings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
