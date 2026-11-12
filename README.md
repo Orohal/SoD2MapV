@@ -211,15 +211,14 @@ Die gepackten Single-File-EXEs werden von einzelnen VirusTotal-Engines als gener
 
 | Asset | SHA256 |
 |---|---|
-| `SoD2MapViewer.exe` (self-contained, ~146 MB) | `C1F74F6D161164C790A0D96D30C61B9795E16B459753746C2CA19C22CFF8B2D3` |
-| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `E796BD92C58F05BD872CDBCCBD577DF8ABC4AFB8C800275F0E45A9324C89AB66` |
 | `SoD2MapViewer-framework-dependent.zip` | `38999BC7C8F9752DBDA6CC752DCE16297CC8C9FB92F563A5D7D2E41D741ABA6C` |
 | `SoD2MapViewer-framework-dependent-plain.zip` | `F25779D49C487182362E26356E7B105122BCB609ACE71D5EB730277C4C3C69A1` |
+| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `E796BD92C58F05BD872CDBCCBD577DF8ABC4AFB8C800275F0E45A9324C89AB66` |
 | `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `EB6EC82542BFDBBA3C5E0A187414C542ECFB8C354918773FB2347408D1CF456B` |
 
 Historisch: v0.5.7-Artefakte siehe [Release v0.5.7](https://github.com/Orohal/SoD2MapV/releases/tag/v0.5.7). Die framework-dependent Single-File-EXE von **v0.4.0** (`9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A`) wurde von 9 VirusTotal-Engines generisch gemeldet (Packer-Heuristik der Single-File-Apphosts).
 
-- Selbst bauen: `dotnet build app/SoD2MapViewer.csproj -c Release`
+- Selbst bauen: `dotnet build app/SoD2MapViewer.csproj -c Release` (self-contained nur auf Anfrage)
 - False-Positive melden (alle Engines): [Microsoft WDSI-Filesubmission](https://www.microsoft.com/wdsi/filesubmission); bei anderen Engines jeweils deren FP-Portal nutzen
 
 </details>
