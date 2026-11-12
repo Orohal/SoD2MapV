@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -615,5 +616,98 @@ internal static class Smoke
             return fp[m.Length..];
         var idx = fp.IndexOf("Content/", StringComparison.OrdinalIgnoreCase);
         return idx >= 0 ? fp[(idx + "Content/".Length)..] : fp;
+    }
+
+    /// <summary>
+    /// --sites &lt;gameDir&gt; &lt;mapPath&gt;: lists the region tag database and the sites that own entities in the given tile.
+    /// </summary>
+    public static int Sites(string gameDir, string mapPath)
+    {
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+
+        var tgcPath = TgcPatcher.FindTgcPath(loader.Provider, mapPath);
+        if (tgcPath == null) { Console.WriteLine($"no .tgc found for {mapPath}"); return 3; }
+        var root = TgcPatcher.Parse(loader.ReadMapBytes(tgcPath));
+        Console.WriteLine($"tgc: {tgcPath}");
+        Console.WriteLine(TgcPatcher.Describe(root));
+
+        var tile = Path.GetFileNameWithoutExtension(mapPath);
+        var prefix = tile + ":";
+        int outpostable = 0, inTile = 0;
+        var rows = new List<string>();
+
+        // guid -> path index for the whole database (single pass)
+        var pathByGuid = new Dictionary<string, string>();
+        foreach (var arr in root.AsObject().Select(p => p.Value).OfType<JsonArray>())
+            foreach (var e in arr)
+            {
+                var g = e?["guid"]?.GetValue<string>();
+                var pth = e?["path"]?.GetValue<string>();
+                if (g != null && pth != null && !pathByGuid.ContainsKey(g)) pathByGuid[g] = pth;
+            }
+
+        var sitesArr = root["sites"] as JsonArray;
+        if (sitesArr != null)
+        {
+            foreach (var site in sitesArr)
+            {
+                var guid = site?["guid"]?.GetValue<string>() ?? "";
+                var type = site?["siteType"]?.GetValue<string>() ?? "";
+                var tags = site?["tags"] is JsonArray ta
+                    ? string.Join("|", ta.Select(t => t?.GetValue<string>() ?? ""))
+                    : "";
+                var isOut = tags.Contains("Outpostable");
+                if (isOut) outpostable++;
+
+                var hasInTile = false;
+                if (site?["contains"] is JsonArray contains)
+                    foreach (var cg in contains)
+                    {
+                        var g = cg?.GetValue<string>();
+                        if (g != null && pathByGuid.TryGetValue(g, out var ep) && ep.StartsWith(prefix, StringComparison.Ordinal))
+                        {
+                            hasInTile = true;
+                            break;
+                        }
+                    }
+                if (!hasInTile) continue;
+                inTile++;
+                var box = site?["boxes"]?[0];
+                var bx = box?["position"]?["x"] != null ? box["position"]["x"].GetValue<float>() : 0f;
+                var by = box?["position"]?["y"] != null ? box["position"]["y"].GetValue<float>() : 0f;
+                rows.Add($"  {(isOut ? "OUT " : "    ")}{type,-16} {bx / 100,9:0.#},{by / 100,9:0.#} m  {guid}  {tags}");
+            }
+        }
+        Console.WriteLine($"sites total: {sitesArr?.Count ?? 0}, outpostable: {outpostable}, in tile '{tile}': {inTile}");
+        foreach (var r in rows.OrderBy(r => r)) Console.WriteLine(r);
+        return 0;
+    }
+
+    /// <summary>
+    /// --tgcpatch &lt;gameDir&gt; &lt;mapPath&gt; &lt;prefabName&gt; &lt;dx&gt; &lt;dy&gt; &lt;dz&gt; &lt;outPak&gt;:
+    /// shifts the tag-database entries of a prefab instance (and its site box + marker) by the delta
+    /// and writes a chunk-1095 patch pak.
+    /// </summary>
+    public static int TgcPatch(string gameDir, string mapPath, string prefabName, float dx, float dy, float dz, string outPak)
+    {
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+
+        var tgcPath = TgcPatcher.FindTgcPath(loader.Provider, mapPath);
+        if (tgcPath == null) { Console.WriteLine($"no .tgc found for {mapPath}"); return 3; }
+        var tile = Path.GetFileNameWithoutExtension(mapPath);
+        var root = TgcPatcher.Parse(loader.ReadMapBytes(tgcPath));
+        var moved = TgcPatcher.ShiftBuildings(root, tile, new[] { new TgcPatcher.MoveGroup(prefabName, dx, dy, dz) });
+        var data = TgcPatcher.Serialize(root);
+
+        var mountPoint = PakWriter.ResolveMountPoint(loader.Provider, tgcPath);
+        var rel = PakWriter.StripMount(tgcPath, mountPoint);
+        var wr = PakWriter.Write(outPak, mountPoint, new[] { new PakWriter.Entry { Path = rel, Data = data } });
+        Console.WriteLine($"shifted {moved} tgc entities for '{tile}:{prefabName}' by ({dx},{dy},{dz}) cm");
+        Console.WriteLine($"wrote {outPak} ({wr.FileSize:N0} bytes, entry {rel})");
+        return 0;
     }
 }

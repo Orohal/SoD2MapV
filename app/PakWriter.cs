@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using CUE4Parse.FileProvider;
 
 namespace SoD2MapViewer;
 
@@ -116,5 +117,26 @@ public static class PakWriter
     {
         using var sha = SHA1.Create();
         return sha.ComputeHash(data);
+    }
+
+    /// <summary>Strips the pak mount point from a full game path so the result is entry-relative.</summary>
+    public static string StripMount(string fullPath, string mountPoint)
+    {
+        var m = mountPoint.Replace('\\', '/');
+        while (m.StartsWith("../")) m = m[3..];
+        var fp = fullPath.Replace('\\', '/');
+        if (m.Length > 0 && fp.StartsWith(m, StringComparison.OrdinalIgnoreCase))
+            return fp[m.Length..];
+        var idx = fp.IndexOf("Content/", StringComparison.OrdinalIgnoreCase);
+        return idx >= 0 ? fp[(idx + "Content/".Length)..] : fp;
+    }
+
+    /// <summary>Resolves the original pak mount point for a game path (same convention the export uses).</summary>
+    public static string ResolveMountPoint(DefaultFileProvider provider, string gamePath)
+    {
+        var pe = provider[gamePath] as CUE4Parse.UE4.Pak.Objects.FPakEntry
+            ?? throw new InvalidOperationException("file is not inside a pak: " + gamePath);
+        var mp = ((CUE4Parse.UE4.Pak.PakFileReader)pe.Vfs).MountPoint;
+        return mp.StartsWith("../") ? mp : "../../../" + mp;
     }
 }

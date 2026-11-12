@@ -594,6 +594,41 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--sites")
+        {
+            try
+            {
+                var gameDir = args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2";
+                var mapPath = args.Length > 2 ? args[2] : "StateOfDecay2/Content/maps/faustite/faustite/faustite_x2_y3.umap";
+                return Smoke.Sites(gameDir, mapPath);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--tgcpatch")
+        {
+            try
+            {
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                if (args.Length < 8) { Console.Error.WriteLine("usage: --tgcpatch <gameDir> <mapPath> <prefabName> <dx> <dy> <dz> <outPak>"); return 2; }
+                var gameDir = args[1];
+                var mapPath = args[2];
+                var prefabName = args[3];
+                var dx = float.Parse(args[4], ci);
+                var dy = float.Parse(args[5], ci);
+                var dz = float.Parse(args[6], ci);
+                var outPak = args[7];
+                return Smoke.TgcPatch(gameDir, mapPath, prefabName, dx, dy, dz, outPak);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--smoke")
         {
             try

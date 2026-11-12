@@ -39,6 +39,8 @@ public sealed class MainForm : Form
 
     // Multi-map export: stores patched map data for maps edited across multiple sessions
     private readonly List<(string Path, byte[] Data)> _pendingMaps = new();
+    // Patched region tag databases (.tgc) — written into the shared chunk 1095 patch pak
+    private readonly List<(string Path, byte[] Data)> _pendingTgcs = new();
     private bool _multiMapMode;
 
     private sealed class HouseItem
@@ -951,6 +953,65 @@ public sealed class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// Builds a patch for the region tag database (.tgc) so a moved building's site box, rooms,
+    /// containers and spawn points follow it. Returns null when the map has no tag database or
+    /// no moved object is part of one. Translation only (rotation edits stay in the umap).
+    /// </summary>
+    private (string Path, byte[] Data)? BuildTgcPatch()
+    {
+        if (_map == null || _map.Error != null) return null;
+        var tgcPath = TgcPatcher.FindTgcPath(_loader.Provider, _map.Path);
+        if (tgcPath == null) return null;
+
+        var moves = new List<TgcPatcher.MoveGroup>();
+        foreach (var o in _map.Objects)
+        {
+            if (!o.Edited || o.Deleted) continue;
+            moves.Add(new TgcPatcher.MoveGroup(o.Name, o.X - o.OrigX, o.Y - o.OrigY, o.Z - o.OrigZ));
+        }
+        if (moves.Count == 0) return null;
+
+        try
+        {
+            var root = TgcPatcher.Parse(_loader.ReadMapBytes(tgcPath));
+            var tile = Path.GetFileNameWithoutExtension(_map.Path);
+            var moved = TgcPatcher.ShiftBuildings(root, tile, moves);
+            if (moved == 0) return null;
+            return (tgcPath, TgcPatcher.Serialize(root));
+        }
+        catch (Exception e)
+        {
+            SetStatus($"tgc patch skipped: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Writes a pending tgc patch into the shared chunk-1095 patch pak (next to the given map pak).</summary>
+    private void WriteTgcPak(string directory, string? statusTag = null)
+    {
+        if (_pendingTgcs.Count == 0) return;
+        var path = Path.Combine(directory, MapChunk.GetTgcChunkPakFileName());
+        var entries = new List<PakWriter.Entry>();
+        string mountPoint = "";
+        foreach (var (tgcPath, data) in _pendingTgcs)
+        {
+            var mp = PakWriter.ResolveMountPoint(_loader.Provider, tgcPath);
+            if (mountPoint.Length == 0) mountPoint = mp;
+            entries.Add(new PakWriter.Entry { Path = PakWriter.StripMount(tgcPath, mp), Data = data });
+        }
+        PakWriter.Write(path, mountPoint, entries);
+        SetStatus($"{(statusTag ?? "exported")} tag database patch -> {path}");
+    }
+
+    /// <summary>Copies a tgc patch entry into a standalone chunk-1095 pak (single-map export).</summary>
+    private static void WriteTgcPakFor(string directory, string tgcPath, byte[] data, string mountPoint)
+    {
+        var path = Path.Combine(directory, MapChunk.GetTgcChunkPakFileName());
+        var entry = new PakWriter.Entry { Path = PakWriter.StripMount(tgcPath, mountPoint), Data = data };
+        PakWriter.Write(path, mountPoint, new[] { entry });
+    }
+
     private void FinalizeMultiMapExport()
     {
         if (_pendingMaps.Count == 0)
@@ -1000,6 +1061,11 @@ public sealed class MainForm : Form
             PakWriter.Write(dlg.FileName, mountPoint, entries);
             SetStatus($"exported {_pendingMaps.Count} map(s) -> {dlg.FileName}");
             _pendingMaps.Clear();
+            if (_pendingTgcs.Count > 0)
+            {
+                WriteTgcPak(Path.GetDirectoryName(dlg.FileName) ?? ".", "finalized");
+                _pendingTgcs.Clear();
+            }
             UpdateFinalizeButton();
         }
         catch (Exception e)
@@ -1041,6 +1107,14 @@ public sealed class MainForm : Form
             // Replace existing entry for same map
             _pendingMaps.RemoveAll(p => p.Path == _map.Path);
             _pendingMaps.Add((_map.Path, mmData));
+
+            // Site-aware tag database patch (outposts/bases follow their building)
+            var tgcPatch = BuildTgcPatch();
+            if (tgcPatch != null)
+            {
+                _pendingTgcs.RemoveAll(p => p.Path == tgcPatch.Value.Path);
+                _pendingTgcs.Add(tgcPatch.Value);
+            }
 
             // Reset edit flags
             foreach (var o in _map.Objects)
@@ -1121,24 +1195,40 @@ public sealed class MainForm : Form
 
         try
         {
+            // Site-aware tag database patch (outposts/bases follow their building)
+            var tgcPatch = BuildTgcPatch();
+
             PakWriter.Write(dlg.FileName, mountPoint, new[] { new PakWriter.Entry { Path = rel, Data = data } });
+
+            string? tgcPakPath = null;
+            if (tgcPatch != null)
+            {
+                var dir = Path.GetDirectoryName(dlg.FileName) ?? ".";
+                tgcPakPath = Path.Combine(dir, MapChunk.GetTgcChunkPakFileName());
+                WriteTgcPakFor(dir, tgcPatch.Value.Path, tgcPatch.Value.Data, mountPoint);
+            }
 
             // reset edit flags so re-export doesn't re-patch the same objects
             foreach (var o in _map.Objects)
                 o.Edited = o.EditedRotation = o.EditedScale = o.Deleted = false;
 
-            SetStatus($"exported {edited.Count - failures.Count}/{edited.Count:N0} object(s) -> {dlg.FileName}");
+            SetStatus($"exported {edited.Count - failures.Count}/{edited.Count:N0} object(s) -> {dlg.FileName}" +
+                      (tgcPakPath != null ? $" + tag database -> {tgcPakPath}" : ""));
             var installHint = isChunkPatch
                 ? "To use it in the game, copy the file into the game's Content\\Paks folder as a chunk patch\n" +
                   "(same folder as pakchunk*.pak, e.g. <game>\\StateOfDecay2\\Content\\Paks).\n" +
                   "Use the exact chunk-patch filename so SoD2 loads it for this map tile.\n" +
-                  "Remove the file again to revert."
+                  (tgcPakPath != null
+                    ? $"Copy BOTH files: the map patch AND '{MapChunk.GetTgcChunkPakFileName()}' (tag database, chunk 1095).\n"
+                    : "") +
+                  "Remove the file(s) again to revert."
                 : "To use it in the game, copy the file to:\n" +
                   "%LocalAppData%\\StateOfDecay2\\Saved\\Paks\n" +
                   "(Steam/Epic mod folder — Win+R: %LocalAppData%\\StateOfDecay2\\Saved\\Paks)";
             MessageBox.Show(this,
-                $"Mod pak written:\n{dlg.FileName}\n\n" +
-                $"Objects modified: {edited.Count - failures.Count:N0} / {edited.Count:N0}\n" +
+                $"Mod pak written:\n{dlg.FileName}\n" +
+                (tgcPakPath != null ? $"\nTag database patch (site box/rooms/containers follow the building):\n{tgcPakPath}\n" : "") +
+                $"\nObjects modified: {edited.Count - failures.Count:N0} / {edited.Count:N0}\n" +
                 (failures.Count > 0
                     ? "\nUn-patched (stayed at original position):\n" + string.Join("\n", failures.Take(8)) + (failures.Count > 8 ? $"\n... and {failures.Count - 8} more" : "")
                     : "") +

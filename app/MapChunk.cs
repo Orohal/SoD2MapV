@@ -32,4 +32,7 @@ public static class MapChunk
 
     public static string? GetChunkPakFileName(string mapPath)
         => TryGetChunkId(mapPath, out var id) ? $"pakchunk{id:D6}-WindowsNoEditor_P.pak" : null;
+
+    /// <summary>Chunk patch filename for the Tagged/Compiled databases (shared by all regions).</summary>
+    public static string GetTgcChunkPakFileName() => $"pakchunk{TgcPatcher.TgcChunkId:D6}-WindowsNoEditor_P.pak";
 }
