@@ -68,7 +68,17 @@ namespace SoD2MapViewer;
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public float BgNudgeY { get; set; }
 
-        /// <summary>Identification info for the currently selected single background map (set by MainForm).</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool ShowSites { get; set; } = false;
+
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public IReadOnlyList<TgcPatcher.SiteBox> Sites { get; set; } = Array.Empty<TgcPatcher.SiteBox>();
+
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool SitesOutpostableOnly { get; set; } = true;
         [System.ComponentModel.Browsable(false)]
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public string BackgroundInfo { get; set; } = "";
@@ -421,6 +431,43 @@ namespace SoD2MapViewer;
         }
     }
 
+    private void DrawSites(Graphics g)
+    {
+        foreach (var s in Sites)
+        {
+            if (SitesOutpostableOnly && !(s.Tags?.Any(t => t == "Outpostable") ?? false)) continue;
+            // world -> local canvas frame
+            float lx = s.X - MapWorldOffsetX;
+            float ly = s.Y - MapWorldOffsetY;
+            var p = WorldToScreen(lx, ly);
+            if (p.X < -60 || p.Y < -60 || p.X > Width + 60 || p.Y > Height + 60) continue;
+
+            bool outpostable = s.Tags?.Contains("Outpostable") ?? false;
+            var fill = outpostable ? Color.FromArgb(150, 255, 140, 0) : Color.FromArgb(120, 100, 180, 255);
+            var pen = outpostable ? new Pen(Color.OrangeRed, 1.5f) : new Pen(Color.SteelBlue, 1f);
+
+            float w = Math.Max(4f, s.ExtentX * 2f * _zoom);
+            float h = Math.Max(4f, s.ExtentY * 2f * _zoom);
+
+            g.TranslateTransform(p.X, p.Y);
+            g.RotateTransform(-s.Yaw); // screen Y is inverted relative to world; negate to match
+            using (var b = new SolidBrush(fill))
+                g.FillRectangle(b, -w / 2, -h / 2, w, h);
+            g.DrawRectangle(pen, -w / 2, -h / 2, w, h);
+            g.ResetTransform();
+
+            pen.Dispose();
+
+            if (_zoom > 0.004f)
+            {
+                using var f = new Font("Segoe UI", 8f);
+                var label = string.IsNullOrEmpty(s.SiteType) ? "Site" : s.SiteType;
+                var sz = g.MeasureString(label, f);
+                g.DrawString(label, f, Brushes.White, p.X + w / 2 + 2, p.Y - sz.Height / 2);
+            }
+        }
+    }
+
     private PointF WorldToScreen(float x, float y) => new(
         Width / 2f + (x - _center.X) * _zoom,
         Height / 2f - (y - _center.Y) * _zoom); // Y up
@@ -569,6 +616,10 @@ namespace SoD2MapViewer;
             g.FillRectangle(boxFill, r);
             g.DrawRectangle(boxPen, r.X, r.Y, r.Width, r.Height);
         }
+
+        // tgc site/outpostable overlay (claimable buildings at their real positions)
+        if (ShowSites && Sites.Count > 0)
+            DrawSites(g);
 
         // player/character marker (on top)
         // PlayerWorldPos is in save/world coords; tiled maps draw objects in tile-local
@@ -856,6 +907,7 @@ namespace SoD2MapViewer;
                 BgMaps.ClearCache();
                 BgNudgeX = 0; BgNudgeY = 0;
                 _tip.SetToolTip(this, $"Hintergrund übernommen: ox={newOx:0} oy={newOy:0} cm");
+                System.Windows.Forms.MessageBox.Show($"Hintergrund übernommen:\nox = {newOx:0}\noy = {newOy:0} cm", "Feinjustierung", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
                 Invalidate();
                 return;
             }

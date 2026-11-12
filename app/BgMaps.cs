@@ -44,7 +44,7 @@ public static class BgCalib
         // (the coordinate space that aligns with loaded map objects / save breadcrumbs).
         // Fine-tune per region/variant via "Edit base-map pos" (drag) or --bgset; overrides persist.
         ["trumbull-valley"]     = (1.9739, 2.6317, -540,    8018),   // trumbull_valley_persistent_Background
-        ["trumbull-valley|faustite_persistent_Background"] = (1.6643, 1.5975, 32093, 26847), // confirmed correct, rotated 180°
+        ["trumbull-valley|faustite_persistent_Background"] = (1.0000, 1.0000, 33299, 83372), // user-calibrated via drag (sites/meshes aligned)
         ["cascade-hills"]       = (1.3144, 1.3157, -21889, -64229),
         ["drucker-county"]      = (1.1410, 1.0025, -3804,  -81678),
         ["meagher-valley"]      = (1.0414, 1.4491, -47868, -36601),
@@ -128,8 +128,7 @@ public static class BgMaps
         _ => null,
     };
 
-    static bool NeedsRotation180(string assetName)
-        => assetName.Equals("faustite_persistent_Background", StringComparison.OrdinalIgnoreCase);
+    static bool NeedsRotation180(string assetName) => false;
 
     static readonly ConcurrentDictionary<string, BgMap?> _renders = new();
 
@@ -170,24 +169,7 @@ public static class BgMaps
 
     static BgMap? Render(DefaultFileProvider provider, MapRegion region, string assetName, int targetPx)
     {
-        const string prefix = "StateOfDecay2/Content/maps/Backgrounds/";
-        var path = prefix + assetName;
-
-        IPackage pkg;
-        if (provider[path] is FPakEntry pe && Lz4Linked.NeedsLinkedDecode(pe))
-        {
-            var data = Lz4Linked.Decode(provider, pe);
-            var ar = new FByteArchive(path, data, provider.Versions);
-            pkg = new Package(ar, null, null, null, provider, useLazySerialization: true);
-        }
-        else
-        {
-            pkg = provider.LoadPackage(path);
-        }
-
-        var exp = pkg.GetExports().FirstOrDefault();
-        if (exp == null) throw new InvalidDataException($"{path}: no export");
-
+        var exp = LoadBackgroundExport(provider, assetName);
         // engine colors of the in-game map screen (MapUIInfo_BP defaults)
         var ground   = ColorFromLinear(exp, "GroundColor",    Color.FromArgb(255, 188, 183, 177));
         var water    = ColorFromLinear(exp, "WaterColor",     Color.FromArgb(255, 185, 231, 243));
@@ -244,6 +226,284 @@ public static class BgMaps
             : (wx1, Math.Min(wy0, wy1), wx0, Math.Max(wy0, wy1));
         return new BgMap(region, buffers, (float)minX, (float)maxX, (float)minY, (float)maxY,
             bmp, px, py, (float)rx0, (float)ry0, (float)rx1, (float)ry1);
+    }
+
+    /// <summary>Loads the first export of a Backgrounds asset (handles LZ4-linked paks).</summary>
+    static UObject LoadBackgroundExport(DefaultFileProvider provider, string assetName)
+    {
+        const string prefix = "StateOfDecay2/Content/maps/Backgrounds/";
+        var path = prefix + assetName;
+
+        IPackage pkg;
+        if (provider[path] is FPakEntry pe && Lz4Linked.NeedsLinkedDecode(pe))
+        {
+            var data = Lz4Linked.Decode(provider, pe);
+            var ar = new FByteArchive(path, data, provider.Versions);
+            pkg = new Package(ar, null, null, null, provider, useLazySerialization: true);
+        }
+        else
+        {
+            pkg = provider.LoadPackage(path);
+        }
+
+        var exp = pkg.GetExports().FirstOrDefault();
+        if (exp == null) throw new InvalidDataException($"{path}: no export");
+        return exp;
+    }
+
+    /// <summary>CLI: --bgprops <gameDir> <assetShortName> — dumps scalar properties of a Backgrounds asset
+    /// (looking for widget↔world mapping constants instead of fitted calibration).</summary>
+    public static int PropsCli(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            Console.WriteLine("usage: --bgprops <gameDir> <assetShortName>");
+            return 1;
+        }
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(args[0], new Progress<string>(_ => { })).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+        var exp = LoadBackgroundExport(loader.Provider, args[1]);
+        var skip = new HashSet<string>(new[] { "RoadBuffer", "RiverBuffer", "LakesBuffer", "BuildingBuffer", "BorderBuffer" });
+        Console.WriteLine($"[bgprops] {args[1]}: export '{exp.Name}', {exp.Properties.Count} properties");
+        foreach (var prop in exp.Properties)
+        {
+            if (prop?.Tag == null || skip.Contains(prop.Name.Text)) continue;
+            Console.WriteLine($"{prop.Name.Text} = {Newtonsoft.Json.JsonConvert.SerializeObject(prop.Tag)}");
+        }
+        // full JSON dump for inspection (buffers included)
+        var dump = Path.Combine(Path.GetTempPath(), "sod2_bg_" + args[1] + ".json");
+        try
+        {
+            File.WriteAllText(dump, Newtonsoft.Json.JsonConvert.SerializeObject(exp, Newtonsoft.Json.Formatting.Indented));
+            Console.WriteLine($"[bgprops] full JSON: {dump}");
+        }
+        catch (Exception ex) { Console.WriteLine($"[bgprops] JSON dump failed: {ex.Message}"); }
+        return 0;
+    }
+
+    /// <summary>CLI: --bgfit <gameDir> <mapPath> — auto-fit widget↔world calibration by maximizing
+    /// overlap between the region's tgc site boxes (world) and the background's building mask (widget).
+    /// Tests identity/flip-X/flip-Y/180° orientation modes and reports the best scale/offset.</summary>
+    public static int FitCli(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            Console.WriteLine("usage: --bgfit <gameDir> <mapPath>");
+            return 1;
+        }
+        var gameDir = args[0];
+        var mapPath = args[1];
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+
+        var model = loader.LoadMapAsync(mapPath).GetAwaiter().GetResult();
+        if (model.Error != null) { Console.Error.WriteLine(model.Error); return 2; }
+
+        var region = MapRegions.FromMapPath(model.Path) ?? MapRegions.TrumbullValley;
+        var asset = AssetFor(region, model.Path);
+        if (asset == null) { Console.Error.WriteLine("no background asset for region " + region.Key); return 2; }
+
+        var bg = Get(loader.Provider, region, 1800, model.Path);
+        if (bg == null) { Console.Error.WriteLine("background render failed"); return 2; }
+
+        // tgc site boxes (world coords)
+        var tgcPath = TgcPatcher.FindTgcPath(loader.Provider, model.Path);
+        if (tgcPath == null) { Console.Error.WriteLine("tgc not found"); return 2; }
+        var root = TgcPatcher.Parse(loader.ReadMapBytes(tgcPath));
+        var sites = TgcPatcher.GetSiteBoxes(root);
+        if (sites.Count == 0) { Console.Error.WriteLine("no sites"); return 2; }
+
+        // rasterize building mask in widget space
+        var wMinX = bg.WidgetMinX; var wMaxX = bg.WidgetMaxX;
+        var wMinY = bg.WidgetMinY; var wMaxY = bg.WidgetMaxY;
+        const int MW = 1200;
+        var MH = (int)Math.Round(MW * (wMaxY - wMinY) / Math.Max(1.0, wMaxX - wMinX));
+        if (MH < 100) MH = 100;
+        var mask = new bool[MW, MH];
+        using (var bmp = new Bitmap(MW, MH))
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.Clear(Color.Black);
+            using var b = new SolidBrush(Color.White);
+            if (bg.Buffers.TryGetValue("BuildingBuffer", out var bb))
+            {
+                var thr = 5000f;
+                // reuse segment splitting by drawing triangles
+                var segs = new List<List<(float X, float Y)>>();
+                var segcur = new List<(float X, float Y)>();
+                for (int i = 0; i < bb.Count; i++)
+                {
+                    if (segcur.Count > 0)
+                    {
+                        var dx = bb[i].X - bb[i - 1].X;
+                        var dy = bb[i].Y - bb[i - 1].Y;
+                        if (Math.Sqrt(dx * dx + dy * dy) > thr)
+                        {
+                            if (segcur.Count >= 3) segs.Add(segcur);
+                            segcur = new List<(float X, float Y)>();
+                        }
+                    }
+                    segcur.Add(bb[i]);
+                }
+                if (segcur.Count >= 3) segs.Add(segcur);
+                foreach (var seg in segs)
+                {
+                    for (int i = 0; i < seg.Count - 2; i++)
+                    {
+                        var pts = new PointF[3];
+                        for (int k = 0; k < 3; k++)
+                        {
+                            var px = (seg[i + k].X - wMinX) / (wMaxX - wMinX) * (MW - 1);
+                            var py = (seg[i + k].Y - wMinY) / (wMaxY - wMinY) * (MH - 1);
+                            pts[k] = new PointF(px, py);
+                        }
+                        g.FillPolygon(b, pts);
+                    }
+                }
+            }
+            // read back
+            var bd = bmp.LockBits(new Rectangle(0, 0, MW, MH), System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+            int stride = bd.Stride;
+            byte[] pixels = new byte[stride * MH];
+            System.Runtime.InteropServices.Marshal.Copy(bd.Scan0, pixels, 0, pixels.Length);
+            bmp.UnlockBits(bd);
+            for (int y = 0; y < MH; y++)
+                for (int x = 0; x < MW; x++)
+                    mask[x, y] = pixels[y * stride + x * 3] > 128;
+        }
+
+        // distance transform of the building mask (Manhattan, in mask pixels): for each cell,
+        // distance to the nearest building pixel. Used as a smooth objective for offset refinement.
+        var dist = new float[MW * MH];
+        const float INF = 1e6f;
+        for (int i = 0; i < dist.Length; i++) dist[i] = mask[i % MW, i / MH] ? 0f : INF;
+        // 2-pass Manhattan distance transform
+        for (int y = 0; y < MH; y++)
+            for (int x = 0; x < MW; x++)
+            {
+                if (x > 0) dist[y * MW + x] = MathF.Min(dist[y * MW + x], dist[y * MW + (x - 1)] + 1);
+                if (y > 0) dist[y * MW + x] = MathF.Min(dist[y * MW + x], dist[(y - 1) * MW + x] + 1);
+            }
+        for (int y = MH - 1; y >= 0; y--)
+            for (int x = MW - 1; x >= 0; x--)
+            {
+                if (x < MW - 1) dist[y * MW + x] = MathF.Min(dist[y * MW + x], dist[y * MW + (x + 1)] + 1);
+                if (y < MH - 1) dist[y * MW + x] = MathF.Min(dist[y * MW + x], dist[(y + 1) * MW + x] + 1);
+            }
+
+        Func<float, float, int> toMask = (wx, wy) =>
+        {
+            int px = (int)Math.Round((wx - wMinX) / (wMaxX - wMinX) * (MW - 1));
+            int py = (int)Math.Round((wy - wMinY) / (wMaxY - wMinY) * (MH - 1));
+            if (px < 0 || px >= MW || py < 0 || py >= MH) return -1;
+            return py * MW + px;
+        };
+
+        // site centroids (world)
+        double cwx = sites.Average(s => s.X);
+        double cwy = sites.Average(s => s.Y);
+
+        // building vertex centroid (widget, raw)
+        double cbx = 0, cby = 0; int cbn = 0;
+        if (bg.Buffers.TryGetValue("BuildingBuffer", out var bbuf))
+            foreach (var p in bbuf) { cbx += p.X; cby += p.Y; cbn++; }
+        if (cbn > 0) { cbx /= cbn; cby /= cbn; }
+
+        var modeBest = new double[4];
+        for (int m = 0; m < 4; m++) modeBest[m] = double.NegativeInfinity;
+        // modes: 0 identity, 1 flipX, 2 flipY, 3 flipXY (180)
+        var modes = new[] { "identity", "flipX", "flipY", "flipXY(180)" };
+        var best = (mode: -1, sx: 1.0, sy: 1.0, ox: 0.0, oy: 0.0, score: double.NegativeInfinity);
+
+        for (int mode = 0; mode < 4; mode++)
+        {
+            bool mx = (mode & 1) != 0;
+            bool my = (mode & 2) != 0;
+            // mirrored building centroid
+            double cbmx = mx ? (wMaxX - cbx + wMinX) : cbx;
+            double cbmy = my ? (wMaxY - cby + wMinY) : cby;
+
+            // coarse scale grid
+            for (double sx = 1.0; sx <= 1.0; sx += 1.0)
+            for (double sy = 1.0; sy <= 1.0; sy += 1.0)
+            {
+                double ox0 = cwx - sx * cbmx;
+                double oy0 = cwy - sy * cbmy;
+                // refine offset around ox0,oy0
+                double bestLocal = double.NegativeInfinity; double bestOx = ox0, bestOy = oy0;
+                for (double ox = ox0 - 0.15 * (wMaxX - wMinX) * sx; ox <= ox0 + 0.15 * (wMaxX - wMinX) * sx; ox += 0.002 * (wMaxX - wMinX) * sx)
+                for (double oy = oy0 - 0.15 * (wMaxY - wMinY) * sy; oy <= oy0 + 0.15 * (wMaxY - wMinY) * sy; oy += 0.002 * (wMaxY - wMinY) * sy)
+                {
+                    double dsum = 0; int valid = 0;
+                    foreach (var s in sites)
+                    {
+                        double wx = (s.X - ox) / sx;
+                        double wy = (s.Y - oy) / sy;
+                        if (mx) wx = wMaxX - wx + wMinX;
+                        if (my) wy = wMaxY - wy + wMinY;
+                        int idx = toMask((float)wx, (float)wy);
+                        if (idx < 0) { dsum += 50; continue; }
+                        dsum += dist[idx];
+                        valid++;
+                    }
+                    double sc = -dsum / sites.Count;
+                    if (sc > bestLocal) { bestLocal = sc; bestOx = ox; bestOy = oy; }
+                }
+                if (bestLocal > best.score)
+                {
+                    best = (mode, sx, sy, bestOx, bestOy, bestLocal);
+                }
+                if (bestLocal > modeBest[mode]) modeBest[mode] = bestLocal;
+            }
+        }
+
+        // refine best mode
+        {
+            int mode = best.mode;
+            bool mx = (mode & 1) != 0;
+            bool my = (mode & 2) != 0;
+            double sx = best.sx, sy = best.sy, ox = best.ox, oy = best.oy;
+            for (int iter = 0; iter < 3; iter++)
+            {
+                // scale refine
+                double bestSc = best.score; double bSx = sx, bSy = sy, bOx = ox, bOy = oy;
+                for (double dsx = 0; dsx <= 0; dsx += 1)
+                for (double dsy = 0; dsy <= 0; dsy += 1)
+                for (double dox = -0.05 * (wMaxX - wMinX) * sx; dox <= 0.05 * (wMaxX - wMinX) * sx; dox += 0.001 * (wMaxX - wMinX) * sx)
+                for (double doy = -0.05 * (wMaxY - wMinY) * sy; doy <= 0.05 * (wMaxY - wMinY) * sy; doy += 0.001 * (wMaxY - wMinY) * sy)
+                {
+                    double nsx = sx + dsx, nsy = sy + dsy;
+                    if (nsx <= 0 || nsy <= 0) continue;
+                    double nox = ox + dox, noy = oy + doy;
+                    double dsum = 0;
+                    foreach (var s in sites)
+                    {
+                        double wx = (s.X - nox) / nsx;
+                        double wy = (s.Y - noy) / nsy;
+                        if (mx) wx = wMaxX - wx + wMinX;
+                        if (my) wy = wMaxY - wy + wMinY;
+                        int idx = toMask((float)wx, (float)wy);
+                        if (idx < 0) { dsum += 50; continue; }
+                        dsum += dist[idx];
+                    }
+                    double sc = -dsum / sites.Count;
+                    if (sc > bestSc) { bestSc = sc; bSx = nsx; bSy = nsy; bOx = nox; bOy = noy; }
+                }
+                sx = bSx; sy = bSy; ox = bOx; oy = bOy; best.score = bestSc;
+            }
+            best = (mode, sx, sy, ox, oy, best.score);
+        }
+
+        Console.WriteLine($"[bgfit] region={region.Key} asset={asset} sites={sites.Count} mode={modes[best.mode]}");
+        for (int m = 0; m < 4; m++) Console.WriteLine($"[bgfit]   mode {modes[m]}: best mean-dist {-modeBest[m]:F2} px");
+        Console.WriteLine($"[bgfit] sx={best.sx:F4} sy={best.sy:F4} ox={best.ox:F2} oy={best.oy:F2}  mean-dist={-best.score:F2} px");
+        Console.WriteLine($"[bgfit] suggested BgCalib entry: [\"{region.Key}|{asset}\"] = ({best.sx:F4}, {best.sy:F4}, {best.ox:F0}, {best.oy:F0})");
+        // current calib for comparison
+        var cur = BgCalib.Get(region.Key, asset);
+        Console.WriteLine($"[bgfit] current calib: sx={cur.SX:F4} sy={cur.SY:F4} ox={cur.OX:F0} oy={cur.OY:F0}");
+        return 0;
     }
 
     /// <summary>Draws one buffer as gap-split subsegments (polygon fill or triangle strip).</summary>

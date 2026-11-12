@@ -27,6 +27,7 @@ public sealed class MainForm : Form
     private readonly TextBox _mapFilter = null!;
     private readonly CheckBox _chkEdit = null!;
     private CheckBox _chkBg = null!;
+    private CheckBox _chkSites = null!;
     private CheckBox _chkEditBg = null!;
     private readonly ComboBox _cmbHouses = null!;
     private bool _houseComboUpdating;
@@ -183,12 +184,12 @@ public sealed class MainForm : Form
         outer.Panel2.Controls.Add(right);
 
         // top toolbar (responsive flow layout, no absolute positioning -> no overlaps)
-        var top = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = Color.FromArgb(38, 40, 48) };
+        var top = new Panel { Dock = DockStyle.Top, Height = 96, BackColor = Color.FromArgb(38, 40, 48) };
         var flow = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
+            WrapContents = true,
             AutoSize = false,
             Padding = new Padding(8, 8, 8, 8),
             BackColor = Color.Transparent,
@@ -263,9 +264,11 @@ public sealed class MainForm : Form
         _chkBg = new CheckBox { Text = "Hintergrundkarte (Spiel-Asset)", AutoSize = true, Checked = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkBg.CheckedChanged += (s, e) => { _canvas.ShowBgBase = _chkBg.Checked; _canvas.Invalidate(); };
         _canvas.ShowBgBase = true;
+        _chkSites = new CheckBox { Text = "Sites (tgc)", AutoSize = true, Checked = false, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
+        _chkSites.CheckedChanged += (s, e) => { _canvas.ShowSites = _chkSites.Checked; _canvas.Invalidate(); };
         _chkEditBg = new CheckBox { Text = "Feinjustierung (Drag)", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkEditBg.CheckedChanged += (s, e) => { _canvas.EditBgOffset = _chkEditBg.Checked; _canvas.Invalidate(); };
-        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, _chkEdit, btnExport, chkMultiMap, btnFinalize, btnAdjustZ, btnInjectMenu, btnChar, _chkBg, _chkEditBg });
+        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, _chkEdit, btnExport, chkMultiMap, btnFinalize, btnAdjustZ, btnInjectMenu, btnChar, _chkBg, _chkSites, _chkEditBg });
         top.Controls.Add(flow);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
         _canvas.SelectionChanged += _ => SaveSessionStateLight();
@@ -559,6 +562,16 @@ public sealed class MainForm : Form
         var bgRegion = _canvas.MapRegion ?? MapRegions.TrumbullValley;
         var bgAsset = BgMaps.AssetFor(bgRegion, model.Path) ?? "-";
         _canvas.BackgroundInfo = $"Hintergrund: {bgRegion.Display} | Asset: {bgAsset} | Verankerung: automatisch (Tile-Offset)";
+        // tgc site/outpostable overlay data
+        try
+        {
+            var tgcPath = TgcPatcher.FindTgcPath(_loader.Provider, model.Path);
+            if (tgcPath != null)
+                _canvas.Sites = TgcPatcher.GetSiteBoxes(TgcPatcher.Parse(_loader.ReadMapBytes(tgcPath)));
+            else
+                _canvas.Sites = Array.Empty<TgcPatcher.SiteBox>();
+        }
+        catch { _canvas.Sites = Array.Empty<TgcPatcher.SiteBox>(); }
         var ok = model.Error == null;
         var bgMap = BgMaps.Get(_loader.Provider, bgRegion, 1800, model.Path);
         if (bgMap != null)

@@ -68,8 +68,19 @@ internal static class Program
             catch (Exception e) { Console.Error.WriteLine(e); return 2; }
         }
         if (args.Length >= 1 && args[0] == "--bgrenderasset")
+
         {
             try { return BgMaps.RenderAssetCli(args.Length > 1 ? args[1..] : Array.Empty<string>()); }
+            catch (Exception e) { Console.Error.WriteLine(e); return 2; }
+        }
+        if (args.Length >= 1 && args[0] == "--bgprops")
+        {
+            try { return BgMaps.PropsCli(args.Length > 1 ? args[1..] : Array.Empty<string>()); }
+            catch (Exception e) { Console.Error.WriteLine(e); return 2; }
+        }
+        if (args.Length >= 1 && args[0] == "--bgfit")
+        {
+            try { return BgMaps.FitCli(args.Length > 1 ? args[1..] : Array.Empty<string>()); }
             catch (Exception e) { Console.Error.WriteLine(e); return 2; }
         }
         if (args.Length >= 1 && args[0] == "--save")
