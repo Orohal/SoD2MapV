@@ -26,7 +26,6 @@ public sealed class MainForm : Form
     private List<MapObject> _visible = new();
     private readonly TextBox _mapFilter = null!;
     private readonly CheckBox _chkEdit = null!;
-    private CheckBox _chkFandom = null!;
     private CheckBox _chkBg = null!;
     private CheckBox _chkEditBg = null!;
     private readonly ComboBox _cmbHouses = null!;
@@ -261,14 +260,12 @@ public sealed class MainForm : Form
         });
         var btnInjectMenu = new Button { Text = "Inject ▾", AutoSize = true, Height = 30 };
         btnInjectMenu.Click += (s, e) => injectMenu.Show(btnInjectMenu, new Point(0, btnInjectMenu.Height));
-        _chkFandom = new CheckBox { Text = "Fandom map (offline)", AutoSize = true, Checked = false, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
-        _chkFandom.CheckedChanged += (s, e) => { _canvas.ShowFandomBase = _chkFandom.Checked; _canvas.Invalidate(); };
-        _chkBg = new CheckBox { Text = "Vector map (asset)", AutoSize = true, Checked = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
+        _chkBg = new CheckBox { Text = "Hintergrundkarte (Spiel-Asset)", AutoSize = true, Checked = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkBg.CheckedChanged += (s, e) => { _canvas.ShowBgBase = _chkBg.Checked; _canvas.Invalidate(); };
         _canvas.ShowBgBase = true;
-        _chkEditBg = new CheckBox { Text = "Edit base-map pos", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
+        _chkEditBg = new CheckBox { Text = "Feinjustierung (Drag)", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkEditBg.CheckedChanged += (s, e) => { _canvas.EditBgOffset = _chkEditBg.Checked; _canvas.Invalidate(); };
-        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, _chkEdit, btnExport, chkMultiMap, btnFinalize, btnAdjustZ, btnInjectMenu, btnChar, _chkFandom, _chkBg, _chkEditBg });
+        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, _chkEdit, btnExport, chkMultiMap, btnFinalize, btnAdjustZ, btnInjectMenu, btnChar, _chkBg, _chkEditBg });
         top.Controls.Add(flow);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
         _canvas.SelectionChanged += _ => SaveSessionStateLight();
@@ -552,25 +549,31 @@ public sealed class MainForm : Form
     {
         _map = model;
         _undo.Clear();
-        // tiled maps store local object coords; the Wand tiles are in world coords → shift tiles
+        // tiled maps store local object coords; background is anchored automatically to the tile/world offset
         _canvas.MapWorldOffsetX = model.HasWorldTileOffset ? model.WorldTileOffsetX : 0;
         _canvas.MapWorldOffsetY = model.HasWorldTileOffset ? model.WorldTileOffsetY : 0;
-        // select the matching Wand background region from the map path (folder codename)
+        // select the matching background region/asset from the map path
         _canvas.MapRegion = MapRegions.FromMapPath(model.Path);
         _canvas.MapPath = model.Path;
-        // vector basemap renders from the game paks — provider available after open
         _canvas.BgSource = _loader.Provider;
         var bgRegion = _canvas.MapRegion ?? MapRegions.TrumbullValley;
+        var bgAsset = BgMaps.AssetFor(bgRegion, model.Path) ?? "-";
+        _canvas.BackgroundInfo = $"Hintergrund: {bgRegion.Display} | Asset: {bgAsset} | Verankerung: automatisch (Tile-Offset)";
         var ok = model.Error == null;
         var bgMap = BgMaps.Get(_loader.Provider, bgRegion, 1800, model.Path);
         if (bgMap != null)
             SetStatus($"map: {Path.GetFileName(model.Path)}  |  exports: {model.TotalExports:N0}  objects: {model.Objects.Count:N0}  " +
                 $"without position: {Math.Max(0, model.FailedExports):N0}  parse time: {model.LoadMs} ms  " +
-                $"|  Vector-Region: {bgRegion.Key}  WorldRect X {bgMap.WorldX0:0}..{bgMap.WorldX1:0} Y {bgMap.WorldY0:0}..{bgMap.WorldY1:0}" +
+                $"|  Hintergrund: {bgRegion.Display} ({bgAsset})  WorldRect X {bgMap.WorldX0:0}..{bgMap.WorldX1:0} Y {bgMap.WorldY0:0}..{bgMap.WorldY1:0}  " +
+                $"Verankerung: automatisch" +
+                (model.HasWorldTileOffset ? $" (Tile-Offset {model.WorldTileOffsetX / 100:0.#},{model.WorldTileOffsetY / 100:0.#} m)" : "") +
                 (ok ? "" : $"  |  ERROR: {model.Error}") +
                 (ok && !model.HasWorldTileOffset && model.Path.Contains("maps/", StringComparison.OrdinalIgnoreCase)
-                    ? "  |  kein Kachel-Offset (kein WorldTileInfo) — Wand-Hintergrund evtl. versetzt, Kachel-UMAP laden"
+                    ? "  |  kein Kachel-Offset (kein WorldTileInfo) — Hintergrund evtl. versetzt"
                     : ""));
+        else
+            SetStatus($"map: {Path.GetFileName(model.Path)}  |  {model.Objects.Count:N0} Objekte  |  Hintergrund: {bgRegion.Display} ({bgAsset})" +
+                (ok ? "" : $"  |  ERROR: {model.Error}"));
         ApplyFilter();
         RenderLegend();
         RestorePendingSelection(model.Path);

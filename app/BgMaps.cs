@@ -159,6 +159,8 @@ public static class BgMaps
                 if (m != null && NeedsRotation180(asset))
                 {
                     try { m.Bitmap.RotateFlip(RotateFlipType.Rotate180FlipNone); } catch { }
+                    // bitmap rotated 180°: swap world rect corners so the coordinate mapping stays correct
+                    m = m with { WorldX0 = m.WorldX1, WorldY0 = m.WorldY1, WorldX1 = m.WorldX0, WorldY1 = m.WorldY0 };
                 }
                 return m;
             }
