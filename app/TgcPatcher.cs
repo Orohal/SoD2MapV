@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.IO;
 using CUE4Parse.FileProvider;
 
 namespace SoD2MapViewer;
@@ -99,25 +100,27 @@ public static class TgcPatcher
     }
 
     /// <summary>Shifts position (+boxes) of an entity node by the delta.</summary>
-    private static void ShiftNode(JsonNode node, float dx, float dy, float dz)
+    private static void ShiftNode(JsonNode node, float dx, float dy, float dz, List<PositionShift>? shifts = null)
     {
         if (node["position"] is JsonObject pos)
         {
+            shifts?.Add(new PositionShift(AsNum(pos["x"]), AsNum(pos["y"]), AsNum(pos["z"]), dx, dy, dz));
             pos["x"] = AsNum(pos["x"]) + dx;
             pos["y"] = AsNum(pos["y"]) + dy;
             pos["z"] = AsNum(pos["z"]) + dz;
         }
         if (node["boxes"] is JsonArray boxes)
             foreach (var b in boxes)
-                ShiftBox(b, dx, dy, dz);
+                ShiftBox(b, dx, dy, dz, shifts);
         if (node["directChildren"]?["boxes"] is JsonArray childBoxes)
             foreach (var b in childBoxes)
-                ShiftBox(b, dx, dy, dz);
+                ShiftBox(b, dx, dy, dz, shifts);
     }
 
-    private static void ShiftBox(JsonNode? box, float dx, float dy, float dz)
+    private static void ShiftBox(JsonNode? box, float dx, float dy, float dz, List<PositionShift>? shifts = null)
     {
         if (box?["position"] is not JsonObject pos) return;
+        shifts?.Add(new PositionShift(AsNum(pos["x"]), AsNum(pos["y"]), AsNum(pos["z"]), dx, dy, dz));
         pos["x"] = AsNum(pos["x"]) + dx;
         pos["y"] = AsNum(pos["y"]) + dy;
         pos["z"] = AsNum(pos["z"]) + dz;
@@ -132,12 +135,18 @@ public static class TgcPatcher
     /// <summary>A primary-building marker moved with its site: original world position + delta (cm).</summary>
     public readonly record struct MarkerMove(float X, float Y, float Z, float Dx, float Dy, float Dz);
 
+    /// <summary>One position triple shifted in the tag database: original world position + delta (cm).
+    /// Used to patch the same positions inside the cooked <c>Tagged/Cooked/*_Tags.uasset</c>, which is
+    /// what the runtime actually loads (the Compiled JSON is dev data the game ignores).</summary>
+    public readonly record struct PositionShift(float X, float Y, float Z, float Dx, float Dy, float Dz);
+
     /// <summary>
     /// Shifts all tag-database entries belonging to the given prefab instances, together with
     /// their site(s) (boxes) and the site's primary-building marker, by the respective deltas.
     /// Returns the number of shifted entity nodes.
     /// </summary>
-    public static int ShiftBuildings(JsonNode root, string tileName, IEnumerable<MoveGroup> moves, List<MarkerMove>? markerMoves = null)
+    public static int ShiftBuildings(JsonNode root, string tileName, IEnumerable<MoveGroup> moves,
+        List<MarkerMove>? markerMoves = null, List<PositionShift>? positionShifts = null)
     {
         var prefixSet = new List<(string prefix, float dx, float dy, float dz)>();
         foreach (var m in moves)
@@ -159,7 +168,7 @@ public static class TgcPatcher
                 foreach (var (prefix, dx, dy, dz) in prefixSet)
                 {
                     if (!path.StartsWith(prefix, StringComparison.Ordinal)) continue;
-                    ShiftNode(node, dx, dy, dz);
+                    ShiftNode(node, dx, dy, dz, positionShifts);
                     moved++;
                     if (TryGetGuid(node, "guid", out var g))
                     {
@@ -179,7 +188,7 @@ public static class TgcPatcher
             if (!ReferencesAny(site, movedGuids)) continue;
             var delta = FirstDelta(site, movedGuids, guidDelta);
             affectedSites.Add((site, delta.dx, delta.dy, delta.dz));
-            ShiftNode(site, delta.dx, delta.dy, delta.dz);
+            ShiftNode(site, delta.dx, delta.dy, delta.dz, positionShifts);
             moved++;
         }
 
@@ -196,12 +205,77 @@ public static class TgcPatcher
                 var delta = FirstDelta(marker, siteGuids, siteDeltas);
                 if (markerMoves != null && marker["position"] is JsonObject mp)
                     markerMoves.Add(new MarkerMove(AsNum(mp["x"]), AsNum(mp["y"]), AsNum(mp["z"]), delta.dx, delta.dy, delta.dz));
-                ShiftNode(marker, delta.dx, delta.dy, delta.dz);
+                ShiftNode(marker, delta.dx, delta.dy, delta.dz, positionShifts);
                 moved++;
             }
         }
 
         return moved;
+    }
+
+    /// <summary>
+    /// Patches the cooked tag database (<c>Tagged/Cooked/&lt;region&gt;_Tags.uasset</c>) in place:
+    /// the runtime loads this UE4 asset, not the Compiled JSON, so every shifted position must
+    /// also be shifted here. Positions are stored as consecutive little-endian float triples
+    /// (x, y, z), so each shift's original triple is located byte-exactly and rewritten shifted.
+    /// Returns the number of patched triples and the number of triples not found.
+    /// </summary>
+    public static (int Patched, int Missing) PatchCookedTags(byte[] data, IReadOnlyList<PositionShift> shifts)
+    {
+        var patched = 0;
+        var missing = 0;
+        foreach (var s in shifts)
+        {
+            if (s.Dx == 0f && s.Dy == 0f && s.Dz == 0f) continue;
+            var pattern = new byte[12];
+            BitConverter.GetBytes(s.X).CopyTo(pattern, 0);
+            BitConverter.GetBytes(s.Y).CopyTo(pattern, 4);
+            BitConverter.GetBytes(s.Z).CopyTo(pattern, 8);
+
+            var nx = BitConverter.GetBytes(s.X + s.Dx);
+            var ny = BitConverter.GetBytes(s.Y + s.Dy);
+            var nz = BitConverter.GetBytes(s.Z + s.Dz);
+
+            var found = 0;
+            var i = 0;
+            while ((i = IndexOf(data, pattern, i)) >= 0)
+            {
+                nx.CopyTo(data, i);
+                ny.CopyTo(data, i + 4);
+                nz.CopyTo(data, i + 8);
+                patched++;
+                found++;
+                i += 4;
+            }
+            if (found == 0) missing++;
+        }
+        return (patched, missing);
+    }
+
+    /// <summary>Resolves the cooked tag-database asset path for a Compiled .tgc path, or null.</summary>
+    public static string? FindCookedTagsPath(DefaultFileProvider provider, string tgcPath)
+    {
+        var name = Path.GetFileNameWithoutExtension(tgcPath); // e.g. faustite_persistent
+        if (string.IsNullOrEmpty(name)) return null;
+        var path = "StateOfDecay2/Content/Tagged/Cooked/" + name + "_Tags.uasset";
+        return provider.Files.ContainsKey(path) ? path : null;
+    }
+
+    private static int IndexOf(byte[] haystack, byte[] needle, int start)
+    {
+        var last = haystack.Length - needle.Length;
+        for (var i = Math.Max(start, 0); i <= last; i++)
+        {
+            var ok = true;
+            for (var j = 0; j < needle.Length; j++)
+            {
+                if (haystack[i + j] == needle[j]) continue;
+                ok = false;
+                break;
+            }
+            if (ok) return i;
+        }
+        return -1;
     }
 
     /// <summary>Delta of the first moved entity that the node references (contains/containedIn), or zero.</summary>

@@ -44,11 +44,10 @@ Was beim Injizieren passiert (pro Item):
 
 - Headless-CLI für alle Funktionen (siehe unten)
 
-## To do …
+## To do .
 
-1. **Sites komplett verschieben & claimbar machen** - Ingame-Test (v0.6.1): **Nur Meshes wandern**, Claim/Tueren/Container bleiben an der Originalposition (auch mit neuem Save). Reverse-Engineering-Ergebnis: Prefab-Blueprint (auto_mechanic_02_bigdaddy_damp_prefab) hat ContainerPlacements/TaggedPointPlacements/TaggedTaskPlacements (absolute Positions-Arrays) und StreamedContainers (relativ). Tile-Maps enthalten nur den Prefab-Actor; Design-Maps/Persistent-Map ohne Claim-Actors; Save ohne Positionsdaten. tgc ist gepatcht und gemountet, aber Runtime nutzt es nicht fuer diese Actoren. → **tgc-Patch ist wirkungslos fuer Runtime-Spawns.** Naechste Schritte: (a) pruefen ob das Spiel den tgc ueberhaupt fuer Spawns liest (z.B. tgc komplett loeschen/leeren → bricht Gameplay?), (b) Prefab-Blueprint-Absolute-Positionen (ContainerPlacements etc.) als Patch-Ziel identifizieren und per Binary-Patch verschieben, (c) ggf. Prefab-Transform in der Tile-Map ist nicht ausreichend - die Spawn-Arrays im Blueprint muessen mitverschoben werden
-austite_design) und HomsiteStateSave/MapSaveCollection im Save auf Positionsdaten pruefen, (c) ggf. Patch auf Prefab-Transform/Spawn-Offsets erweitern
-2. **Hintergrund-Ausrichtung der übrigen Regionen** — Faustite/Trumbull ist kalibriert (per Drag + Auto-Fit); für Cascade Hills, Drucker County, Meagher Valley, Providence Ridge und die Trumbull-Variante stehen Scale/Offset noch aus (Auto-Fit: `--bgfit`, Feinjustierung per Drag)
+1. **Sites komplett verschieben & claimbar machen** - Runtime-Quelle identifiziert: Das Spiel liest **`Tagged/Cooked/<region>_Tags.uasset`** (`TaggedDatabaseAsset.Database`, SiteInteractables/Containers/Rooms/Sites/SpawnPoints mit absoluten Positionen), nicht die Compiled-JSON (`.tgc`). v0.6.2 patcht beim Export **beide** Tag-Datenbanken im Chunk-1095-Pak (JSON + Cooked-Asset, bytegenaue X/Y/Z-Tripel-Shifts). **In-Game-Test steht noch aus** (Claim/Tueren/Container muessen mitwandern). Bei Problemen: Statuszeile/Meldung pruefen (`cooked asset: N position(s) shifted, M not found`) und melden.
+2. **Hintergrund-Ausrichtung der uebrigen Regionen** - Faustite/Trumbull ist kalibriert (per Drag + Auto-Fit); fuer Cascade Hills, Drucker County, Meagher Valley, Providence Ridge und die Trumbull-Variante stehen Scale/Offset noch aus (Auto-Fit: `--bgfit`, Feinjustierung per Drag)
 
 ## Voraussetzungen & Build
 
@@ -210,14 +209,14 @@ Die gepackten Single-File-EXEs werden von einzelnen VirusTotal-Engines als gener
 
 **Wenn ungünstig:** Ordner-Variante ohne gepackte EXE nutzen — [SoD2MapViewer-framework-dependent-plain.zip](https://github.com/Orohal/SoD2MapV/releases/latest) (kleine EXE + DLLs, gleiche Funktion). Im eigenen Virenprogramm ggf. Ordner ausschließen.
 
-**Published Hashes (SHA256) - v0.6.1:**
+**Published Hashes (SHA256) - v0.6.2:**
 
 | Asset | SHA256 |
-|---|---|
-| `SoD2MapViewer-framework-dependent.zip` | `4948AB79A02F4BF4AFD7B8617E0EBCCB2F60450BAEDA538C0FBF60A7729F4F26` |
-| `SoD2MapViewer-framework-dependent-plain.zip` | `26F3722D6746EE7951C5FFE2947A225EEC3C62105885A7447DBC1A82B72E8396` |
-| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `A92BE96CD6E03C7508857B7ECE95E8DDFE82E92D84BC40490F291C86984806E7` |
-| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `B94BCFB830B315CAA76C0C2F740B47C6C8F80BAF08CDDADD0C936F6B1781DA58` |
+| --- | --- |
+| `SoD2MapViewer-framework-dependent.zip` | `66ac1f2830b63a0e4b007200421561a1d1822cb13749d6d6003de0c5342c996d` |
+| `SoD2MapViewer-framework-dependent-plain.zip` | `854917b66bf3e1ace1dbbe9a275cf273afe415a23ab1124559dd2d110b212daa` |
+| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `119890d3f9fbc2cb2cc18eddf0edb88cec2a7893f855fd523a7119a2ffd3df33` |
+| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `779e4aaff378380b55219409ee1913b664f24198819aae79a37bf458f8712c97` |
 
 Historisch: v0.5.7-Artefakte siehe [Release v0.5.7](https://github.com/Orohal/SoD2MapV/releases/tag/v0.5.7). Die framework-dependent Single-File-EXE von **v0.4.0** (`9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A`) wurde von 9 VirusTotal-Engines generisch gemeldet (Packer-Heuristik der Single-File-Apphosts).
 

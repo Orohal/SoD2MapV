@@ -1044,7 +1044,7 @@ public sealed class MainForm : Form
     /// Also returns the moved primary-building markers (original world position + delta) so the
     /// region sites umap can be patched automatically (auto multi-map).
     /// </summary>
-    private (string Path, byte[] Data, List<TgcPatcher.MarkerMove> Markers)? BuildTgcPatch()
+    private (string Path, byte[] Data, List<TgcPatcher.MarkerMove> Markers, List<TgcPatcher.PositionShift> Shifts)? BuildTgcPatch()
     {
         if (_map == null || _map.Error != null) return null;
         var tgcPath = TgcPatcher.FindTgcPath(_loader.Provider, _map.Path);
@@ -1063,13 +1063,47 @@ public sealed class MainForm : Form
             var root = TgcPatcher.Parse(_loader.ReadMapBytes(tgcPath));
             var tile = Path.GetFileNameWithoutExtension(_map.Path);
             var markers = new List<TgcPatcher.MarkerMove>();
-            var moved = TgcPatcher.ShiftBuildings(root, tile, moves, markers);
+            var shifts = new List<TgcPatcher.PositionShift>();
+            var moved = TgcPatcher.ShiftBuildings(root, tile, moves, markers, shifts);
             if (moved == 0) return null;
-            return (tgcPath, TgcPatcher.Serialize(root), markers);
+            return (tgcPath, TgcPatcher.Serialize(root), markers, shifts);
         }
         catch (Exception e)
         {
             SetStatus($"tgc patch skipped: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Builds the patch for the cooked tag database (Tagged/Cooked/&lt;region&gt;_Tags.uasset).
+    /// The runtime loads this asset — not the Compiled JSON — so it must carry the same shifts
+    /// or claim terminals/doors/containers stay at the original position in game.
+    /// Returns null when there is nothing to shift or the asset is absent.
+    /// </summary>
+    private (string Path, byte[] Data, int Patched, int Missing)? BuildCookedTagsPatch(List<TgcPatcher.PositionShift> shifts)
+    {
+        if (_map == null || _map.Error != null) return null;
+        var tgcPath = TgcPatcher.FindTgcPath(_loader.Provider, _map.Path);
+        if (tgcPath == null) return null;
+        var cookedPath = TgcPatcher.FindCookedTagsPath(_loader.Provider, tgcPath);
+        if (cookedPath == null) return null;
+
+        try
+        {
+            var data = _loader.ReadMapBytes(cookedPath);
+            var (patched, missing) = TgcPatcher.PatchCookedTags(data, shifts);
+            if (patched == 0)
+            {
+                SetStatus($"cooked tag database patch skipped: no position matched ({missing} missing)");
+                return null;
+            }
+            if (missing > 0) SetStatus($"cooked tag database: {patched} position(s) patched, {missing} not found");
+            return (cookedPath, data, patched, missing);
+        }
+        catch (Exception e)
+        {
+            SetStatus($"cooked tag database patch skipped: {e.Message}");
             return null;
         }
     }
@@ -1143,12 +1177,12 @@ public sealed class MainForm : Form
         return result;
     }
 
-    /// <summary>Copies a tgc patch entry into a standalone chunk-1095 pak (single-map export).</summary>
-    private static void WriteTgcPakFor(string directory, string tgcPath, byte[] data, string mountPoint)
+    /// <summary>Copies tag-database patch entries (Compiled JSON + cooked asset) into the standalone chunk-1095 pak.</summary>
+    private static void WriteTgcPakFor(string directory, IReadOnlyList<(string Path, byte[] Data)> entries, string mountPoint)
     {
         var path = Path.Combine(directory, MapChunk.GetTgcChunkPakFileName());
-        var entry = new PakWriter.Entry { Path = PakWriter.StripMount(tgcPath, mountPoint), Data = data };
-        PakWriter.Write(path, mountPoint, new[] { entry });
+        var pak = entries.Select(e => new PakWriter.Entry { Path = PakWriter.StripMount(e.Path, mountPoint), Data = e.Data });
+        PakWriter.Write(path, mountPoint, pak);
     }
 
     private void ExportModPak()
@@ -1260,11 +1294,23 @@ public sealed class MainForm : Form
             PakWriter.Write(dlg.FileName, mountPoint, entries);
 
             string? tgcPakPath = null;
+            int? cookedPatched = null, cookedMissing = null;
             if (tgcPatch != null)
             {
                 var dir = Path.GetDirectoryName(dlg.FileName) ?? ".";
+                var tgcEntries = new List<(string Path, byte[] Data)> { (tgcPatch.Value.Path, tgcPatch.Value.Data) };
+
+                // cooked tag database: what the runtime actually loads — must carry the same shifts
+                var cooked = BuildCookedTagsPatch(tgcPatch.Value.Shifts);
+                if (cooked != null)
+                {
+                    tgcEntries.Add((cooked.Value.Path, cooked.Value.Data));
+                    cookedPatched = cooked.Value.Patched;
+                    cookedMissing = cooked.Value.Missing;
+                }
+
                 tgcPakPath = Path.Combine(dir, MapChunk.GetTgcChunkPakFileName());
-                WriteTgcPakFor(dir, tgcPatch.Value.Path, tgcPatch.Value.Data, mountPoint);
+                WriteTgcPakFor(dir, tgcEntries, mountPoint);
             }
 
             // reset edit flags so re-export doesn't re-patch the same objects
@@ -1272,14 +1318,14 @@ public sealed class MainForm : Form
                 o.Edited = o.EditedRotation = o.EditedScale = o.Deleted = false;
 
             SetStatus($"exported {edited.Count - failures.Count}/{edited.Count:N0} object(s) -> {dlg.FileName}" +
-                      (tgcPakPath != null ? $" + tag database -> {tgcPakPath}" : "") +
+                      (tgcPakPath != null ? $" + tag database (JSON+cooked{(cookedPatched != null ? $", {cookedPatched} position(s)" : "")}) -> {tgcPakPath}" : "") +
                       (siteMaps.Count > 0 ? $" + {siteMaps.Count} site map(s) (auto multi-map)" : ""));
             var installHint = isChunkPatch
                 ? "To use it in the game, copy the file into the game's Content\\Paks folder as a chunk patch\n" +
                   "(same folder as pakchunk*.pak, e.g. <game>\\StateOfDecay2\\Content\\Paks).\n" +
                   "Use the exact chunk-patch filename so SoD2 loads it for this map tile.\n" +
                   (tgcPakPath != null
-                    ? $"Copy BOTH files: the map patch AND '{MapChunk.GetTgcChunkPakFileName()}' (tag database, chunk 1095).\n"
+                    ? $"Copy BOTH files: the map patch AND '{MapChunk.GetTgcChunkPakFileName()}' (tag database JSON + cooked asset, chunk 1095).\n"
                     : "") +
                   "Remove the file(s) again to revert."
                 : "To use it in the game, copy the file to:\n" +
@@ -1287,7 +1333,8 @@ public sealed class MainForm : Form
                   "(Steam/Epic mod folder — Win+R: %LocalAppData%\\StateOfDecay2\\Saved\\Paks)";
             MessageBox.Show(this,
                 $"Mod pak written:\n{dlg.FileName}\n" +
-                (tgcPakPath != null ? $"\nTag database patch (site box/rooms/containers follow the building):\n{tgcPakPath}\n" : "") +
+                (tgcPakPath != null ? $"\nTag database patch (site box/rooms/containers follow the building):\n{tgcPakPath}" +
+                    (cookedPatched != null ? $"\n  cooked asset: {cookedPatched} position(s) shifted{(cookedMissing > 0 ? $", {cookedMissing} not found (check status bar)" : "")}" : "") : "") +
                 (siteMaps.Count > 0 ? $"\nAuto multi-map: {siteMaps.Count} region site map(s) patched (map markers follow):\n{string.Join("\n", siteMaps.Select(m => Path.GetFileName(m.Path)))}\n" : "") +
                 $"\nObjects modified: {edited.Count - failures.Count:N0} / {edited.Count:N0}\n" +
                 (failures.Count > 0
