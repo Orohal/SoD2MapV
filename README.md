@@ -46,7 +46,7 @@ Was beim Injizieren passiert (pro Item):
 
 ## To do …
 
-1. **Sites komplett verschieben & claimbar machen** — Ingame-Test (v0.6.0): Meshes wandern korrekt, aber die Laufzeit-Site-Actoren (Claim-Terminal, Türen, Container) bleiben an der Originalposition — sie werden offenbar nicht (nur) aus der kompilierten tgc gespawnt. Nächste Schritte: Quelle der Claim-/Tür-/Container-Spawns klären (Design-/Persistent-Maps, Prefab-Internes oder Save), dann Patch erweitern
+1. **Sites komplett verschieben & claimbar machen** — Ingame-Test (v0.6.1): Meshes wandern korrekt, aber die Laufzeit-Site-Actoren (Claim-Terminal, Türen, Container) bleiben an der Originalposition. Die kompilierte tgc ist gepatcht und wird von CUE4Parse gemountet, die Runtime nutzt sie aber offenbar nicht (oder cached Weltzustand im Save). Nächste Schritte: (a) **Neues Save testen** (frischer Weltzustand mit gepatchten Paks) prüft Save-Caching; (b) falls nicht → Spawn-Quelle klären (Design-/Persistent-Maps, Prefab-Internes, Save-MapSaveCollection), Patch erweitern
 2. **Hintergrund-Ausrichtung der übrigen Regionen** — Faustite/Trumbull ist kalibriert (per Drag + Auto-Fit); für Cascade Hills, Drucker County, Meagher Valley, Providence Ridge und die Trumbull-Variante stehen Scale/Offset noch aus (Auto-Fit: `--bgfit`, Feinjustierung per Drag)
 
 ## Voraussetzungen & Build
