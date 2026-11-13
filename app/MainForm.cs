@@ -30,7 +30,10 @@ public sealed class MainForm : Form
     private CheckBox _chkSites = null!;
     private CheckBox _chkEditBg = null!;
     private readonly ComboBox _cmbHouses = null!;
+    private readonly ComboBox _cmbSites = null!;
     private bool _houseComboUpdating;
+    private bool _siteComboUpdating;
+    private readonly List<(string Label, int Index)> _siteEntries = new();
     private readonly Stack<UndoEntry> _undo = new();
     private SessionStateData _session = SessionState.Load();
     private List<string>? _pendingRestoreSelectionNames;
@@ -223,6 +226,33 @@ public sealed class MainForm : Form
                           "Drag in Move mode to relocate, then 'Export mod .pak' to let the house appear in-game at the new spot.");
             }
         };
+        var labelSite = new Label { AutoSize = true, Text = "Site:", ForeColor = Color.Gainsboro, Margin = new Padding(0, 8, 4, 0) };
+        _cmbSites = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            DropDownWidth = 460,
+            Width = 340,
+            Height = 30,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(30, 32, 38),
+            ForeColor = Color.Gainsboro,
+            Margin = new Padding(0, 4, 12, 0),
+        };
+        _cmbSites.SelectedIndexChanged += (s, e) =>
+        {
+            if (_siteComboUpdating) return;
+            if (_cmbSites.SelectedItem is string label)
+            {
+                var entry = _siteEntries.FirstOrDefault(x => x.Label == label);
+                if (entry.Index < 0) return;
+                var sb = _canvas.Sites[entry.Index];
+                int count = _canvas.SelectSite(entry.Index);
+                _canvas.CenterOn(sb.X - _canvas.MapWorldOffsetX, sb.Y - _canvas.MapWorldOffsetY);
+                var tag = sb.Tags != null && sb.Tags.Contains("Outpostable") ? " (outpostable)" : "";
+                SetStatus($"site {sb.SiteType}{tag} selected: {count} object(s) in the tile. " +
+                          "Drag in Move mode to relocate; 'Export mod .pak' writes map + tgc patch so the claim follows.");
+            }
+        };
         _chkEdit = new CheckBox
         {
             Text = "Enable editing (drag objects)",
@@ -242,6 +272,8 @@ public sealed class MainForm : Form
         btnAdjustZ.Click += (s, e) => AdjustSelectionHeight();
         var btnChar = new Button { Text = "Show character", AutoSize = true, Height = 30 };
         btnChar.Click += (s, e) => ShowCharacterPosition();
+        var btnUndo = new Button { Text = "Undo", AutoSize = true, Height = 30 };
+        btnUndo.Click += (s, e) => UndoLastMove();
 
         var injectMenu = new ContextMenuStrip();
         injectMenu.Items.Add("Inject vehicle...", null, (s, e) => OpenInjectDialog(null));
@@ -268,7 +300,7 @@ public sealed class MainForm : Form
         _chkSites.CheckedChanged += (s, e) => { _canvas.ShowSites = _chkSites.Checked; _canvas.Invalidate(); };
         _chkEditBg = new CheckBox { Text = "Feinjustierung (Drag)", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkEditBg.CheckedChanged += (s, e) => { _canvas.EditBgOffset = _chkEditBg.Checked; _canvas.Invalidate(); };
-        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, _chkEdit, btnExport, chkMultiMap, btnFinalize, btnAdjustZ, btnInjectMenu, btnChar, _chkBg, _chkSites, _chkEditBg });
+        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, labelSite, _cmbSites, _chkEdit, btnExport, chkMultiMap, btnFinalize, btnAdjustZ, btnInjectMenu, btnChar, btnUndo, _chkBg, _chkSites, _chkEditBg });
         top.Controls.Add(flow);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
         _canvas.SelectionChanged += _ => SaveSessionStateLight();
@@ -572,6 +604,38 @@ public sealed class MainForm : Form
                 _canvas.Sites = Array.Empty<TgcPatcher.SiteBox>();
         }
         catch { _canvas.Sites = Array.Empty<TgcPatcher.SiteBox>(); }
+
+        // site-name dropdown: sites whose box lies within the tile's object bounds (+200 m margin)
+        _siteComboUpdating = true;
+        _cmbSites.Items.Clear();
+        _siteEntries.Clear();
+        {
+            float minX = float.MaxValue, maxX = float.MinValue, minY = float.MaxValue, maxY = float.MinValue;
+            foreach (var o in model.Objects)
+                if (o.HasTransform)
+                {
+                    if (o.X < minX) minX = o.X; if (o.X > maxX) maxX = o.X;
+                    if (o.Y < minY) minY = o.Y; if (o.Y > maxY) maxY = o.Y;
+                }
+            const float margin = 20000f; // 200 m
+            for (int i = 0; i < _canvas.Sites.Count; i++)
+            {
+                var s = _canvas.Sites[i];
+                var lx = s.X - _canvas.MapWorldOffsetX;
+                var ly = s.Y - _canvas.MapWorldOffsetY;
+                if (minX != float.MaxValue &&
+                    (lx < minX - margin || lx > maxX + margin || ly < minY - margin || ly > maxY + margin))
+                    continue;
+                var outp = s.Tags?.Contains("Outpostable") ?? false;
+                var type = string.IsNullOrEmpty(s.SiteType) ? "Site" : s.SiteType;
+                var g = s.Guid.Length >= 8 ? s.Guid[..8] : s.Guid;
+                var label = $"{(outp ? "OUT " : "")}{type} ({g})  {lx / 100:0.#},{ly / 100:0.#} m";
+                _siteEntries.Add((label, i));
+                _cmbSites.Items.Add(label);
+            }
+            _cmbSites.Enabled = _cmbSites.Items.Count > 0;
+        }
+        _siteComboUpdating = false;
         var ok = model.Error == null;
         var bgMap = BgMaps.Get(_loader.Provider, bgRegion, 1800, model.Path);
         if (bgMap != null)

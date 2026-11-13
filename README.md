@@ -4,7 +4,7 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 
 <a href="https://www.buymeacoffee.com/Orohal" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-**Aktueller Stand: [v0.5.9](https://github.com/Orohal/SoD2MapV/releases/latest)** - Viewer + Voll-Editor + Fahrzeug- & **Item-Injektion** (GUI/CLI, Presets aus Save) + **Häuser/Objekte verschieben** (Gruppen-Auswahl, Undo, **Chunk-Patch-Export** für spielwirksame Tile-Mods, **Multi-Map-Export**: Tile + `*_sites.umap` in einem Patch) + **Höhenanpassung (Z)** + **Session-Wiederherstellung** + **Koordinaten-Fix** (Welt vs. Kachel-lokal für Spieler-Marker, Ansicht, Injektion) + **Funktion-Actoren** (Outpost-/Homesite-Interactables wandern mit dem Gebäude) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen, automatisch verankert) + **tgc-Site/Outpostable-Overlay** (claimbare Gebäude an ihren echten Positionen). Details: [Repo-Status](#repo-status) (eingeklappt).
+**Aktueller Stand: [v0.6.0](https://github.com/Orohal/SoD2MapV/releases/latest)** - Viewer + Voll-Editor + Fahrzeug- & **Item-Injektion** (GUI/CLI, Presets aus Save) + **Häuser/Objekte verschieben** (Gruppen-Auswahl, Undo, **Chunk-Patch-Export** für spielwirksame Tile-Mods, **Multi-Map-Export**: Tile + `*_sites.umap` in einem Patch) + **Höhenanpassung (Z)** + **Session-Wiederherstellung** + **Koordinaten-Fix** (Welt vs. Kachel-lokal für Spieler-Marker, Ansicht, Injektion) + **Funktion-Actoren** (Outpost-/Homesite-Interactables wandern mit dem Gebäude) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen, automatisch verankert) + **tgc-Site/Outpostable-Overlay** (claimbare Gebäude an ihren echten Positionen). Details: [Repo-Status](#repo-status) (eingeklappt).
 
 ## Features
 
@@ -46,8 +46,8 @@ Was beim Injizieren passiert (pro Item):
 
 ## To do …
 
-1. **Hintergrund-Ausrichtung der übrigen Regionen** — Faustite/Trumbull ist kalibriert (per Drag + Auto-Fit); für Cascade Hills, Drucker County, Meagher Valley, Providence Ridge und die Trumbull-Variante stehen Scale/Offset noch aus (Auto-Fit: `--bgfit`, Feinjustierung per Drag)
-2. **Ingame-Validierung des tgc-Site-Patch** — verschobenes Outpost mit `pakchunk001095-WindowsNoEditor_P.pak` + Map-Chunk-Patch im Spiel prüfen (Vollständigkeit claimbar: Räume/Container/Marker/Save-OutpostId)
+1. **Ingame-Validierung des tgc-Site-Patch** — verschobenes Outpost mit `pakchunk001095-WindowsNoEditor_P.pak` + Map-Chunk-Patch im Spiel prüfen (Vollständigkeit claimbar: Räume/Container/Marker/Save-OutpostId)
+2. **Hintergrund-Ausrichtung der übrigen Regionen** — Faustite/Trumbull ist kalibriert (per Drag + Auto-Fit); für Cascade Hills, Drucker County, Meagher Valley, Providence Ridge und die Trumbull-Variante stehen Scale/Offset noch aus (Auto-Fit: `--bgfit`, Feinjustierung per Drag)
 
 ## Voraussetzungen & Build
 
@@ -105,7 +105,7 @@ Menü **Inject ▾** → **„Inject item…"**: Save wählen (automatisches Bac
 <details>
 <summary><b>Echte Karte als Hintergrund</b></summary>
 
-Toolbar **„Hintergrundkarte (Spiel-Asset)"** — blendet die eigene Vektor-Karte aus den Ingame-`MapBackgroundData`-Assets (`StateOfDecay2/Content/maps/Backgrounds/*`) ein: Straßen, Flüsse, Seen, Gebäude und die Karten-Grenze, in den echten Ingame-Farben (`MapUIInfo_BP`). Komplett offline, für alle 5 Regionen, automatisch am Tile-/World-Offset verankert. Checkbox **„Sites (tgc)"** zeichnet zusätzlich die claimbaren Site-/Outpostable-Boxen aus der Region-tgc an ihren echten Positionen. Bei Abweichung: Checkbox **„Feinjustierung (Drag)"** einschalten und die Karte per Drag ausrichten (Loslassen übernimmt die Kalibrierung und zeigt ox/oy an). CLI: `--bgrender` (PNG-Render), `--bgprops` (Asset-Properties), `--bgfit` (automatische Kalibrierung gegen tgc-Site-Boxen), `--bgset` (manuelle Transform-Werte).
+Toolbar **„Hintergrundkarte (Spiel-Asset)"** — blendet die eigene Vektor-Karte aus den Ingame-`MapBackgroundData`-Assets (`StateOfDecay2/Content/maps/Backgrounds/*`) ein: Straßen, Flüsse, Seen, Gebäude und die Karten-Grenze, in den echten Ingame-Farben (`MapUIInfo_BP`). Komplett offline, für alle 5 Regionen, automatisch am Tile-/World-Offset verankert. Checkbox **„Sites (tgc)"** zeichnet zusätzlich die claimbaren Site-/Outpostable-Boxen aus der Region-tgc an ihren echten Positionen. Die Boxen sind **klickbar** (wählen alle Objekte der Site aus, danach Drag in der Box) und per **„Site:"-Dropdown** wählbar (Name + GUID-Kürzel). Bei Abweichung: Checkbox **„Feinjustierung (Drag)"** einschalten und die Karte per Drag ausrichten (Loslassen übernimmt die Kalibrierung und zeigt ox/oy an). CLI: `--bgrender` (PNG-Render), `--bgprops` (Asset-Properties), `--bgfit` (automatische Kalibrierung gegen tgc-Site-Boxen), `--bgset` (manuelle Transform-Werte).
 
 </details>
 
@@ -178,6 +178,7 @@ SoD2MapViewer.exe --saves
 <details>
 <summary><b>Repo-Status / Versionshistorie</b></summary>
 
+- **v0.6.0** - **Site-Auswahl & -Verschiebung per Klick/Name**: Die orange/blaue tgc-Site-Boxen sind **klickbar** — ein Klick in eine Box wählt alle Objekte der Site aus (inkl. Owner-gebundener Outpost-/Homesite-Interactables); danach **Drag in der Box** verschiebt die ganze Gruppe (Undo per Button/Strg+Z). Neuer **„Site:"-Dropdown** listet die Sites des Tiles (z. B. `OUT Autoshop (84D09511)`) und wählt per Name aus (Ansicht springt zur Site). Die Box wandert beim Drag **live mit** (Anzeige). Beim Export greift der tgc-Patch (`pakchunk001095`), der Site-Boxen/Marker/Entitäten mit demselben Delta verschiebt — die Claim-Position folgt dem Gebäude. Neue **„Undo"-Schaltfläche** in der Toolbar.
 - **v0.5.9** - **Hintergrundkarte neu aufgebaut (einzelne Vektor-Karte, automatisch verankert)**: nur noch die Spiel-Asset-Vektorkarte (`MapBackgroundData`), klar identifiziert (Region/Asset/Verankerung im Overlay + Statuszeile), automatisch am Tile-/World-Offset verankert; Fandom-Basemap aus UI/Render/Drag entfernt; Faustite-Rotation/Mapping und Culling-Fixes. **tgc-Site/Outpostable-Overlay**: claimbare Gebäude/Site-Boxen aus der Region-tgc werden an ihren echten Positionen auf der Karte gezeichnet (Checkbox "Sites (tgc)"), passend zur automatischen Verankerung. **Kalibrierung Faustite** neu (Scale 1.0, nutzerkalibriert per Drag). GUI: Toolbar umbrechend, "Feinjustierung (Drag)" erreichbar, MessageBox mit übernommenen ox/oy. Build: 0 Fehler.
 - **v0.5.8** - **Multi-Map-Export**: Checkbox **„Multi-Map“** + Button **„Finalize Export (N)“** kombinieren mehrere gepatchte Maps in **einen** Chunk-Patch (`pakchunk<id>-WindowsNoEditor_P.pak`). Hintergrund: die Ingame-Kartenanzeige eines Outposts hängt am `TaggedSitePrimaryBuildingMarker` in `<region>_sites.umap`, der Claim-Prompt am `OutpostInteractable_C` im Tile — beide Maps müssen in **einem** Patch landen (Workflow: „Multi-Map“ anhaken → Sites-Map bearbeiten → Export → Tile-Map bearbeiten → Export → Finalize). Gleiche Map ersetzt einen vorhandenen Pending-Eintrag; Edit-Flags werden nach dem Hinzufügen zurückgesetzt. GUI-Fix: Checkbox-Lesbarkeit im Dark-Theme.
 - **v0.5.7** — **Koordinaten-Raum-Fix + Funktions-Actoren:** Spieler-Marker, Ansichtszentrierung und Rechtsklick-Injektionspunkt werden jetzt im Kachel-lokalen Raum gezeichnet (Welt → lokal über Tile-Offset); zuvor wurden Welt-Koordinaten in den Kachelraum geschrieben, was beim Ziehen von Objekten auf den Spieler-Marker zu falschen Ingame-Positionen führte. **Outpost-/Homesite-Interactables** (`OutpostInteractable_C`, `HomesiteInteractable_C`) sind jetzt über die `Owner`-Referenz mit ihrem Gebäude-Prefab verknüpft und wandern beim Ziehen (sowie bei „Adjust height (Z)…“) automatisch mit dem Gebäude mit (inkl. Undo/Export). Bugfix: Delta der verknüpften Actoren wird absolut (nicht mehr pro Mouse-Move kumulativ) angewendet. Hinweis: Ob das claimbare Outpost im Spiel funktioniert, hängt zusätzlich von der Site-Mechanik (Save-Site-Registrierung) ab; das Verschieben der Interactables ist Voraussetzung.\n- **v0.5.6** — **Tile-Verschiebungen spielwirksam**: Map-Edits werden als **Chunk-Patch** exportiert (`pakchunk<chunkId>-WindowsNoEditor_P.pak` nach `…\StateOfDecay2\Content\Paks`, z. B. Faustite = 004600), damit SoD2 die geänderten Tiles tatsächlich lädt. **Höhenanpassung (Z):** Button „Adjust height (Z)…“ verschiebt die Auswahl/Haus-Gruppe in der Höhe (Meter, Undo) — behebt Schweben/Versinken am Ziel. **Spielerhöhe im Marker:** „Show character“ zeigt Z auch am Karten-Marker. **Session-Wiederherstellung:** letzter Spielordner, Map, Filter und Auswahl werden gemerkt (`%LOCALAPPDATA%\SoD2MapViewer\session.json`). Hinweis: Tile-Chunk-Patches gehören nach `Content\Paks` (nicht `Saved\Paks`).
@@ -207,14 +208,14 @@ Die gepackten Single-File-EXEs werden von einzelnen VirusTotal-Engines als gener
 
 **Wenn ungünstig:** Ordner-Variante ohne gepackte EXE nutzen — [SoD2MapViewer-framework-dependent-plain.zip](https://github.com/Orohal/SoD2MapV/releases/latest) (kleine EXE + DLLs, gleiche Funktion). Im eigenen Virenprogramm ggf. Ordner ausschließen.
 
-**Published Hashes (SHA256) - v0.5.9:**
+**Published Hashes (SHA256) - v0.6.0:**
 
 | Asset | SHA256 |
 |---|---|
-| `SoD2MapViewer-framework-dependent.zip` | `99006D3CFE423B527545CA315E5B572B09056436E2CFE2BBBEF70E02852CB866` |
-| `SoD2MapViewer-framework-dependent-plain.zip` | `EF69D85F2369F21917E05D983FB07E49685AC844D66885A9B47EDB9AB17060C9` |
-| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `CC04DC69D82421240436428E5868A3265E77BDD8051B409054D2F9F70E45231E` |
-| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `BEDD8128B82BAB4F0EA435D6BA0A6EF683802C8BA1444B11ECEBD452AFB076A7` |
+| `SoD2MapViewer-framework-dependent.zip` | `A53532ADCF669B08D3BF3435A28CDAEAAFFCAC0A7C61F885686DEEEA192A4C19` |
+| `SoD2MapViewer-framework-dependent-plain.zip` | `1869D0F2DBF0EF51571245D7F340E9CDA50E92E6718841DA73580F9CB863B05C` |
+| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `C58115D7A83E4CBD1388708968463D16AD86C3AAB53D3E0117CF7BAAF9F0F772` |
+| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `D2D8D54F0EFB55A11B940F996BAFD011E72C983E2F07C5D0F5E4A0D7AEAAC406` |
 
 Historisch: v0.5.7-Artefakte siehe [Release v0.5.7](https://github.com/Orohal/SoD2MapV/releases/tag/v0.5.7). Die framework-dependent Single-File-EXE von **v0.4.0** (`9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A`) wurde von 9 VirusTotal-Engines generisch gemeldet (Packer-Heuristik der Single-File-Apphosts).
 

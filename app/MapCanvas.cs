@@ -15,6 +15,7 @@ namespace SoD2MapViewer;
         private float _zoom = 1f;               // pixels per world unit (world unit = UE cm)
         private PointF _center = new(0, 0);     // world coords at control center
         private int _selected = -1;
+        private int _selectedSite = -1;   // site box clicked last (enables box-drag)
         private readonly HashSet<int> _multi = new(); // additional selected indices (group selection)
         private int _hover = -1;
         private bool _panning;
@@ -189,6 +190,7 @@ namespace SoD2MapViewer;
     {
         Objects = objects;
         _selected = -1;
+        _selectedSite = -1;
         _multi.Clear();
         _hover = -1;
         FitToObjects();
@@ -227,6 +229,7 @@ namespace SoD2MapViewer;
     public void ToggleSelected(int index)
     {
         if (index < 0 || index >= Objects.Count) return;
+        _selectedSite = -1;
         if (_multi.Contains(index)) _multi.Remove(index);
         else
         {
@@ -265,6 +268,7 @@ namespace SoD2MapViewer;
         if (anchorIndex < 0 || anchorIndex >= Objects.Count) return;
         var a = Objects[anchorIndex];
         _selected = anchorIndex;
+        _selectedSite = -1;
         _multi.Clear();
         float r2 = HouseSelectRadiusCm * HouseSelectRadiusCm;
         for (int i = 0; i < Objects.Count; i++)
@@ -433,13 +437,33 @@ namespace SoD2MapViewer;
 
     private void DrawSites(Graphics g)
     {
-        foreach (var s in Sites)
+        // edited objects (for the live-follow of site boxes): screen pos + delta
+        List<(PointF sp, float dx, float dy)>? edited = null;
+        foreach (var o in Objects)
         {
+            if (!o.HasTransform || !o.Edited || o.Deleted) continue;
+            (edited ??= new()).Add((WorldToScreen(o.X, o.Y), o.X - o.OrigX, o.Y - o.OrigY));
+        }
+
+        for (int si = 0; si < Sites.Count; si++)
+        {
+            var s = Sites[si];
             if (SitesOutpostableOnly && !(s.Tags?.Any(t => t == "Outpostable") ?? false)) continue;
-            // world -> local canvas frame
-            float lx = s.X - MapWorldOffsetX;
-            float ly = s.Y - MapWorldOffsetY;
-            var p = WorldToScreen(lx, ly);
+
+            // live-follow: average delta of edited objects contained in this box (screen-space)
+            float fdx = 0f, fdy = 0f;
+            if (edited != null)
+            {
+                int n = 0;
+                foreach (var (sp, dx, dy) in edited)
+                {
+                    if (InSiteBoxScreen(si, sp)) { fdx += dx; fdy += dy; n++; }
+                }
+                if (n > 0) { fdx /= n; fdy /= n; }
+            }
+
+            // world -> local canvas frame (+ live-follow delta)
+            var p = WorldToScreen(s.X + fdx - MapWorldOffsetX, s.Y + fdy - MapWorldOffsetY);
             if (p.X < -60 || p.Y < -60 || p.X > Width + 60 || p.Y > Height + 60) continue;
 
             bool outpostable = s.Tags?.Contains("Outpostable") ?? false;
@@ -467,6 +491,77 @@ namespace SoD2MapViewer;
             }
         }
     }
+
+    /// <summary>True if the screen point lies inside the (rotated) site box as drawn.</summary>
+    private bool InSiteBoxScreen(int siteIndex, PointF sp)
+    {
+        if (siteIndex < 0 || siteIndex >= Sites.Count) return false;
+        var s = Sites[siteIndex];
+        var p = WorldToScreen(s.X - MapWorldOffsetX, s.Y - MapWorldOffsetY);
+        float w = Math.Max(4f, s.ExtentX * 2f * _zoom) / 2f;
+        float h = Math.Max(4f, s.ExtentY * 2f * _zoom) / 2f;
+        float dx = sp.X - p.X, dy = sp.Y - p.Y;
+        double rad = s.Yaw * Math.PI / 180.0;
+        double cos = Math.Cos(rad), sin = Math.Sin(rad);
+        double qx = dx * cos - dy * sin;   // inverse of the GDI rotate(-yaw) used for drawing
+        double qy = dx * sin + dy * cos;
+        return Math.Abs(qx) <= w && Math.Abs(qy) <= h;
+    }
+
+    /// <summary>Index of the topmost site box under the screen point, or -1.</summary>
+    private int SiteHitTest(Point screen)
+    {
+        if (!ShowSites || Sites.Count == 0) return -1;
+        var sp = new PointF(screen.X, screen.Y);
+        // prefer the smallest matching box (most specific)
+        int best = -1; float bestArea = float.MaxValue;
+        for (int i = Sites.Count - 1; i >= 0; i--)
+        {
+            if (SitesOutpostableOnly && !(Sites[i].Tags?.Any(t => t == "Outpostable") ?? false)) continue;
+            if (!InSiteBoxScreen(i, sp)) continue;
+            float area = Math.Max(1f, Sites[i].ExtentX * Sites[i].ExtentY);
+            if (area < bestArea) { bestArea = area; best = i; }
+        }
+        return best;
+    }
+
+    /// <summary>Selects all objects contained in the site box under the click point. Returns count.</summary>
+    private int SelectSiteObjects(int siteIndex)
+    {
+        int count = 0; int first = -1;
+        _multi.Clear(); _selected = -1;
+        for (int i = 0; i < Objects.Count; i++)
+        {
+            var o = Objects[i];
+            if (!o.HasTransform || o.Deleted) continue;
+            var p = WorldToScreen(o.X, o.Y);
+            if (!InSiteBoxScreen(siteIndex, p)) continue;
+            if (first < 0) first = i;
+            _multi.Add(i);
+            count++;
+        }
+        if (first >= 0) { _selected = first; _multi.Remove(first); }
+        return count;
+    }
+
+    /// <summary>Smallest selected index across _selected + _multi, or -1.</summary>
+    private int FirstSelectedIndex()
+    {
+        int best = _selected;
+        foreach (var m in _multi)
+            if (best < 0 || m < best) best = m;
+        return best;
+    }
+
+    /// <summary>Selects all objects of a site by its box index (used by the site-name dropdown).</summary>
+    public int SelectSite(int siteIndex)
+    {
+        if (siteIndex < 0 || siteIndex >= Sites.Count) return 0;
+        int count = SelectSiteObjects(siteIndex);
+        if (count > 0) _selectedSite = siteIndex;
+        return count;
+    }
+
 
     private PointF WorldToScreen(float x, float y) => new(
         Width / 2f + (x - _center.X) * _zoom,
@@ -693,7 +788,11 @@ namespace SoD2MapViewer;
         {
             bool ctrl = (ModifierKeys & Keys.Control) != 0;
             bool shift = (ModifierKeys & Keys.Shift) != 0;
-            if (EditingEnabled && PickObject(e.Location) is int hit && hit >= 0)
+            int hit = EditingEnabled ? PickObject(e.Location) : -1;
+            // clicked inside the selected site's box (not on an object dot): drag the whole site group
+            if (hit < 0 && EditingEnabled && Mode == EditMode.Move && _selectedSite >= 0 && InSiteBoxScreen(_selectedSite, e.Location))
+                hit = FirstSelectedIndex();
+            if (EditingEnabled && hit >= 0)
             {
                 if (ctrl && !shift)
                 {
@@ -762,6 +861,7 @@ namespace SoD2MapViewer;
                 // Shift+Drag on empty space = rubber-band box selection
                 _boxSelecting = true;
                 _boxAdditive = ctrl;
+                _selectedSite = -1;
                 _boxStart = e.Location;
                 _boxEnd = e.Location;
                 Cursor = Cursors.Cross;
@@ -917,9 +1017,31 @@ namespace SoD2MapViewer;
                 int best = PickObject(e.Location);
                 if ((ModifierKeys & Keys.Control) != 0 && EditingEnabled && best >= 0)
                     ToggleSelected(best);
+                else if (best < 0)
+                {
+                    // site-box click: select all objects of that site (then drag as group)
+                    int site = SiteHitTest(e.Location);
+                    if (site >= 0)
+                    {
+                        int count = SelectSiteObjects(site);
+                        var s = Sites[site];
+                        var tag = s.Tags != null && s.Tags.Contains("Outpostable") ? " (outpostable)" : "";
+                        _tip.SetToolTip(this, $"Site {s.SiteType}{tag} — {count} Objekt(e) ausgewählt; GUID {s.Guid[..Math.Min(8, s.Guid.Length)]}…");
+                        _selectedSite = site;
+                        SelectionChanged?.Invoke(_selected);
+                    }
+                    else
+                    {
+                        _selected = -1;
+                        _selectedSite = -1;
+                        _multi.Clear();
+                        SelectionChanged?.Invoke(-1);
+                    }
+                }
                 else
                 {
                     _selected = best;
+                    _selectedSite = -1;
                     _multi.Clear();
                     SelectionChanged?.Invoke(best);
                 }
