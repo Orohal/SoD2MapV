@@ -508,7 +508,7 @@ namespace SoD2MapViewer;
         return Math.Abs(qx) <= w && Math.Abs(qy) <= h;
     }
 
-    /// <summary>Index of the topmost site box under the screen point, or -1.</summary>
+    /// <summary>Index of the topmost site box (or its name label) under the screen point, or -1.</summary>
     private int SiteHitTest(Point screen)
     {
         if (!ShowSites || Sites.Count == 0) return -1;
@@ -518,11 +518,33 @@ namespace SoD2MapViewer;
         for (int i = Sites.Count - 1; i >= 0; i--)
         {
             if (SitesOutpostableOnly && !(Sites[i].Tags?.Any(t => t == "Outpostable") ?? false)) continue;
-            if (!InSiteBoxScreen(i, sp)) continue;
+            bool hit = InSiteBoxScreen(i, sp);
+            if (!hit)
+            {
+                // clicking the site's drawn name label (e.g. "Autoshop") also selects it
+                var r = SiteLabelRectScreen(i);
+                if (!r.IsEmpty && r.Contains(sp.X, sp.Y)) hit = true;
+            }
+            if (!hit) continue;
             float area = Math.Max(1f, Sites[i].ExtentX * Sites[i].ExtentY);
             if (area < bestArea) { bestArea = area; best = i; }
         }
         return best;
+    }
+
+    private static readonly Font SiteLabelFont = new("Segoe UI", 8f);
+
+    /// <summary>Screen rect of a site's name label as drawn next to the box; empty when not visible.</summary>
+    private RectangleF SiteLabelRectScreen(int siteIndex)
+    {
+        if (siteIndex < 0 || siteIndex >= Sites.Count || _zoom <= 0.004f) return RectangleF.Empty;
+        var s = Sites[siteIndex];
+        var p = WorldToScreen(s.X - MapWorldOffsetX, s.Y - MapWorldOffsetY);
+        if (p.X < -60 || p.Y < -60 || p.X > Width + 60 || p.Y > Height + 60) return RectangleF.Empty;
+        float w = Math.Max(4f, s.ExtentX * 2f * _zoom);
+        var label = string.IsNullOrEmpty(s.SiteType) ? "Site" : s.SiteType;
+        var sz = TextRenderer.MeasureText(label, SiteLabelFont);
+        return new RectangleF(p.X + w / 2f + 2f, p.Y - sz.Height / 2f - 2f, sz.Width + 6, sz.Height + 4);
     }
 
     /// <summary>Selects all objects contained in the site box under the click point. Returns count.</summary>

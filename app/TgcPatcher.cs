@@ -129,12 +129,15 @@ public static class TgcPatcher
     /// <summary>One move group: an object/prefab instance name and its world-space delta (cm).</summary>
     public readonly record struct MoveGroup(string PrefabName, float Dx, float Dy, float Dz);
 
+    /// <summary>A primary-building marker moved with its site: original world position + delta (cm).</summary>
+    public readonly record struct MarkerMove(float X, float Y, float Z, float Dx, float Dy, float Dz);
+
     /// <summary>
     /// Shifts all tag-database entries belonging to the given prefab instances, together with
     /// their site(s) (boxes) and the site's primary-building marker, by the respective deltas.
     /// Returns the number of shifted entity nodes.
     /// </summary>
-    public static int ShiftBuildings(JsonNode root, string tileName, IEnumerable<MoveGroup> moves)
+    public static int ShiftBuildings(JsonNode root, string tileName, IEnumerable<MoveGroup> moves, List<MarkerMove>? markerMoves = null)
     {
         var prefixSet = new List<(string prefix, float dx, float dy, float dz)>();
         foreach (var m in moves)
@@ -191,6 +194,8 @@ public static class TgcPatcher
             {
                 if (!ReferencesAny(marker, siteGuids)) continue;
                 var delta = FirstDelta(marker, siteGuids, siteDeltas);
+                if (markerMoves != null && marker["position"] is JsonObject mp)
+                    markerMoves.Add(new MarkerMove(AsNum(mp["x"]), AsNum(mp["y"]), AsNum(mp["z"]), delta.dx, delta.dy, delta.dz));
                 ShiftNode(marker, delta.dx, delta.dy, delta.dz);
                 moved++;
             }
@@ -254,7 +259,7 @@ public static class TgcPatcher
                     Path = path,
                     X = AsNum(pos["x"]), Y = AsNum(pos["y"]), Z = AsNum(pos["z"]),
                     ExtentX = AsNum(ext["x"]), ExtentY = AsNum(ext["y"]),
-                    Yaw = b?["rotation"]?["yaw"] != null ? AsNum(b["rotation"]["yaw"]) * 180f / MathF.PI : 0f,
+                    Yaw = b?["rotation"]?["yaw"] != null ? AsNum(b["rotation"]["yaw"]) : 0f, // tgc yaw is already degrees
                 });
             }
         }

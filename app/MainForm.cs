@@ -38,13 +38,6 @@ public sealed class MainForm : Form
     private SessionStateData _session = SessionState.Load();
     private List<string>? _pendingRestoreSelectionNames;
     private string? _pendingRestorePrimaryName;
-    private Button _btnFinalize = null!;
-
-    // Multi-map export: stores patched map data for maps edited across multiple sessions
-    private readonly List<(string Path, byte[] Data)> _pendingMaps = new();
-    // Patched region tag databases (.tgc) — written into the shared chunk 1095 patch pak
-    private readonly List<(string Path, byte[] Data)> _pendingTgcs = new();
-    private bool _multiMapMode;
 
     private sealed class HouseItem
     {
@@ -238,7 +231,7 @@ public sealed class MainForm : Form
             ForeColor = Color.Gainsboro,
             Margin = new Padding(0, 4, 12, 0),
         };
-        _cmbSites.SelectedIndexChanged += (s, e) =>
+        _cmbSites.SelectionChangeCommitted += (s, e) =>
         {
             if (_siteComboUpdating) return;
             if (_cmbSites.SelectedItem is string label)
@@ -263,11 +256,6 @@ public sealed class MainForm : Form
         _chkEdit.CheckedChanged += (s, e) => _canvas.EditingEnabled = _chkEdit.Checked;
         var btnExport = new Button { Text = "Export mod .pak...", AutoSize = true, Height = 30 };
         btnExport.Click += (s, e) => ExportModPak();
-        var chkMultiMap = new CheckBox { Text = "Multi-Map", AutoSize = true, Height = 30, Margin = new Padding(0, 4, 0, 0), ForeColor = Color.Gainsboro };
-        chkMultiMap.CheckedChanged += (s, e) => { _multiMapMode = chkMultiMap.Checked; UpdateFinalizeButton(); };
-        var btnFinalize = new Button { Text = "Finalize Export (0)", AutoSize = true, Height = 30, Enabled = false };
-        _btnFinalize = btnFinalize;
-        btnFinalize.Click += (s, e) => FinalizeMultiMapExport();
         var btnAdjustZ = new Button { Text = "Adjust height (Z)…", AutoSize = true, Height = 30 };
         btnAdjustZ.Click += (s, e) => AdjustSelectionHeight();
         var btnChar = new Button { Text = "Show character", AutoSize = true, Height = 30 };
@@ -300,7 +288,7 @@ public sealed class MainForm : Form
         _chkSites.CheckedChanged += (s, e) => { _canvas.ShowSites = _chkSites.Checked; _canvas.Invalidate(); };
         _chkEditBg = new CheckBox { Text = "Feinjustierung (Drag)", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkEditBg.CheckedChanged += (s, e) => { _canvas.EditBgOffset = _chkEditBg.Checked; _canvas.Invalidate(); };
-        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, labelSite, _cmbSites, _chkEdit, btnExport, chkMultiMap, btnFinalize, btnAdjustZ, btnInjectMenu, btnChar, btnUndo, _chkBg, _chkSites, _chkEditBg });
+        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, labelSite, _cmbSites, _chkEdit, btnExport, btnAdjustZ, btnInjectMenu, btnChar, btnUndo, _chkBg, _chkSites, _chkEditBg });
         top.Controls.Add(flow);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
         _canvas.SelectionChanged += _ => SaveSessionStateLight();
@@ -618,6 +606,7 @@ public sealed class MainForm : Form
                     if (o.Y < minY) minY = o.Y; if (o.Y > maxY) maxY = o.Y;
                 }
             const float margin = 20000f; // 200 m
+            var entries = new List<(string Label, int Index)>();
             for (int i = 0; i < _canvas.Sites.Count; i++)
             {
                 var s = _canvas.Sites[i];
@@ -626,12 +615,36 @@ public sealed class MainForm : Form
                 if (minX != float.MaxValue &&
                     (lx < minX - margin || lx > maxX + margin || ly < minY - margin || ly > maxY + margin))
                     continue;
+                // zoom-independent containment (same rotation convention as MapCanvas.InSiteBoxScreen)
+                int count = 0;
+                double rad = s.Yaw * Math.PI / 180.0;
+                double cos = Math.Cos(rad), sin = Math.Sin(rad);
+                foreach (var o in model.Objects)
+                {
+                    if (!o.HasTransform || o.Deleted) continue;
+                    float dx = o.X - lx, dy = o.Y - ly;
+                    double qx = dx * cos - dy * sin;
+                    double qy = dx * sin + dy * cos;
+                    if (Math.Abs(qx) <= s.ExtentX && Math.Abs(qy) <= s.ExtentY) count++;
+                }
+                if (count == 0) continue; // empty box (e.g. tgc/map state mismatch) — not selectable
                 var outp = s.Tags?.Contains("Outpostable") ?? false;
                 var type = string.IsNullOrEmpty(s.SiteType) ? "Site" : s.SiteType;
                 var g = s.Guid.Length >= 8 ? s.Guid[..8] : s.Guid;
-                var label = $"{(outp ? "OUT " : "")}{type} ({g})  {lx / 100:0.#},{ly / 100:0.#} m";
-                _siteEntries.Add((label, i));
-                _cmbSites.Items.Add(label);
+                var label = $"{(outp ? "OUT " : "")}{type} ({g})  {count} obj";
+                entries.Add((label, i));
+            }
+            // alphabetical by type name (OUT prefix ignored, then GUID)
+            entries.Sort((a, b) =>
+            {
+                var ta = a.Label.StartsWith("OUT ") ? a.Label[4..] : a.Label;
+                var tb = b.Label.StartsWith("OUT ") ? b.Label[4..] : b.Label;
+                return string.Compare(ta, tb, StringComparison.OrdinalIgnoreCase);
+            });
+            foreach (var en in entries)
+            {
+                _siteEntries.Add(en);
+                _cmbSites.Items.Add(en.Label);
             }
             _cmbSites.Enabled = _cmbSites.Items.Count > 0;
         }
@@ -1024,21 +1037,14 @@ public sealed class MainForm : Form
         SetStatus($"height adjusted: {items.Count} object(s) by {sign}{dzM:0.###} m   |   undo: {_undo.Count}  (Ctrl+Z)");
     }
 
-    private void UpdateFinalizeButton()
-    {
-        if (_btnFinalize != null)
-        {
-            _btnFinalize.Text = $"Finalize Export ({_pendingMaps.Count})";
-            _btnFinalize.Enabled = _pendingMaps.Count > 0;
-        }
-    }
-
     /// <summary>
     /// Builds a patch for the region tag database (.tgc) so a moved building's site box, rooms,
     /// containers and spawn points follow it. Returns null when the map has no tag database or
     /// no moved object is part of one. Translation only (rotation edits stay in the umap).
+    /// Also returns the moved primary-building markers (original world position + delta) so the
+    /// region sites umap can be patched automatically (auto multi-map).
     /// </summary>
-    private (string Path, byte[] Data)? BuildTgcPatch()
+    private (string Path, byte[] Data, List<TgcPatcher.MarkerMove> Markers)? BuildTgcPatch()
     {
         if (_map == null || _map.Error != null) return null;
         var tgcPath = TgcPatcher.FindTgcPath(_loader.Provider, _map.Path);
@@ -1056,9 +1062,10 @@ public sealed class MainForm : Form
         {
             var root = TgcPatcher.Parse(_loader.ReadMapBytes(tgcPath));
             var tile = Path.GetFileNameWithoutExtension(_map.Path);
-            var moved = TgcPatcher.ShiftBuildings(root, tile, moves);
+            var markers = new List<TgcPatcher.MarkerMove>();
+            var moved = TgcPatcher.ShiftBuildings(root, tile, moves, markers);
             if (moved == 0) return null;
-            return (tgcPath, TgcPatcher.Serialize(root));
+            return (tgcPath, TgcPatcher.Serialize(root), markers);
         }
         catch (Exception e)
         {
@@ -1067,21 +1074,73 @@ public sealed class MainForm : Form
         }
     }
 
-    /// <summary>Writes a pending tgc patch into the shared chunk-1095 patch pak (next to the given map pak).</summary>
-    private void WriteTgcPak(string directory, string? statusTag = null)
+    /// <summary>
+    /// Auto multi-map: when site primary-building markers moved with their sites, patch the
+    /// matching TaggedSitePrimaryBuildingMarker actors in the region's site umap(s) so the
+    /// in-game map display follows, without the user having to load and edit that map manually.
+    /// Returns the patched (path, data) pairs; empty when no markers moved or nothing matched.
+    /// </summary>
+    private List<(string Path, byte[] Data)> BuildSitesUmapPatches(List<TgcPatcher.MarkerMove> markers)
     {
-        if (_pendingTgcs.Count == 0) return;
-        var path = Path.Combine(directory, MapChunk.GetTgcChunkPakFileName());
-        var entries = new List<PakWriter.Entry>();
-        string mountPoint = "";
-        foreach (var (tgcPath, data) in _pendingTgcs)
+        var result = new List<(string, byte[])>();
+        if (markers.Count == 0 || _map == null || _map.Error != null) return result;
+
+        // region = first path segment after /maps/ (e.g. "faustite")
+        var p = _map.Path.Replace('\\', '/');
+        var idx = p.IndexOf("/maps/", StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) return result;
+        var rest = p[(idx + "/maps/".Length)..];
+        var slash = rest.IndexOf('/');
+        if (slash <= 0) return result;
+        var region = rest[..slash];
+
+        // region site umaps: naming differs per region (faustite_sites, danburite_site, ...)
+        var candidates = new List<string>();
+        foreach (var f in _loader.Provider.Files.Values)
         {
-            var mp = PakWriter.ResolveMountPoint(_loader.Provider, tgcPath);
-            if (mountPoint.Length == 0) mountPoint = mp;
-            entries.Add(new PakWriter.Entry { Path = PakWriter.StripMount(tgcPath, mp), Data = data });
+            var fp = f.Path.Replace('\\', '/');
+            if (!fp.EndsWith(".umap", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!fp.Contains("/maps/" + region + "/", StringComparison.OrdinalIgnoreCase)) continue;
+            if (fp.Contains("LOD", StringComparison.OrdinalIgnoreCase)) continue;
+            var name = Path.GetFileNameWithoutExtension(fp);
+            if (!name.StartsWith(region, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!name.Contains("site", StringComparison.OrdinalIgnoreCase)) continue;
+            candidates.Add(fp);
         }
-        PakWriter.Write(path, mountPoint, entries);
-        SetStatus($"{(statusTag ?? "exported")} tag database patch -> {path}");
+        candidates.Sort();
+
+        foreach (var c in candidates)
+        {
+            try
+            {
+                var model = _loader.LoadMapAsync(c).GetAwaiter().GetResult();
+                if (model.Error != null) continue;
+                var data = _loader.ReadMapBytes(c);
+                var offX = model.HasWorldTileOffset ? model.WorldTileOffsetX : 0f;
+                var offY = model.HasWorldTileOffset ? model.WorldTileOffsetY : 0f;
+                int patched = 0;
+                foreach (var o in model.Objects)
+                {
+                    if (o.Name == null || !o.HasTransform) continue;
+                    if (!o.Name.Contains("TaggedSitePrimaryBuildingMarker", StringComparison.OrdinalIgnoreCase)) continue;
+                    float wx = o.X + offX, wy = o.Y + offY;
+                    foreach (var mv in markers)
+                    {
+                        if (MathF.Abs(wx - mv.X) > 200f || MathF.Abs(wy - mv.Y) > 200f) continue;
+                        var r = UmapPatcher.PatchLocation(data, o, o.X + mv.Dx, o.Y + mv.Dy, o.Z + mv.Dz);
+                        if (r.Error.Length == 0) patched++;
+                        else SetStatus($"marker patch warning ({Path.GetFileName(c)} {o.Name}): {r.Error}");
+                        break;
+                    }
+                }
+                if (patched > 0) result.Add((c, data));
+            }
+            catch (Exception e)
+            {
+                SetStatus($"site map patch skipped ({Path.GetFileName(c)}): {e.Message}");
+            }
+        }
+        return result;
     }
 
     /// <summary>Copies a tgc patch entry into a standalone chunk-1095 pak (single-map export).</summary>
@@ -1092,67 +1151,6 @@ public sealed class MainForm : Form
         PakWriter.Write(path, mountPoint, new[] { entry });
     }
 
-    private void FinalizeMultiMapExport()
-    {
-        if (_pendingMaps.Count == 0)
-        {
-            MessageBox.Show(this, "No pending maps. Use 'Export mod .pak...' with 'Multi-Map' checked to add maps.", "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
-        }
-
-        // Determine chunk pak name from first pending map
-        var firstMap = _pendingMaps[0].Path;
-        var chunkPak = MapChunk.GetChunkPakFileName(firstMap);
-        var mapName = Path.GetFileNameWithoutExtension(firstMap);
-
-        using var dlg = new SaveFileDialog
-        {
-            Title = "Save combined mod pak",
-            Filter = "PAK archive (*.pak)|*.pak",
-            FileName = chunkPak ?? $"mod_{mapName}_P.pak",
-        };
-        if (dlg.ShowDialog(this) != DialogResult.OK) return;
-
-        try
-        {
-            var mountPoint = "";
-            var entries = new List<PakWriter.Entry>();
-            foreach (var (path, data) in _pendingMaps)
-            {
-                // Resolve mount point and relative path for each map
-                string mp, rel;
-                try
-                {
-                    var pe = _loader.Provider[path] as CUE4Parse.UE4.Pak.Objects.FPakEntry
-                        ?? throw new InvalidOperationException("map is not inside a pak");
-                    mp = ((CUE4Parse.UE4.Pak.PakFileReader)pe.Vfs).MountPoint;
-                    mp = mp.StartsWith("../") ? mp : "../../../" + mp;
-                    rel = StripMount(path, mp);
-                }
-                catch (Exception e)
-                {
-                    MessageBox.Show(this, $"Failed to resolve pak mount point for {path}:\n" + e.Message, "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
-                if (mountPoint.Length == 0) mountPoint = mp;
-                entries.Add(new PakWriter.Entry { Path = rel, Data = data });
-            }
-
-            PakWriter.Write(dlg.FileName, mountPoint, entries);
-            SetStatus($"exported {_pendingMaps.Count} map(s) -> {dlg.FileName}");
-            _pendingMaps.Clear();
-            if (_pendingTgcs.Count > 0)
-            {
-                WriteTgcPak(Path.GetDirectoryName(dlg.FileName) ?? ".", "finalized");
-                _pendingTgcs.Clear();
-            }
-            UpdateFinalizeButton();
-        }
-        catch (Exception e)
-        {
-            MessageBox.Show(this, "Export failed:\n" + e.Message, "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-    }
     private void ExportModPak()
     {
         if (_map == null || _map.Error != null)
@@ -1165,45 +1163,6 @@ public sealed class MainForm : Form
         {
             MessageBox.Show(this, "No objects were moved, rotated, scaled, or deleted. Enable editing, modify an object, then export.",
                 "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
-        }
-
-        if (_multiMapMode)
-        {
-            // Multi-map mode: patch current map and add to pending list
-            byte[] mmData;
-            try { mmData = _loader.ReadMapBytes(_map.Path); }
-            catch (Exception e) { MessageBox.Show(this, "Failed to read map bytes:\n" + e.Message, "Export", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
-
-            var mmFailures = new List<string>();
-            foreach (var o in edited)
-            {
-                if (o.Deleted) { var r = UmapPatcher.PatchErase(mmData, o); if (r.Error.Length > 0) mmFailures.Add($"{o.Name}: erase: {r.Error}"); continue; }
-                if (o.Edited) { var r = UmapPatcher.PatchLocation(mmData, o, o.X, o.Y, o.Z); if (r.Error.Length > 0) mmFailures.Add($"{o.Name}: move: {r.Error}"); }
-                if (o.EditedRotation) { var r = UmapPatcher.PatchRotation(mmData, o, o.QX, o.QY, o.QZ, o.QW); if (r.Error.Length > 0) mmFailures.Add($"{o.Name}: rotate: {r.Error}"); }
-                if (o.EditedScale) { var r = UmapPatcher.PatchScale(mmData, o, o.SX, o.SY, o.SZ); if (r.Error.Length > 0) mmFailures.Add($"{o.Name}: scale: {r.Error}"); }
-            }
-
-            // Replace existing entry for same map
-            _pendingMaps.RemoveAll(p => p.Path == _map.Path);
-            _pendingMaps.Add((_map.Path, mmData));
-
-            // Site-aware tag database patch (outposts/bases follow their building)
-            var tgcPatch = BuildTgcPatch();
-            if (tgcPatch != null)
-            {
-                _pendingTgcs.RemoveAll(p => p.Path == tgcPatch.Value.Path);
-                _pendingTgcs.Add(tgcPatch.Value);
-            }
-
-            // Reset edit flags
-            foreach (var o in _map.Objects)
-                o.Edited = o.EditedRotation = o.EditedScale = o.Deleted = false;
-
-            SetStatus($"added {_map.Path} to pending export ({_pendingMaps.Count} map(s))");
-            UpdateFinalizeButton();
-            if (mmFailures.Count > 0)
-                MessageBox.Show(this, string.Join("\n", mmFailures), "Patch warnings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -1278,7 +1237,27 @@ public sealed class MainForm : Form
             // Site-aware tag database patch (outposts/bases follow their building)
             var tgcPatch = BuildTgcPatch();
 
-            PakWriter.Write(dlg.FileName, mountPoint, new[] { new PakWriter.Entry { Path = rel, Data = data } });
+            var entries = new List<PakWriter.Entry> { new() { Path = rel, Data = data } };
+
+            // auto multi-map: moved site markers -> patch region site umap(s) into the same pak
+            var siteMaps = BuildSitesUmapPatches(tgcPatch?.Markers ?? new List<TgcPatcher.MarkerMove>());
+            foreach (var (sp, sd) in siteMaps)
+            {
+                try
+                {
+                    var spe = _loader.Provider[sp] as CUE4Parse.UE4.Pak.Objects.FPakEntry
+                        ?? throw new InvalidOperationException("site map is not inside a pak");
+                    var smp = ((CUE4Parse.UE4.Pak.PakFileReader)spe.Vfs).MountPoint;
+                    smp = smp.StartsWith("../") ? smp : "../../../" + smp;
+                    entries.Add(new PakWriter.Entry { Path = StripMount(sp, smp), Data = sd });
+                }
+                catch (Exception e)
+                {
+                    SetStatus($"site map patch skipped ({Path.GetFileName(sp)}): {e.Message}");
+                }
+            }
+
+            PakWriter.Write(dlg.FileName, mountPoint, entries);
 
             string? tgcPakPath = null;
             if (tgcPatch != null)
@@ -1293,7 +1272,8 @@ public sealed class MainForm : Form
                 o.Edited = o.EditedRotation = o.EditedScale = o.Deleted = false;
 
             SetStatus($"exported {edited.Count - failures.Count}/{edited.Count:N0} object(s) -> {dlg.FileName}" +
-                      (tgcPakPath != null ? $" + tag database -> {tgcPakPath}" : ""));
+                      (tgcPakPath != null ? $" + tag database -> {tgcPakPath}" : "") +
+                      (siteMaps.Count > 0 ? $" + {siteMaps.Count} site map(s) (auto multi-map)" : ""));
             var installHint = isChunkPatch
                 ? "To use it in the game, copy the file into the game's Content\\Paks folder as a chunk patch\n" +
                   "(same folder as pakchunk*.pak, e.g. <game>\\StateOfDecay2\\Content\\Paks).\n" +
@@ -1308,6 +1288,7 @@ public sealed class MainForm : Form
             MessageBox.Show(this,
                 $"Mod pak written:\n{dlg.FileName}\n" +
                 (tgcPakPath != null ? $"\nTag database patch (site box/rooms/containers follow the building):\n{tgcPakPath}\n" : "") +
+                (siteMaps.Count > 0 ? $"\nAuto multi-map: {siteMaps.Count} region site map(s) patched (map markers follow):\n{string.Join("\n", siteMaps.Select(m => Path.GetFileName(m.Path)))}\n" : "") +
                 $"\nObjects modified: {edited.Count - failures.Count:N0} / {edited.Count:N0}\n" +
                 (failures.Count > 0
                     ? "\nUn-patched (stayed at original position):\n" + string.Join("\n", failures.Take(8)) + (failures.Count > 8 ? $"\n... and {failures.Count - 8} more" : "")
