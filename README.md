@@ -15,7 +15,6 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 <summary><b>Echte Karte als Hintergrund</b></summary>
 
 - (a) **Vektor-Basemap** aus den Ingame-`MapBackgroundData`-Assets (Straßen/Flüsse/Seen/Gebäude/Border), offline, alle 5 Regionen, per Drag kalibrierbar
-- (b) öffentliche WeMod/Wand-Kacheln, pixelgenau in Weltkoordinaten projiziert
 
 </details>
 
