@@ -4,7 +4,7 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 
 <a href="https://www.buymeacoffee.com/Orohal" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-**Aktueller Stand: [v0.5.9](https://github.com/Orohal/SoD2MapV/releases/latest)** - Viewer + Voll-Editor + Fahrzeug- & **Item-Injektion** (GUI/CLI, Presets aus Save) + **Häuser/Objekte verschieben** (Gruppen-Auswahl, Undo, **Chunk-Patch-Export** für spielwirksame Tile-Mods, **Multi-Map-Export**: Tile + `*_sites.umap` in einem Patch) + **Höhenanpassung (Z)** + **Session-Wiederherstellung** + **Koordinaten-Fix** (Welt vs. Kachel-lokal für Spieler-Marker, Ansicht, Injektion) + **Funktion-Actoren** (Outpost-/Homesite-Interactables wandern mit dem Gebäude) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen). Details: [Repo-Status](#repo-status) (eingeklappt).
+**Aktueller Stand: [v0.5.9](https://github.com/Orohal/SoD2MapV/releases/latest)** - Viewer + Voll-Editor + Fahrzeug- & **Item-Injektion** (GUI/CLI, Presets aus Save) + **Häuser/Objekte verschieben** (Gruppen-Auswahl, Undo, **Chunk-Patch-Export** für spielwirksame Tile-Mods, **Multi-Map-Export**: Tile + `*_sites.umap` in einem Patch) + **Höhenanpassung (Z)** + **Session-Wiederherstellung** + **Koordinaten-Fix** (Welt vs. Kachel-lokal für Spieler-Marker, Ansicht, Injektion) + **Funktion-Actoren** (Outpost-/Homesite-Interactables wandern mit dem Gebäude) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen, automatisch verankert) + **tgc-Site/Outpostable-Overlay** (claimbare Gebäude an ihren echten Positionen). Details: [Repo-Status](#repo-status) (eingeklappt).
 
 ## Features
 
@@ -46,13 +46,13 @@ Was beim Injizieren passiert (pro Item):
 
 ## To do …
 
-1. **Komplette Häuser verschieben** — Rechtsklick auf ein Haus (oder Auswahl im **"House:"**-Dropdown) wählt Haus-Prefab + alle Objekte im 40-m-Umkreis als Gruppe, gemeinsamer Drag, Undo, Höhenanpassung (Z), Export als Chunk-Patch-`.pak` (spielwirksam). *(implementiert, erste In-Game-Tests erfolgreich — Feedback willkommen)*
-2. **Map Hintergrund zum Laufen bringen** — Hintergrunds-Ausrichtung fortführen (offene Punkte: präzise Ausrichtung je Region/Karten-Variante, Darstellungsprobleme im Kachel-Bild)
+1. **Hintergrund-Ausrichtung der übrigen Regionen** — Faustite/Trumbull ist kalibriert (per Drag + Auto-Fit); für Cascade Hills, Drucker County, Meagher Valley, Providence Ridge und die Trumbull-Variante stehen Scale/Offset noch aus (Auto-Fit: `--bgfit`, Feinjustierung per Drag)
+2. **Ingame-Validierung des tgc-Site-Patch** — verschobenes Outpost mit `pakchunk001095-WindowsNoEditor_P.pak` + Map-Chunk-Patch im Spiel prüfen (Vollständigkeit claimbar: Räume/Container/Marker/Save-OutpostId)
 
 ## Voraussetzungen & Build
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (Windows), SoD2-Installation
-- Fertige EXEs: [Releases](https://github.com/Orohal/SoD2MapV/releases) (self-contained + framework-dependent)
+- Fertige EXEs: [Releases](https://github.com/Orohal/SoD2MapV/releases) (framework-dependent; self-contained nur auf Anfrage)
 - Bauen: `dotnet build app/SoD2MapViewer.csproj -c Release`
 
 ## Nutzung (GUI)
@@ -105,7 +105,7 @@ Menü **Inject ▾** → **„Inject item…"**: Save wählen (automatisches Bac
 <details>
 <summary><b>Echte Karte als Hintergrund</b></summary>
 
-Toolbar **„Vector map (asset)"** — blendet die eigene Vektor-Karte aus den Ingame-`MapBackgroundData`-Assets (`StateOfDecay2/Content/maps/Backgrounds/*`) ein: Straßen, Flüsse, Seen, Gebäude und die Karten-Grenze, in den echten Ingame-Farben (`MapUIInfo_BP`). Komplett offline, für alle 5 Regionen. Bei Abweichung: Checkbox **„Edit base-map pos"** einschalten und die Karte per Drag ausrichten (Loslassen speichert die Kalibrierung). CLI: `--bgrender` (PNG-Render), `--bgset` (manuelle Transform-Werte).
+Toolbar **„Hintergrundkarte (Spiel-Asset)"** — blendet die eigene Vektor-Karte aus den Ingame-`MapBackgroundData`-Assets (`StateOfDecay2/Content/maps/Backgrounds/*`) ein: Straßen, Flüsse, Seen, Gebäude und die Karten-Grenze, in den echten Ingame-Farben (`MapUIInfo_BP`). Komplett offline, für alle 5 Regionen, automatisch am Tile-/World-Offset verankert. Checkbox **„Sites (tgc)"** zeichnet zusätzlich die claimbaren Site-/Outpostable-Boxen aus der Region-tgc an ihren echten Positionen. Bei Abweichung: Checkbox **„Feinjustierung (Drag)"** einschalten und die Karte per Drag ausrichten (Loslassen übernimmt die Kalibrierung und zeigt ox/oy an). CLI: `--bgrender` (PNG-Render), `--bgprops` (Asset-Properties), `--bgfit` (automatische Kalibrierung gegen tgc-Site-Boxen), `--bgset` (manuelle Transform-Werte).
 
 </details>
 
