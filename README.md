@@ -46,7 +46,8 @@ Was beim Injizieren passiert (pro Item):
 
 ## To do …
 
-1. **Sites komplett verschieben & claimbar machen** — Ingame-Test (v0.6.1): Meshes wandern korrekt, aber die Laufzeit-Site-Actoren (Claim-Terminal, Türen, Container) bleiben an der Originalposition. Die kompilierte tgc ist gepatcht und wird von CUE4Parse gemountet, die Runtime nutzt sie aber offenbar nicht (oder cached Weltzustand im Save). Nächste Schritte: (a) **Neues Save testen** (frischer Weltzustand mit gepatchten Paks) prüft Save-Caching; (b) falls nicht → Spawn-Quelle klären (Design-/Persistent-Maps, Prefab-Internes, Save-MapSaveCollection), Patch erweitern
+1. **Sites komplett verschieben & claimbar machen** - Ingame-Test (v0.6.1, frischer Save): **Nur Meshes wandern**, Claim-Terminal/Tueren/Container bleiben an der Originalposition - auch mit neuem Weltzustand. -> **Nicht Save-Caching.** Die kompilierte tgc ist gepatcht und gemountet, die Runtime nutzt sie aber nicht fuer diese Actoren (tgc = Map/Design-Daten). Claim-Actoren sind in den Tile-Maps nur fuer andere Sites vorhanden; der Autoshop-Claim wird runtime gespawnt, Quelle unklar (Prefab-Internes? Design-Maps? anderer Datenpfad). Naechste Schritte: (a) Paket-Quelle der Spawns per Reverse-Engineering (UE4-Asset-Dump des Prefabs auto_mechanic_01_seckens_dry_prefab_14 + OutpostInteractable_C-Blueprint), (b) Design-Maps (faustite_design) und HomsiteStateSave/MapSaveCollection im Save auf Positionsdaten pruefen, (c) ggf. Patch auf Prefab-Transform/Spawn-Offsets erweitern
+austite_design) und HomsiteStateSave/MapSaveCollection im Save auf Positionsdaten pruefen, (c) ggf. Patch auf Prefab-Transform/Spawn-Offsets erweitern
 2. **Hintergrund-Ausrichtung der übrigen Regionen** — Faustite/Trumbull ist kalibriert (per Drag + Auto-Fit); für Cascade Hills, Drucker County, Meagher Valley, Providence Ridge und die Trumbull-Variante stehen Scale/Offset noch aus (Auto-Fit: `--bgfit`, Feinjustierung per Drag)
 
 ## Voraussetzungen & Build
