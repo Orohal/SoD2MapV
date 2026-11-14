@@ -195,16 +195,22 @@ public sealed class ItemInjectDialog : Form
         {
             _cboPreset.Items.Clear();
             _seenPresetKeys.Clear();
-            foreach (var p in BuiltinPresets)
+            var allPresets = new List<Preset>();
+            allPresets.AddRange(BuiltinPresets);
+            allPresets.AddRange(_persistentPresets.Select(p => new Preset { Label = p.Label, ItemType = p.ItemType, ClassPath = p.ClassPath, Persistent = true }));
+            var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+            var uniquePresets = new List<Preset>();
+            foreach (var p in allPresets)
+            {
+                var key = p.ItemType + "\n" + p.ClassPath;
+                if (!seenKeys.Add(key)) continue;
+                uniquePresets.Add(p);
+            }
+            uniquePresets.Sort((a, b) => string.Compare(a.Label, b.Label, StringComparison.OrdinalIgnoreCase));
+            foreach (var p in uniquePresets)
             {
                 _cboPreset.Items.Add(p);
                 _seenPresetKeys.Add(p.ItemType + "\n" + p.ClassPath);
-            }
-            foreach (var p in _persistentPresets)
-            {
-                var key = p.ItemType + "\n" + p.ClassPath;
-                if (!_seenPresetKeys.Add(key)) continue;
-                _cboPreset.Items.Add(new Preset { Label = p.Label, ItemType = p.ItemType, ClassPath = p.ClassPath, Persistent = true });
             }
             _cboPreset.Items.Add("(Manuell)");
             if (_cboPreset.Items.Count > 0) _cboPreset.SelectedIndex = 0;
@@ -339,19 +345,19 @@ public sealed class ItemInjectDialog : Form
                 }
                 _cboPreset.Items.Clear();
                 _seenPresetKeys.Clear();
+                var keptPresets = new List<Preset>();
                 foreach (var it in keep)
-                {
-                    _cboPreset.Items.Add(it);
-                    if (it is Preset p) _seenPresetKeys.Add(p.ItemType + "\n" + p.ClassPath);
-                }
+                    if (it is Preset p) { keptPresets.Add(p); _seenPresetKeys.Add(p.ItemType + "\n" + p.ClassPath); }
                 int added = 0;
                 foreach (var (itemType, classPath) in items)
                 {
                     var key = itemType + "\n" + classPath;
                     if (!_seenPresetKeys.Add(key)) continue;
-                    _cboPreset.Items.Add(new Preset { Label = $"[{itemType}] {ShortName(classPath)}", ItemType = itemType, ClassPath = classPath });
+                    keptPresets.Add(new Preset { Label = $"[{itemType}] {ShortName(classPath)}", ItemType = itemType, ClassPath = classPath });
                     added++;
                 }
+                keptPresets.Sort((a, b) => string.Compare(a.Label, b.Label, StringComparison.OrdinalIgnoreCase));
+                foreach (var p in keptPresets) _cboPreset.Items.Add(p);
                 if (manual != null) _cboPreset.Items.Add(manual); else _cboPreset.Items.Add("(Manuell)");
                 // restore selection if possible
                 int sel = -1;
