@@ -27,12 +27,14 @@ public sealed class InjectDialog : Form
         TextAlign = ContentAlignment.MiddleLeft,
         Height = 40,
     };
+    private readonly Button _btnBrowseSave = new() { Text = "📁…", AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
     private readonly Button _btnInject = new() { Text = "Inject", AutoSize = true };
     private readonly Button _btnCalibrate = new() { Text = "Calibrate...", AutoSize = true };
     private readonly Button _btnDeleteProbe = new() { Text = "Delete probe vehicle", AutoSize = true, Visible = false };
     private readonly Button _btnCancel = new() { Text = "Close", AutoSize = true };
 
     private FileInfo[] _saves = Array.Empty<FileInfo>();
+    private FileInfo? _customSave;
     private int _probeIndex = -1;   // last injected calibration probe (for cleanup)
 
     public InjectDialog(PointF? worldCm, float? zCm = null, float defaultYawDeg = 0f, string? hint = null)
@@ -59,7 +61,9 @@ public sealed class InjectDialog : Form
             if (c3 != null) layout.Controls.Add(c3, 3, row);
         }
 
-        AddRow(0, "Save slot:", _cboSave);
+        var saveRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty };
+        saveRow.Controls.AddRange(new Control[] { _cboSave, _btnBrowseSave });
+        AddRow(0, "Save slot:", saveRow);
         AddRow(1, "Vehicle class:", _cboClass);
         AddRow(2, "World X/Y/Z (m):", _txtX, _txtY, _txtZ);
         AddRow(3, "Yaw (deg):", _txtYaw);
@@ -76,6 +80,7 @@ public sealed class InjectDialog : Form
         CancelButton = _btnCancel;
 
         _cboSave.SelectedIndexChanged += (s, e) => LoadClasses();
+        _btnBrowseSave.Click += (s, e) => BrowseSave();
         _btnInject.Click += (s, e) => Inject(calibrating: false);
         _btnCalibrate.Click += (s, e) => Inject(calibrating: true);
         _btnDeleteProbe.Click += (s, e) => DeleteProbe();
@@ -88,26 +93,14 @@ public sealed class InjectDialog : Form
     private void LoadSaves(PointF? worldCm, float? zCm, float defaultYawDeg)
     {
         _saves = Savegame.FindSavegames();
-        if (_saves.Length == 0)
-        {
-            _lblInfo.Text = "No savegame found under %LOCALAPPDATA%\\StateOfDecay2\\Saved\\Steam.";
-            _btnInject.Enabled = _btnCalibrate.Enabled = false;
-            return;
-        }
-        foreach (var f in _saves)
-        {
-            var info = Savegame.ReadInfo(f.FullName);
-            _cboSave.Items.Add($"{f.Name}  —  {info?.VehicleCount ?? 0} vehicles, saved {f.LastWriteTime:dd.MM. HH:mm}");
-        }
-        _cboSave.SelectedIndex = 0;
-        LoadClasses();
+        RebuildSaveCombo(selectCustom: false);
 
         if (worldCm is { } w)
         {
             _txtX.Text = (w.X / 100).ToString("0.##");
             _txtY.Text = (w.Y / 100).ToString("0.##");
         }
-        else
+        else if (_cboSave.Items.Count > 0)
         {
             _lblInfo.Text = "Tip: right-click the map to pick the injection position.";
         }
@@ -116,7 +109,103 @@ public sealed class InjectDialog : Form
         LoadShift();
     }
 
-    private FileInfo? CurrentSave => _cboSave.SelectedIndex >= 0 && _cboSave.SelectedIndex < _saves.Length ? _saves[_cboSave.SelectedIndex] : null;
+    private void RebuildSaveCombo(bool selectCustom)
+    {
+        var keepCustomSelected = selectCustom || (_customSave != null && _cboSave.SelectedIndex == 0);
+        var prevSavePath = keepCustomSelected ? null : CurrentSave?.FullName;
+
+        _cboSave.BeginUpdate();
+        _cboSave.Items.Clear();
+        if (_customSave != null)
+            _cboSave.Items.Add(DescribeSave(_customSave, custom: true));
+        foreach (var f in _saves)
+            _cboSave.Items.Add(DescribeSave(f, custom: false));
+        _cboSave.EndUpdate();
+
+        if (_cboSave.Items.Count == 0)
+        {
+            _lblInfo.Text = "No savegame found under %LOCALAPPDATA%\\StateOfDecay2\\Saved\\Steam. Use \"📁…\" to pick a .sav file.";
+            _btnInject.Enabled = _btnCalibrate.Enabled = false;
+            return;
+        }
+
+        _btnInject.Enabled = _btnCalibrate.Enabled = true;
+        var idx = 0;
+        if (keepCustomSelected && _customSave != null)
+            idx = 0;
+        else if (prevSavePath != null)
+        {
+            var offset = _customSave != null ? 1 : 0;
+            for (int i = 0; i < _saves.Length; i++)
+            {
+                if (string.Equals(_saves[i].FullName, prevSavePath, StringComparison.OrdinalIgnoreCase)) { idx = i + offset; break; }
+            }
+        }
+        if (idx < 0 || idx >= _cboSave.Items.Count) idx = 0;
+        _cboSave.SelectedIndex = idx;
+        LoadClasses();
+    }
+
+    private static string DescribeSave(FileInfo f, bool custom)
+    {
+        string suffix;
+        try
+        {
+            var info = Savegame.ReadInfo(f.FullName);
+            suffix = $"{info?.VehicleCount ?? 0} vehicles, saved {f.LastWriteTime:dd.MM. HH:mm}";
+        }
+        catch { suffix = $"saved {f.LastWriteTime:dd.MM. HH:mm}"; }
+        var label = custom ? "[Custom] " : "";
+        return $"{label}{f.Name}  —  {suffix}";
+    }
+
+    private void BrowseSave()
+    {
+        using var dlg = new OpenFileDialog
+        {
+            Title = "Select savegame (.sav) to target",
+            Filter = "Savegame (*.sav)|*.sav|All files (*.*)|*.*",
+            CheckFileExists = true,
+        };
+        try
+        {
+            var saves = Savegame.FindSavegames();
+            if (saves.Length > 0)
+                dlg.InitialDirectory = Path.GetDirectoryName(saves[0].FullName);
+        }
+        catch { }
+
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            var path = Path.GetFullPath(dlg.FileName);
+            // Validate by parsing (filename does not need to match SaveGame_*.sav)
+            Savegame.ReadInfo(path);
+            _customSave = new FileInfo(path);
+            RebuildSaveCombo(selectCustom: true);
+            _lblInfo.Text = "Custom save selected: " + path;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Die ausgewählte Datei konnte nicht als SoD2-Save gelesen werden:\n" + ex.Message,
+                "Ungültiges Savegame", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private FileInfo? CurrentSave
+    {
+        get
+        {
+            var i = _cboSave.SelectedIndex;
+            if (i < 0) return null;
+            if (_customSave != null)
+            {
+                if (i == 0) return _customSave;
+                i--;
+            }
+            return i >= 0 && i < _saves.Length ? _saves[i] : null;
+        }
+    }
 
     private void LoadClasses()
     {
@@ -286,15 +375,10 @@ public sealed class InjectDialog : Form
         _btnDeleteProbe.Visible = false;
         _probeIndex = -1;
         _lblInfo.Text = "Probe deleted.";
-        // refresh slot list counts
-        var sel = _cboSave.SelectedIndex;
-        _cboSave.Items.Clear();
+        // refresh slot list counts while preserving a custom-picked save
         _saves = Savegame.FindSavegames();
-        foreach (var f in _saves)
-        {
-            var info = Savegame.ReadInfo(f.FullName);
-            _cboSave.Items.Add($"{f.Name}  —  {info?.VehicleCount ?? 0} vehicles, saved {f.LastWriteTime:dd.MM. HH:mm}");
-        }
-        if (sel >= 0 && sel < _cboSave.Items.Count) _cboSave.SelectedIndex = sel;
+        if (_customSave != null)
+            _customSave = new FileInfo(_customSave.FullName);
+        RebuildSaveCombo(selectCustom: false);
     }
 }

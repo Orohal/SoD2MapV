@@ -51,6 +51,7 @@ public sealed class ItemInjectDialog : Form
     private readonly Button _btnCancel = new() { Text = "Schließen", AutoSize = true, DialogResult = DialogResult.Cancel };
 
     private FileInfo[] _saves = Array.Empty<FileInfo>();
+    private FileInfo? _customSave;
     private readonly List<(string ItemType, string ClassPath, int Stack)> _queue = new();
     private readonly HashSet<string> _seenPresetKeys = new(StringComparer.Ordinal);
     private readonly List<Preset> _persistentPresets = new();
@@ -81,8 +82,10 @@ public sealed class ItemInjectDialog : Form
 
         var saveRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty };
         var btnRefresh = new Button { Text = "↻", Width = 28, Height = _cboSave.PreferredHeight };
+        var btnBrowse = new Button { Text = "📁…", AutoSize = true, Height = _cboSave.PreferredHeight };
         btnRefresh.Click += (s, e) => LoadSaves();
-        saveRow.Controls.AddRange(new Control[] { _cboSave, btnRefresh });
+        btnBrowse.Click += (s, e) => BrowseSave();
+        saveRow.Controls.AddRange(new Control[] { _cboSave, btnRefresh, btnBrowse });
         AddRow("Savegame:", saveRow);
 
         _cboSave.SelectedIndexChanged += (s, e) => { UpdateInfo(); LoadItemsFromSelectedSave(auto: true); };
@@ -384,19 +387,82 @@ public sealed class ItemInjectDialog : Form
     private void LoadSaves()
     {
         _saves = Savegame.FindSavegames();
+        RebuildSaveCombo(selectCustom: false);
+    }
+
+    private void RebuildSaveCombo(bool selectCustom)
+    {
+        var keepCustomSelected = selectCustom || (_customSave != null && _cboSave.SelectedIndex == 0);
+        var prevSavePath = keepCustomSelected ? null : SelectedSave();
+
+        _cboSave.BeginUpdate();
         _cboSave.Items.Clear();
+        if (_customSave != null)
+            _cboSave.Items.Add(DescribeSave(_customSave, custom: true));
         foreach (var f in _saves)
-            _cboSave.Items.Add($"{f.Name}  ({f.LastWriteTime:yyyy-MM-dd HH:mm}, {f.Length / 1024} KB)");
-        if (_saves.Length == 0)
+            _cboSave.Items.Add(DescribeSave(f, custom: false));
+        _cboSave.EndUpdate();
+
+        if (_cboSave.Items.Count == 0)
         {
-            _lblInfo.Text = "Keine Savegames unter %LOCALAPPDATA%\\StateOfDecay2\\Saved\\Steam\\...\\Release gefunden.";
+            _lblInfo.Text = "Keine Savegames gefunden. Nutze \"📁…\", um eine .sav-Datei auszuwählen.";
             _btnInject.Enabled = false;
             ResetPresets();
+            return;
         }
-        else
+
+        _btnInject.Enabled = true;
+        var idx = 0;
+        if (keepCustomSelected && _customSave != null)
+            idx = 0;
+        else if (prevSavePath != null)
         {
-            _btnInject.Enabled = true;
-            _cboSave.SelectedIndex = 0;
+            var offset = _customSave != null ? 1 : 0;
+            for (int i = 0; i < _saves.Length; i++)
+            {
+                if (string.Equals(_saves[i].FullName, prevSavePath, StringComparison.OrdinalIgnoreCase)) { idx = i + offset; break; }
+            }
+        }
+        if (idx < 0 || idx >= _cboSave.Items.Count) idx = 0;
+        _cboSave.SelectedIndex = idx;
+    }
+
+    private static string DescribeSave(FileInfo f, bool custom)
+    {
+        var label = custom ? "[Custom] " : "";
+        return $"{label}{f.Name}  ({f.LastWriteTime:yyyy-MM-dd HH:mm}, {f.Length / 1024} KB)";
+    }
+
+    private void BrowseSave()
+    {
+        using var dlg = new OpenFileDialog
+        {
+            Title = "Savegame (.sav) als Ziel auswählen",
+            Filter = "Savegame (*.sav)|*.sav|Alle Dateien (*.*)|*.*",
+            CheckFileExists = true,
+        };
+        try
+        {
+            var saves = Savegame.FindSavegames();
+            if (saves.Length > 0)
+                dlg.InitialDirectory = Path.GetDirectoryName(saves[0].FullName);
+        }
+        catch { }
+
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            var path = Path.GetFullPath(dlg.FileName);
+            // Validate by parsing item classes/info (filename does not need to match SaveGame_*.sav)
+            Savegame.ReadItemClasses(path);
+            _customSave = new FileInfo(path);
+            RebuildSaveCombo(selectCustom: true);
+            _lblInfo.Text = "Custom-Save gewählt: " + path;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Die ausgewählte Datei konnte nicht als SoD2-Save gelesen werden:\n" + ex.Message,
+                "Ungültiges Savegame", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
@@ -414,7 +480,17 @@ public sealed class ItemInjectDialog : Form
         catch { _lblInfo.Text = Path.GetFileName(sav); }
     }
 
-    private string? SelectedSave() => _cboSave.SelectedIndex >= 0 && _cboSave.SelectedIndex < _saves.Length ? _saves[_cboSave.SelectedIndex].FullName : null;
+    private string? SelectedSave()
+    {
+        var i = _cboSave.SelectedIndex;
+        if (i < 0) return null;
+        if (_customSave != null)
+        {
+            if (i == 0) return _customSave.FullName;
+            i--;
+        }
+        return i >= 0 && i < _saves.Length ? _saves[i].FullName : null;
+    }
 
     private static bool IsGameRunning()
     {
@@ -460,6 +536,8 @@ public sealed class ItemInjectDialog : Form
             var bak = sav + ".bak-" + DateTime.Now.ToString("yyyyMMddHHmmss");
             File.Copy(sav, bak, overwrite: false);
             File.Copy(tmpOut, sav, overwrite: true);
+            if (_customSave != null && string.Equals(_customSave.FullName, sav, StringComparison.OrdinalIgnoreCase))
+                _customSave = new FileInfo(sav);
 
             var lines = string.Join(Environment.NewLine, _queue.Select(q => $"  - {q.Stack}x {ShortName(q.ClassPath)}"));
             MessageBox.Show(this,
