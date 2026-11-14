@@ -45,6 +45,7 @@ public sealed class ItemInjectDialog : Form
     private readonly Button _btnAdd = new() { Text = "Hinzufügen", AutoSize = true };
     private readonly Button _btnRemove = new() { Text = "Entfernen", AutoSize = true };
     private readonly Button _btnLoadFromSave = new() { Text = "Items aus Save laden", AutoSize = true };
+    private readonly Button _btnLoadFromAllSaves = new() { Text = "Presets aus allen Saves", AutoSize = true };
     private readonly Button _btnSavePreset = new() { Text = "Preset speichern", AutoSize = true };
     private readonly Button _btnDeletePreset = new() { Text = "Preset löschen", AutoSize = true };
     private readonly Button _btnCancel = new() { Text = "Schließen", AutoSize = true, DialogResult = DialogResult.Cancel };
@@ -92,7 +93,7 @@ public sealed class ItemInjectDialog : Form
         ResetPresets();
         _cboPreset.SelectedIndexChanged += (s, e) => ApplyPreset();
         var presetRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty };
-        presetRow.Controls.AddRange(new Control[] { _cboPreset, _btnLoadFromSave, _btnSavePreset, _btnDeletePreset });
+        presetRow.Controls.AddRange(new Control[] { _cboPreset, _btnLoadFromSave, _btnLoadFromAllSaves, _btnSavePreset, _btnDeletePreset });
         AddRow("Preset:", presetRow);
         AddRow("Item-Typ:", _txtItemType);
         AddRow("Class-Path:", _txtClass);
@@ -116,6 +117,7 @@ public sealed class ItemInjectDialog : Form
         _btnRemove.Click += (s, e) => RemoveSelected();
         _btnInject.Click += (s, e) => DoInject();
         _btnLoadFromSave.Click += (s, e) => LoadItemsFromSelectedSave(auto: false);
+        _btnLoadFromAllSaves.Click += (s, e) => LoadPresetsFromAllSaves();
         _btnSavePreset.Click += (s, e) => SaveCurrentAsPreset();
         _btnDeletePreset.Click += (s, e) => DeleteSelectedPreset();
 
@@ -281,6 +283,35 @@ public sealed class ItemInjectDialog : Form
         _persistentPresets.RemoveAll(x => x.ItemType == p.ItemType && x.ClassPath == p.ClassPath);
         SavePersistentPresets();
         ResetPresets();
+    }
+
+    private void LoadPresetsFromAllSaves()
+    {
+        var saves = Savegame.FindSavegames();
+        if (saves.Length == 0)
+        {
+            MessageBox.Show(this, "Keine Savegames gefunden.", "Presets aus allen Saves", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        int added = 0, scanned = 0, failed = 0;
+        var seen = new HashSet<string>(_persistentPresets.Select(p => p.ItemType + "\n" + p.ClassPath), StringComparer.Ordinal);
+        foreach (var f in saves)
+        {
+            scanned++;
+            List<(string ItemType, string ClassPath)> items;
+            try { items = Savegame.ReadItemClasses(f.FullName); }
+            catch { failed++; continue; }
+            foreach (var (itemType, classPath) in items)
+            {
+                var key = itemType + "\n" + classPath;
+                if (!seen.Add(key)) continue;
+                _persistentPresets.Add(new Preset { Label = ShortName(classPath), ItemType = itemType, ClassPath = classPath, Persistent = true });
+                added++;
+            }
+        }
+        SavePersistentPresets();
+        ResetPresets();
+        MessageBox.Show(this, $"Saves gescannt: {scanned} (fehlgeschlagen: {failed})\nNeue Presets hinzugefügt: {added}\nGesamt persistent: {_persistentPresets.Count}", "Presets aus allen Saves", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     private void LoadItemsFromSelectedSave(bool auto)
