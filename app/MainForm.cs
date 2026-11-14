@@ -249,10 +249,10 @@ public sealed class MainForm : Form
         _chkEdit = new CheckBox
         {
             Text = "Enable editing (drag objects)",
-            ForeColor = Color.Gainsboro,
+            ForeColor = Color.Red,
             Height = 30,
             Margin = new Padding(0, 0, 12, 0),
-            Padding = new Padding(0, 8, 0, 0),
+            Padding = new Padding(0, 12, 0, 0),
         };
         _chkEdit.CheckedChanged += (s, e) => _canvas.EditingEnabled = _chkEdit.Checked;
         var btnExport = new Button { Text = "Export mod .pak...", AutoSize = true, Height = 30 };
