@@ -547,7 +547,7 @@ internal static class Smoke
             // CUE4Parse validated the mount point (stripped the leading "../../.."); the pak format
             // expects the raw form, and ValidateMountPoint treats anything else as "strange" (root).
             writeMount = mountPoint.StartsWith("../") ? mountPoint : "../../../" + mountPoint;
-            rel = StripMount(mapPath, mountPoint);
+            rel = PakWriter.StripMount(mapPath, mountPoint);
         }
 
         var moved = new List<(MapObject obj, float nx, float ny, float nz)>();
@@ -607,17 +607,6 @@ internal static class Smoke
         return ok ? 0 : 7;
     }
 
-    private static string StripMount(string fullPath, string mountPoint)
-    {
-        var m = mountPoint.Replace('\\', '/');
-        while (m.StartsWith("../")) m = m[3..];
-        var fp = fullPath.Replace('\\', '/');
-        if (m.Length > 0 && fp.StartsWith(m, StringComparison.OrdinalIgnoreCase))
-            return fp[m.Length..];
-        var idx = fp.IndexOf("Content/", StringComparison.OrdinalIgnoreCase);
-        return idx >= 0 ? fp[(idx + "Content/".Length)..] : fp;
-    }
-
     /// <summary>
     /// --sites &lt;gameDir&gt; &lt;mapPath&gt;: lists the region tag database and the sites that own entities in the given tile.
     /// </summary>
@@ -675,8 +664,9 @@ internal static class Smoke
                 if (!hasInTile) continue;
                 inTile++;
                 var box = site?["boxes"]?[0];
-                var bx = box?["position"]?["x"] != null ? box["position"]["x"].GetValue<float>() : 0f;
-                var by = box?["position"]?["y"] != null ? box["position"]["y"].GetValue<float>() : 0f;
+                var pos = box?["position"];
+                var bx = pos?["x"] != null ? pos["x"]!.GetValue<float>() : 0f;
+                var by = pos?["y"] != null ? pos["y"]!.GetValue<float>() : 0f;
                 rows.Add($"  {(isOut ? "OUT " : "    ")}{type,-16} {bx / 100,9:0.#},{by / 100,9:0.#} m  {guid}  {tags}");
             }
         }

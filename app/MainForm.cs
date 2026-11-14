@@ -1259,7 +1259,7 @@ public sealed class MainForm : Form
                 ?? throw new InvalidOperationException("map is not inside a pak");
             var mp = ((CUE4Parse.UE4.Pak.PakFileReader)pe.Vfs).MountPoint;
             mountPoint = mp.StartsWith("../") ? mp : "../../../" + mp;
-            rel = StripMount(_map.Path, mp);
+            rel = PakWriter.StripMount(_map.Path, mp);
         }
         catch (Exception e)
         {
@@ -1295,7 +1295,7 @@ public sealed class MainForm : Form
                         ?? throw new InvalidOperationException("site map is not inside a pak");
                     var smp = ((CUE4Parse.UE4.Pak.PakFileReader)spe.Vfs).MountPoint;
                     smp = smp.StartsWith("../") ? smp : "../../../" + smp;
-                    entries.Add(new PakWriter.Entry { Path = StripMount(sp, smp), Data = sd });
+                    entries.Add(new PakWriter.Entry { Path = PakWriter.StripMount(sp, smp), Data = sd });
                 }
                 catch (Exception e)
                 {
@@ -1364,17 +1364,6 @@ public sealed class MainForm : Form
             MessageBox.Show(this, "Failed to write pak:\n" + e.Message, "Export", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
-    }
-
-    private static string StripMount(string fullPath, string mountPoint)
-    {
-        var m = mountPoint.Replace('\\', '/');
-        while (m.StartsWith("../")) m = m[3..];
-        var fp = fullPath.Replace('\\', '/');
-        if (m.Length > 0 && fp.StartsWith(m, StringComparison.OrdinalIgnoreCase))
-            return fp[m.Length..];
-        var idx = fp.IndexOf("Content/", StringComparison.OrdinalIgnoreCase);
-        return idx >= 0 ? fp[(idx + "Content/".Length)..] : fp;
     }
 
     private void UndoLastMove()
