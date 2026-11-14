@@ -252,6 +252,7 @@ public sealed class MainForm : Form
             ForeColor = Color.Gainsboro,
             Height = 30,
             Margin = new Padding(0, 0, 12, 0),
+            Padding = new Padding(0, 8, 0, 0),
         };
         _chkEdit.CheckedChanged += (s, e) => _canvas.EditingEnabled = _chkEdit.Checked;
         var btnExport = new Button { Text = "Export mod .pak...", AutoSize = true, Height = 30 };
