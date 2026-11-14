@@ -1212,6 +1212,15 @@ public sealed class MainForm : Form
         }
 
         var failures = new List<string>();
+
+        // name -> object map for owner-frame conversion: child actors nested under a (rotated)
+        // building prefab store transforms relative to it — see UmapPatcher.OwnerLocalLocation.
+        var owners = new Dictionary<string, MapObject>(StringComparer.Ordinal);
+        foreach (var p in _map.Objects)
+            if (!string.IsNullOrEmpty(p.Name) && p.HasTransform && !owners.ContainsKey(p.Name))
+                owners[p.Name] = p;
+        var carried = 0;
+
         foreach (var o in edited)
         {
             if (o.Deleted)
@@ -1222,7 +1231,10 @@ public sealed class MainForm : Form
             }
             if (o.Edited)
             {
-                var r = UmapPatcher.PatchLocation(data, o, o.X, o.Y, o.Z);
+                var (lx, ly, lz) = UmapPatcher.OwnerLocalLocation(o, owners);
+                if (lx == o.OrigX && ly == o.OrigY && lz == o.OrigZ && (o.X != o.OrigX || o.Y != o.OrigY || o.Z != o.OrigZ))
+                    carried++;
+                var r = UmapPatcher.PatchLocation(data, o, lx, ly, lz);
                 if (r.Error.Length > 0) failures.Add($"{o.Name}: move: {r.Error}");
             }
             if (o.EditedRotation)
@@ -1337,6 +1349,7 @@ public sealed class MainForm : Form
                     (cookedPatched != null ? $"\n  cooked asset: {cookedPatched} position(s) shifted{(cookedMissing > 0 ? $", {cookedMissing} not found (check status bar)" : "")}" : "") : "") +
                 (siteMaps.Count > 0 ? $"\nAuto multi-map: {siteMaps.Count} region site map(s) patched (map markers follow):\n{string.Join("\n", siteMaps.Select(m => Path.GetFileName(m.Path)))}\n" : "") +
                 $"\nObjects modified: {edited.Count - failures.Count:N0} / {edited.Count:N0}\n" +
+                (carried > 0 ? $"\nAttached child actor(s) left to follow their building (doors/terminals/containers): {carried}\n" : "") +
                 (failures.Count > 0
                     ? "\nUn-patched (stayed at original position):\n" + string.Join("\n", failures.Take(8)) + (failures.Count > 8 ? $"\n... and {failures.Count - 8} more" : "")
                     : "") +

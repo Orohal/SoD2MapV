@@ -164,7 +164,8 @@ public static class TgcPatcher
         {
             foreach (var node in arr)
             {
-                var path = node?["path"]?.GetValue<string>() ?? "";
+                if (node == null) continue;
+                var path = node["path"]?.GetValue<string>() ?? "";
                 foreach (var (prefix, dx, dy, dz) in prefixSet)
                 {
                     if (!path.StartsWith(prefix, StringComparison.Ordinal)) continue;
@@ -181,15 +182,19 @@ public static class TgcPatcher
         }
 
         // pass 2: shift each affected site once (boxes + direct child boxes)
-        var siteNodes = (root["sites"] as JsonArray)?.ToList() ?? new List<JsonNode>();
+        var siteArray = root["sites"] as JsonArray;
         var affectedSites = new List<(JsonNode node, float dx, float dy, float dz)>();
-        foreach (var site in siteNodes)
+        if (siteArray != null)
         {
-            if (!ReferencesAny(site, movedGuids)) continue;
-            var delta = FirstDelta(site, movedGuids, guidDelta);
-            affectedSites.Add((site, delta.dx, delta.dy, delta.dz));
-            ShiftNode(site, delta.dx, delta.dy, delta.dz, positionShifts);
-            moved++;
+            foreach (var site in siteArray)
+            {
+                if (site == null) continue;
+                if (!ReferencesAny(site, movedGuids)) continue;
+                var delta = FirstDelta(site, movedGuids, guidDelta);
+                affectedSites.Add((site, delta.dx, delta.dy, delta.dz));
+                ShiftNode(site, delta.dx, delta.dy, delta.dz, positionShifts);
+                moved++;
+            }
         }
 
         // pass 3: shift the primary-building markers of the affected sites (same delta as their site)
@@ -199,14 +204,18 @@ public static class TgcPatcher
             var siteDeltas = new Dictionary<string, (float dx, float dy, float dz)>();
             foreach (var (node, dx, dy, dz) in affectedSites)
                 if (TryGetGuid(node, "guid", out var g)) { siteGuids.Add(g); siteDeltas[g] = (dx, dy, dz); }
-            foreach (var marker in (root["sitePrimaryBuildingMarkers"] as JsonArray)?.ToList() ?? new List<JsonNode>())
+            if (root["sitePrimaryBuildingMarkers"] is JsonArray markers)
             {
-                if (!ReferencesAny(marker, siteGuids)) continue;
-                var delta = FirstDelta(marker, siteGuids, siteDeltas);
-                if (markerMoves != null && marker["position"] is JsonObject mp)
-                    markerMoves.Add(new MarkerMove(AsNum(mp["x"]), AsNum(mp["y"]), AsNum(mp["z"]), delta.dx, delta.dy, delta.dz));
-                ShiftNode(marker, delta.dx, delta.dy, delta.dz, positionShifts);
-                moved++;
+                foreach (var marker in markers)
+                {
+                    if (marker == null) continue;
+                    if (!ReferencesAny(marker, siteGuids)) continue;
+                    var delta = FirstDelta(marker, siteGuids, siteDeltas);
+                    if (markerMoves != null && marker["position"] is JsonObject mp)
+                        markerMoves.Add(new MarkerMove(AsNum(mp["x"]), AsNum(mp["y"]), AsNum(mp["z"]), delta.dx, delta.dy, delta.dz));
+                    ShiftNode(marker, delta.dx, delta.dy, delta.dz, positionShifts);
+                    moved++;
+                }
             }
         }
 
@@ -333,7 +342,7 @@ public static class TgcPatcher
                     Path = path,
                     X = AsNum(pos["x"]), Y = AsNum(pos["y"]), Z = AsNum(pos["z"]),
                     ExtentX = AsNum(ext["x"]), ExtentY = AsNum(ext["y"]),
-                    Yaw = b?["rotation"]?["yaw"] != null ? AsNum(b["rotation"]["yaw"]) : 0f, // tgc yaw is already degrees
+                    Yaw = b?["rotation"]?["yaw"] != null ? AsNum(b!["rotation"]!["yaw"]) : 0f, // tgc yaw is already degrees
                 });
             }
         }
