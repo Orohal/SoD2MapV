@@ -46,7 +46,9 @@ Was beim Injizieren passiert (pro Item):
 
 ## To do .
 
-1. **Hintergrund-Ausrichtung der uebrigen Regionen** - Faustite/Trumbull ist kalibriert (per Drag + Auto-Fit); fuer Cascade Hills, Drucker County, Meagher Valley, Providence Ridge und die Trumbull-Variante stehen Scale/Offset noch aus (Auto-Fit: `--bgfit`, Feinjustierung per Drag)
+1. **Feinschliff / Polish (Feature-Freeze für v0.6.3):** Viele kleine Verfeinerungen, Bugfixes und UX-Polish; bis zum Polish-Pass keine neuen Features. Fokus auf Stabilität, Konsistenz und Detailarbeit im Editor, Export und UI.
+2. **Injects verbessern für Map-Erkundung & Tests:** Fahrzeug-/Item-Injektion so erweitern, dass sich bearbeitete Maps bequem bereisen und testen lassen — u. a. Unterstützung für eine **„neue Gruppe"** (neue Community/Überlebendengruppe anlegen bzw. in eine frische Gruppe injizieren), damit man Maps von Grund auf durchspielen und verifizieren kann (Spawn, Fahrzeuge, Items, Claimables an neuen Positionen).
+3. **Hintergrund-Ausrichtung der uebrigen Regionen** - Faustite/Trumbull ist kalibriert (per Drag + Auto-Fit); fuer Cascade Hills, Drucker County, Meagher Valley, Providence Ridge und die Trumbull-Variante stehen Scale/Offset noch aus (Auto-Fit: `--bgfit`, Feinjustierung per Drag)
 
 ## Dokumentation
 
