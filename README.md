@@ -4,7 +4,7 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 
 <a href="https://www.buymeacoffee.com/Orohal" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-**Aktueller Stand: [v0.6.3](https://github.com/Orohal/SoD2MapV/releases/latest)** - Viewer + Voll-Editor + Fahrzeug- & **Item-Injektion** (GUI/CLI, Presets aus Save, persistent) + **Häuser/Objekte & Sites verschieben** (Gruppen-Auswahl, Undo, **Chunk-Patch-Export** für spielwirksame Tile-Mods, **Auto-Multi-Map**: Tile + `<region>_sites.umap` automatisch in einem Patch) + **Höhenanpassung (Z)** + **versetzte Sites vollständig claimbar im Spiel** (Tag-DB-Patch + Kind-Actor-Frame-Fix, ingame verifiziert) + **regionweite Site-Auswahl** (Klick auf den Regions-Knoten in der Map-Liste listet alle Sites aller Tiles; Auswahl lädt die Tile automatisch) + **Session-Wiederherstellung** + **Koordinaten-Fix** (Welt vs. Kachel-lokal für Spieler-Marker, Ansicht, Injektion) + **Funktion-Actoren** (Outpost-/Homesite-Interactables wandern mit dem Gebäude) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen, automatisch verankert) + **tgc-Site/Outpostable-Overlay** (claimbare Gebäude an ihren echten Positionen, klickbar in Box **und** Name). Details: [Repo-Status](#repo-status) (eingeklappt).
+**Aktueller Stand: [v0.6.4](https://github.com/Orohal/SoD2MapV/releases/latest)** - Viewer + Voll-Editor + Fahrzeug- & **Item-Injektion** (GUI/CLI, Presets aus Save, persistent) + **Häuser/Objekte & Sites verschieben** (Gruppen-Auswahl, Undo, **Chunk-Patch-Export** für spielwirksame Tile-Mods, **Auto-Multi-Map**: Tile + `<region>_sites.umap` automatisch in einem Patch) + **Höhenanpassung (Z)** + **versetzte Sites vollständig claimbar im Spiel** (Tag-DB-Patch + Kind-Actor-Frame-Fix, ingame verifiziert) + **regionweite Site-Auswahl** (Klick auf den Regions-Knoten in der Map-Liste listet alle Sites aller Tiles; Auswahl lädt die Tile automatisch) + **Session-Wiederherstellung** + **Koordinaten-Fix** (Welt vs. Kachel-lokal für Spieler-Marker, Ansicht, Injektion) + **Funktion-Actoren** (Outpost-/Homesite-Interactables wandern mit dem Gebäude) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen, automatisch verankert) + **tgc-Site/Outpostable-Overlay** (claimbare Gebäude an ihren echten Positionen, klickbar in Box **und** Name). Details: [Repo-Status](#repo-status) (eingeklappt).
 
 ## Features
 
@@ -46,7 +46,7 @@ Was beim Injizieren passiert (pro Item):
 
 ## To do .
 
-1. **Feinschliff / Polish (Feature-Freeze für v0.6.3):** Viele kleine Verfeinerungen, Bugfixes und UX-Polish; bis zum Polish-Pass keine neuen Features. Fokus auf Stabilität, Konsistenz und Detailarbeit im Editor, Export und UI.
+1. **Feinschliff / Polish:** Viele kleine Verfeinerungen, Bugfixes und UX-Polish; Fokus auf Stabilität, Konsistenz und Detailarbeit im Editor, Export und UI.
 2. **Injects verbessern für Map-Erkundung & Tests:** Fahrzeug-/Item-Injektion so erweitern, dass sich bearbeitete Maps bequem bereisen und testen lassen — u. a. Unterstützung für eine **„neue Gruppe"** (neue Community/Überlebendengruppe anlegen bzw. in eine frische Gruppe injizieren), damit man Maps von Grund auf durchspielen und verifizieren kann (Spawn, Fahrzeuge, Items, Claimables an neuen Positionen).
 3. **Hintergrund-Ausrichtung der uebrigen Regionen** - Faustite/Trumbull ist kalibriert (per Drag + Auto-Fit); fuer Cascade Hills, Drucker County, Meagher Valley, Providence Ridge und die Trumbull-Variante stehen Scale/Offset noch aus (Auto-Fit: `--bgfit`, Feinjustierung per Drag)
 4. **Persistent Item-Presets (umgesetzt):** Class-Paths + Item-Typ + Bezeichnung werden in `%LOCALAPPDATA%\SoD2MapViewer\item_presets.json` gespeichert und im Inject-Dialog über **„Preset speichern" / „Preset löschen"** verwaltet; **„Presets aus allen Saves"** scannt alle Savegames und legt fehlende Item-Klassen automatisch als Presets an. Presets sind damit über Saves hinweg wiederverwendbar (Cross-Save-kompatibel).
@@ -193,6 +193,7 @@ SoD2MapViewer.exe --saves
 <details>
 <summary><b>Repo-Status / Versionshistorie</b></summary>
 
+- **v0.6.4** - **Regionweite Site-Auswahl + persistente Item-Presets + Toolbar-Organisation**: Klick auf einen **Regions-Knoten** in der Map-Liste listet **alle Sites der Region** über alle Tiles (Label mit Tile-Name, aus den tgc-Entity-Pfaden abgeleitet); Auswahl einer fremden Tile lädt diese automatisch und springt zur Site. **Persistente Item-Presets** in `%LOCALAPPDATA%\SoD2MapViewer\item_presets.json`: „Preset speichern/löschen" im Inject-Dialog, **„Presets aus allen Saves"** scannt alle Savegames und legt fehlende Item-Klassen als Presets an (Cross-Save-kompatibel). **Toolbar** in vier logische Gruppen gegliedert (Game | Filter | Selection | Actions), „Enable editing" rechts neben „Feinjustierung (Drag)" mit rotem Label. Preset-Dropdowns alphabetisch sortiert.
 - **v0.6.3** - **Versetzte Sites vollständig claimbar (ingame verifiziert)**: Das Kind-Actor-Problem von v0.6.2 ist gefixt — Türen, Claim-Terminals und Container hängen als Kind-Aktoren an einem (um Yaw gedrehten) Gebäude-Prefab und speichern ihre Transforms **relativ zu dessen lokalem Frame**. Der Export schrieb bisher den Welt-Delta roh hinein (doppelte Bewegung + Rotation-Smear → Terminal landete ~300 m daneben). Jetzt erkennt der Export mitgezogene Kinder und lässt deren relative Transforms **unverändert** (sie folgen dem Prefab automatisch); einzeln verschobene Kinder bekommen ihren Delta korrekt in den Owner-Frame rotiert. Der Export-Dialog meldet die Anzahl der mitgeführten Kind-Aktoren. Carried-Erkennung robust gegen Float32-Auslöschung bei Kachel-Koordinaten (~10⁵ cm). BUGFIX-Paket: Nullability-Warnungen in `TgcPatcher`/`Smoke` bereinigt.
 - **v0.6.2** - **Cooked-Tag-Datenbank-Patch**: Das Spiel liest Runtime-Sites/Interactables/Container aus **`Tagged/Cooked/<region>_Tags.uasset`** (`TaggedDatabaseAsset.Database`), nicht aus der compiled JSON (`.tgc`). Der Export patcht jetzt **beide** Tag-Datenbanken im Chunk-1095-Pak (JSON + Cooked-Asset, bytegenaue X/Y/Z-Tripel-Shifts, auch bei unaligned Daten); Meldung `cooked asset: N position(s) shifted, M not found` im Export-Dialog. Ingame-Status: Meshes wandern korrekt, Laufzeit-Site-Actoren hingen noch an der alten Position (gefixt in v0.6.3).
 - **v0.6.1** - **Site-Name klickbar & Auto-Multi-Map**: Das gezeichnete **Site-Label** (z. B. „Autoshop") ist klickbar wie die Box (wählt alle Objekte der Site). **Automatische Multi-Map-Erkennung**: Verschiebt eine Site ihren `TaggedSitePrimaryBuildingMarker`, patcht der Editor die passende Regions-Sites-Map (`faustite_sites.umap` usw., Match über exakte Weltposition <1 cm) **automatisch in denselben Pak** — manuelles Multi-Map-Workflow (Checkbox + „Finalize Export") entfällt und wurde entfernt. Bugfixes: **tgc-Yaw** wurde als Radiant interpretiert (6302° statt 110°) → Boxen/Hit-Test korrekt rotiert; **Site-Dropdown** sortiert alphabetisch, zeigt Objektanzahl, nur Sites mit Objekten, Mehrfachauswahl derselben Site möglich (`SelectionChangeCommitted`). Ingame-Status: Meshes wandern korrekt, **Laufzeit-Site-Actoren (Claim/Türen/Container) noch nicht** (To-do 1).
@@ -226,14 +227,14 @@ Die gepackten Single-File-EXEs werden von einzelnen VirusTotal-Engines als gener
 
 **Wenn ungünstig:** Ordner-Variante ohne gepackte EXE nutzen — [SoD2MapViewer-framework-dependent-plain.zip](https://github.com/Orohal/SoD2MapV/releases/latest) (kleine EXE + DLLs, gleiche Funktion). Im eigenen Virenprogramm ggf. Ordner ausschließen.
 
-**Published Hashes (SHA256) - v0.6.3:**
+**Published Hashes (SHA256) - v0.6.4:**
 
 | Asset | SHA256 |
 | --- | --- |
-| `SoD2MapViewer-framework-dependent.zip` | `846c1b932ebfb537168dbdde0865e580a9e72b6f3aa66d55000e25b69bd92709` |
-| `SoD2MapViewer-framework-dependent-plain.zip` | `9703c33946ddada7e0e5e1210ddb659d16f9c926031e6b89392c3972a2bd77fa` |
-| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `8bed04a685c5c6f0c10f5df1cc1098d402a839c4d76b95e2881123959753386d` |
-| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `d06acdc7ebb52fd43489ff706dd530a140b6d3bc42f3ffbc0710ccd8ec831232` |
+| `SoD2MapViewer-framework-dependent.zip` | `332598df73f835e5ae7ed48f24340e70ad0999cb3ef426035e81dc65466072ee` |
+| `SoD2MapViewer-framework-dependent-plain.zip` | `17777b8c0e69c64dedec395407741b0683d66ba89ac18308145dc2c8b7bd97df` |
+| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `12e64dacbfbae9234785b0ba8481b40a2e58ef559aed03d2237edfc984bfb30` |
+| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `13be5806cec1a92bee71a1ced1176d8af84278d1a39869c4285fde693971aad9` |
 
 Historisch: v0.5.7-Artefakte siehe [Release v0.5.7](https://github.com/Orohal/SoD2MapV/releases/tag/v0.5.7). Die framework-dependent Single-File-EXE von **v0.4.0** (`9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A`) wurde von 9 VirusTotal-Engines generisch gemeldet (Packer-Heuristik der Single-File-Apphosts).
 
