@@ -50,14 +50,16 @@ Was beim Injizieren passiert (pro Item):
 
 ## Dokumentation
 
-Ausführliche Anleitung (Viewer, Editor, Modding-Workflow, CLI, Fehlerbehebung): [`docs/`](docs/) (GitHub).
+Ausführliche Anleitung (Viewer, Editor, Modding-Workflow, CLI, Fehlerbehebung) — auch als [GitHub-Wiki](https://github.com/Orohal/SoD2MapV/wiki):
 
-- [Home / Übersicht](docs/Home.md)
-- [Installation](docs/Installation.md)
-- [GUI & Bedienung](docs/GUI.md)
-- [Modding-Workflow (Objekte/Sites verschieben, PAK-Export)](docs/Modding-Workflow.md)
-- [CLI (Headless-Modi)](docs/CLI.md)
-- [Fehlerbehebung](docs/Troubleshooting.md)
+- [Home / Übersicht](https://github.com/Orohal/SoD2MapV/wiki/Home)
+- [Installation](https://github.com/Orohal/SoD2MapV/wiki/Installation)
+- [GUI & Bedienung](https://github.com/Orohal/SoD2MapV/wiki/GUI)
+- [Modding-Workflow (Objekte/Sites verschieben, PAK-Export)](https://github.com/Orohal/SoD2MapV/wiki/Modding-Workflow)
+- [CLI (Headless-Modi)](https://github.com/Orohal/SoD2MapV/wiki/CLI)
+- [Fehlerbehebung](https://github.com/Orohal/SoD2MapV/wiki/Troubleshooting)
+
+Quelltext der Doku liegt zusätzlich in [`docs/`](docs/) im Repo.
 
 ## Voraussetzungen & Build
 
