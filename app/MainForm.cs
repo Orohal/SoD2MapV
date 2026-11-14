@@ -293,11 +293,8 @@ public sealed class MainForm : Form
         var lblFilter = new Label { Text = "Filter", AutoSize = true, ForeColor = Color.Gray, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(8, 8, 6, 0), Margin = new Padding(0, 0, 0, 0) };
         var lblSelection = new Label { Text = "Selection", AutoSize = true, ForeColor = Color.Gray, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(8, 8, 6, 0), Margin = new Padding(0, 0, 0, 0) };
         var lblActions = new Label { Text = "Actions", AutoSize = true, ForeColor = Color.Gray, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(8, 8, 6, 0), Margin = new Padding(0, 0, 0, 0) };
-        var lblInject = new Label { Text = "Inject", AutoSize = true, ForeColor = Color.Gray, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(8, 8, 6, 0), Margin = new Padding(0, 0, 0, 0) };
-        var lblCharacter = new Label { Text = "Character", AutoSize = true, ForeColor = Color.Gray, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(8, 8, 6, 0), Margin = new Padding(0, 0, 0, 0) };
-        var lblUndo = new Label { Text = "Undo", AutoSize = true, ForeColor = Color.Gray, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(8, 8, 6, 0), Margin = new Padding(0, 0, 0, 0) };
-        var lblView = new Label { Text = "View", AutoSize = true, ForeColor = Color.Gray, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(8, 8, 6, 0), Margin = new Padding(0, 0, 0, 0) };
-        flow.Controls.AddRange(new Control[] { lblGame, btnOpen, lblFilter, labelMap, _search, lblSelection, labelHouse, _cmbHouses, labelSite, _cmbSites, lblActions, btnExport, btnAdjustZ, lblInject, btnInjectMenu, lblCharacter, btnChar, lblUndo, btnUndo, lblView, _chkBg, _chkSites, _chkEditBg, _chkEdit });
+
+        flow.Controls.AddRange(new Control[] { lblGame, btnOpen, lblFilter, labelMap, _search, lblSelection, labelHouse, _cmbHouses, labelSite, _cmbSites, lblActions, btnExport, btnAdjustZ, btnInjectMenu, btnChar, btnUndo, _chkBg, _chkSites, _chkEditBg, _chkEdit });
         top.Controls.Add(flow);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
         _canvas.SelectionChanged += _ => SaveSessionStateLight();
