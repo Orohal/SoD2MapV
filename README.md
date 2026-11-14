@@ -48,6 +48,17 @@ Was beim Injizieren passiert (pro Item):
 
 1. **Hintergrund-Ausrichtung der uebrigen Regionen** - Faustite/Trumbull ist kalibriert (per Drag + Auto-Fit); fuer Cascade Hills, Drucker County, Meagher Valley, Providence Ridge und die Trumbull-Variante stehen Scale/Offset noch aus (Auto-Fit: `--bgfit`, Feinjustierung per Drag)
 
+## Dokumentation
+
+Ausführliche Anleitung (Viewer, Editor, Modding-Workflow, CLI, Fehlerbehebung): [`docs/`](docs/) (GitHub).
+
+- [Home / Übersicht](docs/Home.md)
+- [Installation](docs/Installation.md)
+- [GUI & Bedienung](docs/GUI.md)
+- [Modding-Workflow (Objekte/Sites verschieben, PAK-Export)](docs/Modding-Workflow.md)
+- [CLI (Headless-Modi)](docs/CLI.md)
+- [Fehlerbehebung](docs/Troubleshooting.md)
+
 ## Voraussetzungen & Build
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (Windows), SoD2-Installation
