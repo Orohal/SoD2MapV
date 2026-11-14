@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
-using System.Windows.Forms;
+using System.Text.Json;
 
 namespace SoD2MapViewer;
 
@@ -16,7 +16,15 @@ public sealed class ItemInjectDialog : Form
         public string Label { get; init; } = "";
         public string ItemType { get; init; } = "Miscellaneous";
         public string ClassPath { get; init; } = "";
+        public bool Persistent { get; init; }
         public override string ToString() => Label;
+    }
+
+    private sealed class PresetDto
+    {
+        public string Label { get; set; } = "";
+        public string ItemType { get; set; } = "Miscellaneous";
+        public string ClassPath { get; set; } = "";
     }
 
     private static readonly Preset[] BuiltinPresets =
@@ -37,11 +45,14 @@ public sealed class ItemInjectDialog : Form
     private readonly Button _btnAdd = new() { Text = "Hinzufügen", AutoSize = true };
     private readonly Button _btnRemove = new() { Text = "Entfernen", AutoSize = true };
     private readonly Button _btnLoadFromSave = new() { Text = "Items aus Save laden", AutoSize = true };
+    private readonly Button _btnSavePreset = new() { Text = "Preset speichern", AutoSize = true };
+    private readonly Button _btnDeletePreset = new() { Text = "Preset löschen", AutoSize = true };
     private readonly Button _btnCancel = new() { Text = "Schließen", AutoSize = true, DialogResult = DialogResult.Cancel };
 
     private FileInfo[] _saves = Array.Empty<FileInfo>();
     private readonly List<(string ItemType, string ClassPath, int Stack)> _queue = new();
     private readonly HashSet<string> _seenPresetKeys = new(StringComparer.Ordinal);
+    private readonly List<Preset> _persistentPresets = new();
 
     public ItemInjectDialog()
     {
@@ -77,10 +88,11 @@ public sealed class ItemInjectDialog : Form
         AddRow("Survivor-ID:", _txtSurvivor);
         AddRow("", new Label { Text = "(-1 = LastPlayedSurvivorID)", AutoSize = true, ForeColor = Color.Gray, Margin = new Padding(0, 0, 0, 4) });
 
+        LoadPersistentPresets();
         ResetPresets();
         _cboPreset.SelectedIndexChanged += (s, e) => ApplyPreset();
         var presetRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty };
-        presetRow.Controls.AddRange(new Control[] { _cboPreset, _btnLoadFromSave });
+        presetRow.Controls.AddRange(new Control[] { _cboPreset, _btnLoadFromSave, _btnSavePreset, _btnDeletePreset });
         AddRow("Preset:", presetRow);
         AddRow("Item-Typ:", _txtItemType);
         AddRow("Class-Path:", _txtClass);
@@ -104,6 +116,8 @@ public sealed class ItemInjectDialog : Form
         _btnRemove.Click += (s, e) => RemoveSelected();
         _btnInject.Click += (s, e) => DoInject();
         _btnLoadFromSave.Click += (s, e) => LoadItemsFromSelectedSave(auto: false);
+        _btnSavePreset.Click += (s, e) => SaveCurrentAsPreset();
+        _btnDeletePreset.Click += (s, e) => DeleteSelectedPreset();
 
         ApplyPreset();
         LoadSaves();
@@ -153,6 +167,25 @@ public sealed class ItemInjectDialog : Form
         return i >= 0 && i + 1 < classPath.Length ? classPath[(i + 1)..] : classPath;
     }
 
+    private static string Prompt(string text, string caption, string defaultValue)
+    {
+        using var f = new Form { Text = caption, FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(10), MinimizeBox = false, MaximizeBox = false };
+        var lbl = new Label { Text = text, AutoSize = true, MaximumSize = new Size(400, 0) };
+        var txt = new TextBox { Text = defaultValue, Width = 320 };
+        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, AutoSize = true };
+        var cancel = new Button { Text = "Abbrechen", DialogResult = DialogResult.Cancel, AutoSize = true };
+        var panel = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown };
+        panel.Controls.Add(lbl);
+        panel.Controls.Add(txt);
+        var btns = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
+        btns.Controls.AddRange(new[] { ok, cancel });
+        panel.Controls.Add(btns);
+        f.Controls.Add(panel);
+        f.AcceptButton = ok;
+        f.CancelButton = cancel;
+        return f.ShowDialog() == DialogResult.OK ? txt.Text : "";
+    }
+
     private void ResetPresets()
     {
         _cboPreset.BeginUpdate();
@@ -165,10 +198,89 @@ public sealed class ItemInjectDialog : Form
                 _cboPreset.Items.Add(p);
                 _seenPresetKeys.Add(p.ItemType + "\n" + p.ClassPath);
             }
+            foreach (var p in _persistentPresets)
+            {
+                var key = p.ItemType + "\n" + p.ClassPath;
+                if (!_seenPresetKeys.Add(key)) continue;
+                _cboPreset.Items.Add(new Preset { Label = p.Label, ItemType = p.ItemType, ClassPath = p.ClassPath, Persistent = true });
+            }
             _cboPreset.Items.Add("(Manuell)");
             if (_cboPreset.Items.Count > 0) _cboPreset.SelectedIndex = 0;
         }
         finally { _cboPreset.EndUpdate(); }
+    }
+
+    private void LoadPersistentPresets()
+    {
+        _persistentPresets.Clear();
+        try
+        {
+            var path = PresetsPath();
+            if (!File.Exists(path)) return;
+            var json = File.ReadAllText(path);
+            var dtos = JsonSerializer.Deserialize<List<PresetDto>>(json);
+            if (dtos == null) return;
+            foreach (var d in dtos)
+            {
+                if (string.IsNullOrWhiteSpace(d.ClassPath) || string.IsNullOrWhiteSpace(d.ItemType)) continue;
+                _persistentPresets.Add(new Preset { Label = string.IsNullOrWhiteSpace(d.Label) ? ShortName(d.ClassPath) : d.Label, ItemType = d.ItemType, ClassPath = d.ClassPath, Persistent = true });
+            }
+        }
+        catch { /* ignore corrupt file */ }
+    }
+
+    private void SavePersistentPresets()
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(PresetsPath());
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            var dtos = _persistentPresets.Select(p => new PresetDto { Label = p.Label, ItemType = p.ItemType, ClassPath = p.ClassPath }).ToList();
+            var json = JsonSerializer.Serialize(dtos, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(PresetsPath(), json);
+        }
+        catch { /* ignore */ }
+    }
+
+    private static string PresetsPath() => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoD2MapViewer", "item_presets.json");
+
+    private void SaveCurrentAsPreset()
+    {
+        var cls = _txtClass.Text.Trim();
+        var type = _txtItemType.Text.Trim();
+        if (cls.Length == 0 || type.Length == 0)
+        {
+            MessageBox.Show(this, "Item-Typ und Class-Path dürfen nicht leer sein.", "Preset speichern", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        var label = Prompt("Bezeichnung für das Preset:", "Preset speichern", ShortName(cls));
+        if (string.IsNullOrWhiteSpace(label)) return;
+        // dedup
+        if (_persistentPresets.Any(p => p.ItemType == type && p.ClassPath == cls))
+        {
+            MessageBox.Show(this, "Dieses Preset existiert bereits.", "Preset speichern", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        _persistentPresets.Add(new Preset { Label = label.Trim(), ItemType = type, ClassPath = cls, Persistent = true });
+        SavePersistentPresets();
+        ResetPresets();
+        // select the new one
+        for (int i = 0; i < _cboPreset.Items.Count; i++)
+            if (_cboPreset.Items[i] is Preset p && p.ItemType == type && p.ClassPath == cls) { _cboPreset.SelectedIndex = i; break; }
+    }
+
+    private void DeleteSelectedPreset()
+    {
+        if (_cboPreset.SelectedItem is not Preset p || !p.Persistent)
+        {
+            MessageBox.Show(this, "Bitte ein gespeichertes (persistentes) Preset auswählen.", "Preset löschen", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        var r = MessageBox.Show(this, "Preset „" + p.Label + "\" wirklich löschen?", "Preset löschen", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (r != DialogResult.Yes) return;
+        _persistentPresets.RemoveAll(x => x.ItemType == p.ItemType && x.ClassPath == p.ClassPath);
+        SavePersistentPresets();
+        ResetPresets();
     }
 
     private void LoadItemsFromSelectedSave(bool auto)
@@ -192,7 +304,7 @@ public sealed class ItemInjectDialog : Form
                 var keep = new List<object>();
                 foreach (var it in _cboPreset.Items)
                 {
-                    if (it is Preset p && BuiltinPresets.Contains(p)) keep.Add(it);
+                    if (it is Preset p && (BuiltinPresets.Contains(p) || p.Persistent)) keep.Add(it);
                 }
                 _cboPreset.Items.Clear();
                 _seenPresetKeys.Clear();
