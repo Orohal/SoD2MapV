@@ -310,6 +310,7 @@ public static class TgcPatcher
         public string SiteType = "";
         public string[] Tags = Array.Empty<string>();
         public string Path = "";
+        public string Tile = "";       // tile name (e.g. "faustite_x2_y3") derived from entity paths
         public float X, Y, Z;          // box center (world, cm)
         public float ExtentX, ExtentY; // box extents (world, cm)
         public float Yaw;
@@ -320,6 +321,18 @@ public static class TgcPatcher
     {
         var list = new List<SiteBox>();
         if (root["sites"] is not JsonArray sites) return list;
+
+        // guid -> path index over the whole database: entity paths are prefixed "<tile>:",
+        // which lets us derive which tile a site belongs to (region-wide site lists).
+        var pathByGuid = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var arr in root.AsObject().Select(p => p.Value).OfType<JsonArray>())
+            foreach (var e in arr)
+            {
+                var g = e?["guid"]?.GetValue<string>();
+                var pth = e?["path"]?.GetValue<string>();
+                if (g != null && pth != null && !pathByGuid.ContainsKey(g)) pathByGuid[g] = pth;
+            }
+
         foreach (var site in sites)
         {
             var guid = site?["guid"]?.GetValue<string>() ?? "";
@@ -328,6 +341,15 @@ public static class TgcPatcher
             var tags = site?["tags"] is JsonArray ta
                 ? ta.Select(t => t?.GetValue<string>() ?? "").ToArray()
                 : Array.Empty<string>();
+            var tile = TileOfPath(path);
+            if (tile.Length == 0 && site?["contains"] is JsonArray contains)
+                foreach (var cg in contains)
+                {
+                    if (cg?.GetValue<string>() is not string cgGuid) continue;
+                    if (!pathByGuid.TryGetValue(cgGuid, out var ep)) continue;
+                    tile = TileOfPath(ep);
+                    if (tile.Length > 0) break;
+                }
             if (site?["boxes"] is not JsonArray boxes) continue;
             foreach (var b in boxes)
             {
@@ -340,6 +362,7 @@ public static class TgcPatcher
                     SiteType = type,
                     Tags = tags,
                     Path = path,
+                    Tile = tile,
                     X = AsNum(pos["x"]), Y = AsNum(pos["y"]), Z = AsNum(pos["z"]),
                     ExtentX = AsNum(ext["x"]), ExtentY = AsNum(ext["y"]),
                     Yaw = b?["rotation"]?["yaw"] != null ? AsNum(b!["rotation"]!["yaw"]) : 0f, // tgc yaw is already degrees
@@ -347,6 +370,16 @@ public static class TgcPatcher
             }
         }
         return list;
+    }
+
+    /// <summary>Extracts the tile name from a "&lt;tile&gt;:" prefixed tgc path ("faustite_x2_y3:..."); "" if none.</summary>
+    public static string TileOfPath(string path)
+    {
+        var i = path.IndexOf(':');
+        if (i <= 0 || i > 64) return "";
+        var tile = path[..i];
+        if (tile.Contains('/') || tile.Contains('\\')) return ""; // asset paths, not tile prefixes
+        return tile;
     }
 
     /// <summary>Summary of one region's tag database (for CLI diagnostics).</summary>

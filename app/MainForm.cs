@@ -33,7 +33,8 @@ public sealed class MainForm : Form
     private readonly ComboBox _cmbSites = null!;
     private bool _houseComboUpdating;
     private bool _siteComboUpdating;
-    private readonly List<(string Label, int Index)> _siteEntries = new();
+    private readonly List<(string Label, int Index, string Tile)> _siteEntries = new(); // Tile = "" -> current tile (_canvas.Sites), else tile map path (region-wide list)
+    private int _pendingSiteIndex = -1; // site to select after the pending tile load finishes
     private readonly Stack<UndoEntry> _undo = new();
     private SessionStateData _session = SessionState.Load();
     private List<string>? _pendingRestoreSelectionNames;
@@ -231,20 +232,22 @@ public sealed class MainForm : Form
             ForeColor = Color.Gainsboro,
             Margin = new Padding(0, 4, 12, 0),
         };
-        _cmbSites.SelectionChangeCommitted += (s, e) =>
+        _cmbSites.SelectionChangeCommitted += async (s, e) =>
         {
             if (_siteComboUpdating) return;
-            if (_cmbSites.SelectedItem is string label)
+            if (_cmbSites.SelectedItem is not string label) return;
+            var entry = _siteEntries.FirstOrDefault(x => x.Label == label);
+            if (entry.Index < 0) return;
+            // region-wide list: the entry points at another tile — load it first, then select the site
+            if (entry.Tile.Length > 0 && (_map == null || !string.Equals(_map.Path, entry.Tile, StringComparison.OrdinalIgnoreCase)))
             {
-                var entry = _siteEntries.FirstOrDefault(x => x.Label == label);
-                if (entry.Index < 0) return;
-                var sb = _canvas.Sites[entry.Index];
-                int count = _canvas.SelectSite(entry.Index);
-                _canvas.CenterOn(sb.X - _canvas.MapWorldOffsetX, sb.Y - _canvas.MapWorldOffsetY);
-                var tag = sb.Tags != null && sb.Tags.Contains("Outpostable") ? " (outpostable)" : "";
-                SetStatus($"site {sb.SiteType}{tag} selected: {count} object(s) in the tile. " +
-                          "Drag in Move mode to relocate; 'Export mod .pak' writes map + tgc patch so the claim follows.");
+                _pendingSiteIndex = entry.Index;
+                SetStatus($"loading tile for site: {Path.GetFileName(entry.Tile)} ...");
+                var model = await _loader.LoadMapAsync(entry.Tile);
+                SetMap(model); // applies _pendingSiteIndex after the site list is rebuilt
+                return;
             }
+            SelectSiteByIndex(entry.Index);
         };
         _chkEdit = new CheckBox
         {
@@ -428,6 +431,7 @@ public sealed class MainForm : Form
                 {
                     ForeColor = Color.FromArgb(255, 220, 150),
                     NodeFont = new Font(_mapTree.Font, FontStyle.Bold),
+                    Tag = $"region:{r.Key}", // region-wide Site dropdown on click
                 };
                 foreach (var m in g.maps)
                 {
@@ -566,12 +570,83 @@ public sealed class MainForm : Form
         }
     }
 
+    private void SelectSiteByIndex(int idx)
+    {
+        if (idx < 0 || idx >= _canvas.Sites.Count) return;
+        var sb = _canvas.Sites[idx];
+        int count = _canvas.SelectSite(idx);
+        _canvas.CenterOn(sb.X - _canvas.MapWorldOffsetX, sb.Y - _canvas.MapWorldOffsetY);
+        var tag = sb.Tags != null && sb.Tags.Contains("Outpostable") ? " (outpostable)" : "";
+        SetStatus($"site {sb.SiteType}{tag} selected: {count} object(s) in the tile. " +
+                  "Drag in Move mode to relocate; 'Export mod .pak' writes map + tgc patch so the claim follows.");
+    }
+
     private async void MapTreeSelected(object? sender, TreeViewEventArgs e)
     {
+        // region group node: populate the Site dropdown with ALL sites of the region (region-wide list);
+        // selecting one loads its tile automatically
+        if (e.Node?.Tag is string rtag && rtag.StartsWith("region:", StringComparison.Ordinal))
+        {
+            await PopulateRegionSites(rtag["region:".Length..]);
+            return;
+        }
         if (e.Node?.Tag is not string path) return; // group nodes have no Tag
         SetStatus($"parsing {Path.GetFileName(path)} ...");
         var model = await _loader.LoadMapAsync(path);
         SetMap(model);
+    }
+
+    /// <summary>Populates the Site dropdown with all sites of a region (from the region tgc), across all tiles.</summary>
+    private async Task PopulateRegionSites(string regionKey)
+    {
+        // any tile umap of this region provides the tgc path
+        var anyMap = _loader.MapPaths.FirstOrDefault(m =>
+            m.EndsWith(".umap", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(MapRegions.FromMapPath(m)?.Key, regionKey, StringComparison.OrdinalIgnoreCase));
+        if (anyMap == null) { SetStatus($"region '{regionKey}': no tile maps found."); return; }
+        var tgcPath = TgcPatcher.FindTgcPath(_loader.Provider, anyMap);
+        if (tgcPath == null) { SetStatus($"region '{regionKey}': no .tgc tag database found."); return; }
+
+        List<TgcPatcher.SiteBox> boxes;
+        try { boxes = TgcPatcher.GetSiteBoxes(TgcPatcher.Parse(_loader.ReadMapBytes(tgcPath))); }
+        catch (Exception ex) { SetStatus($"region '{regionKey}': tgc parse failed: {ex.Message}"); return; }
+
+        _siteComboUpdating = true;
+        _cmbSites.Items.Clear();
+        _siteEntries.Clear();
+        var entries = new List<(string Label, int Index, string Tile)>();
+        for (int i = 0; i < boxes.Count; i++)
+        {
+            var s = boxes[i];
+            if (s.Tile.Length == 0) continue; // cannot locate its tile
+            var tileMap = _loader.MapPaths.FirstOrDefault(m =>
+                m.EndsWith(".umap", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(Path.GetFileNameWithoutExtension(m), s.Tile, StringComparison.OrdinalIgnoreCase));
+            if (tileMap == null) continue;
+            var outp = s.Tags?.Contains("Outpostable") ?? false;
+            var type = string.IsNullOrEmpty(s.SiteType) ? "Site" : s.SiteType;
+            var g = s.Guid.Length >= 8 ? s.Guid[..8] : s.Guid;
+            var label = $"{(outp ? "OUT " : "")}{type} ({g})  @ {s.Tile}";
+            entries.Add((label, i, tileMap));
+        }
+        // alphabetical by type name (OUT prefix ignored) — same convention as the per-tile list
+        entries.Sort((a, b) =>
+        {
+            var ta = a.Label.StartsWith("OUT ") ? a.Label[4..] : a.Label;
+            var tb = b.Label.StartsWith("OUT ") ? b.Label[4..] : b.Label;
+            return string.Compare(ta, tb, StringComparison.OrdinalIgnoreCase);
+        });
+        foreach (var en in entries)
+        {
+            _siteEntries.Add(en);
+            _cmbSites.Items.Add(en.Label);
+        }
+        if (_cmbSites.Items.Count > 0) _cmbSites.SelectedIndex = 0;
+        _cmbSites.Enabled = _cmbSites.Items.Count > 0;
+        _siteComboUpdating = false;
+        SetStatus($"region '{MapRegions.FromMapPath(anyMap)?.Display ?? regionKey}': {entries.Count} site(s) across all tiles. " +
+                  "Selecting a site loads its tile automatically and jumps to it.");
+        await Task.CompletedTask;
     }
 
     private void SetMap(MapModel model)
@@ -612,7 +687,7 @@ public sealed class MainForm : Form
                     if (o.Y < minY) minY = o.Y; if (o.Y > maxY) maxY = o.Y;
                 }
             const float margin = 20000f; // 200 m
-            var entries = new List<(string Label, int Index)>();
+            var entries = new List<(string Label, int Index, string Tile)>();
             for (int i = 0; i < _canvas.Sites.Count; i++)
             {
                 var s = _canvas.Sites[i];
@@ -638,7 +713,7 @@ public sealed class MainForm : Form
                 var type = string.IsNullOrEmpty(s.SiteType) ? "Site" : s.SiteType;
                 var g = s.Guid.Length >= 8 ? s.Guid[..8] : s.Guid;
                 var label = $"{(outp ? "OUT " : "")}{type} ({g})  {count} obj";
-                entries.Add((label, i));
+                entries.Add((label, i, ""));
             }
             // alphabetical by type name (OUT prefix ignored, then GUID)
             entries.Sort((a, b) =>
@@ -655,6 +730,13 @@ public sealed class MainForm : Form
             _cmbSites.Enabled = _cmbSites.Items.Count > 0;
         }
         _siteComboUpdating = false;
+        // a region-wide site selection that triggered this tile load: select + center now
+        if (_pendingSiteIndex >= 0 && _pendingSiteIndex < _canvas.Sites.Count)
+        {
+            var idx = _pendingSiteIndex;
+            _pendingSiteIndex = -1;
+            SelectSiteByIndex(idx);
+        }
         var ok = model.Error == null;
         var bgMap = BgMaps.Get(_loader.Provider, bgRegion, 1800, model.Path);
         if (bgMap != null)
