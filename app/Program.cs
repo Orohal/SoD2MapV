@@ -216,6 +216,7 @@ internal static class Program
                 return 2;
             }
         }
+
         if (args.Length >= 1 && args[0] == "--savedelete")
         {
             try

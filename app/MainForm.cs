@@ -283,6 +283,7 @@ public sealed class MainForm : Form
             else
                 SetStatus("No player position known — click 'Show character' first.");
         });
+
         var btnInjectMenu = new Button { Text = "Inject ▾", AutoSize = true, Height = 30 };
         btnInjectMenu.Click += (s, e) => injectMenu.Show(btnInjectMenu, new Point(0, btnInjectMenu.Height));
         _chkBg = new CheckBox { Text = "Hintergrundkarte (Spiel-Asset)", AutoSize = true, Checked = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };

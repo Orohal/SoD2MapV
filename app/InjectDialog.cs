@@ -28,6 +28,7 @@ public sealed class InjectDialog : Form
         Height = 40,
     };
     private readonly Button _btnBrowseSave = new() { Text = "📁…", AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
+    private readonly Button _btnCopySave = new() { Text = "Kopie erstellen", AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
     private readonly Button _btnInject = new() { Text = "Inject", AutoSize = true };
     private readonly Button _btnCalibrate = new() { Text = "Calibrate...", AutoSize = true };
     private readonly Button _btnDeleteProbe = new() { Text = "Delete probe vehicle", AutoSize = true, Visible = false };
@@ -40,14 +41,18 @@ public sealed class InjectDialog : Form
     public InjectDialog(PointF? worldCm, float? zCm = null, float defaultYawDeg = 0f, string? hint = null)
     {
         Text = "Inject vehicle into savegame";
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MaximizeBox = true;
+        MinimizeBox = true;
         StartPosition = FormStartPosition.CenterParent;
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = new Font("Segoe UI", 9f);
+        MinimumSize = new Size(560, 320);
+        ClientSize = new Size(640, 380);
+        LoadSize();
+        FormClosing += (s, e) => SaveSize();
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(12), ColumnCount = 4, RowCount = 9 };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(12), ColumnCount = 4, RowCount = 9 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -62,7 +67,7 @@ public sealed class InjectDialog : Form
         }
 
         var saveRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty };
-        saveRow.Controls.AddRange(new Control[] { _cboSave, _btnBrowseSave });
+        saveRow.Controls.AddRange(new Control[] { _cboSave, _btnBrowseSave, _btnCopySave });
         AddRow(0, "Save slot:", saveRow);
         AddRow(1, "Vehicle class:", _cboClass);
         AddRow(2, "World X/Y/Z (m):", _txtX, _txtY, _txtZ);
@@ -81,6 +86,7 @@ public sealed class InjectDialog : Form
 
         _cboSave.SelectedIndexChanged += (s, e) => LoadClasses();
         _btnBrowseSave.Click += (s, e) => BrowseSave();
+        _btnCopySave.Click += (s, e) => CopySelectedSave();
         _btnInject.Click += (s, e) => Inject(calibrating: false);
         _btnCalibrate.Click += (s, e) => Inject(calibrating: true);
         _btnDeleteProbe.Click += (s, e) => DeleteProbe();
@@ -88,6 +94,36 @@ public sealed class InjectDialog : Form
 
         LoadSaves(worldCm, zCm, defaultYawDeg);
         if (!string.IsNullOrEmpty(hint)) _lblInfo.Text = hint;
+    }
+
+    private string SizePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoD2MapViewer", "injectdialog_size.txt");
+
+    private void LoadSize()
+    {
+        try
+        {
+            if (File.Exists(SizePath))
+            {
+                var parts = File.ReadAllText(SizePath).Split('x');
+                if (parts.Length == 2 && int.TryParse(parts[0], out var w) && int.TryParse(parts[1], out var h))
+                {
+                    w = Math.Max(w, MinimumSize.Width);
+                    h = Math.Max(h, MinimumSize.Height);
+                    ClientSize = new Size(w, h);
+                }
+            }
+        }
+        catch { }
+    }
+
+    private void SaveSize()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(SizePath)!);
+            File.WriteAllText(SizePath, $"{ClientSize.Width}x{ClientSize.Height}");
+        }
+        catch { }
     }
 
     private void LoadSaves(PointF? worldCm, float? zCm, float defaultYawDeg)
@@ -189,6 +225,50 @@ public sealed class InjectDialog : Form
         {
             MessageBox.Show(this, "Die ausgewählte Datei konnte nicht als SoD2-Save gelesen werden:\n" + ex.Message,
                 "Ungültiges Savegame", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private void CopySelectedSave()
+    {
+        var save = CurrentSave;
+        if (save == null)
+        {
+            MessageBox.Show(this, "Kein Savegame ausgewählt.", "Kopie erstellen", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        try
+        {
+            var dir = Path.GetDirectoryName(save.FullName) ?? "";
+            var name = Path.GetFileNameWithoutExtension(save.FullName);
+            var ext = Path.GetExtension(save.FullName);
+            var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var targetPath = Path.Combine(dir, $"{name}_copy_{stamp}{ext}");
+            var counter = 1;
+            while (File.Exists(targetPath))
+                targetPath = Path.Combine(dir, $"{name}_copy_{stamp}_{counter++}{ext}");
+
+            File.Copy(save.FullName, targetPath, overwrite: false);
+            try
+            {
+                Savegame.ReadInfo(targetPath);
+            }
+            catch (Exception ex)
+            {
+                try { File.Delete(targetPath); } catch { }
+                MessageBox.Show(this, "Die Kopie konnte nicht als gültiges Savegame gelesen werden und wurde gelöscht:\n" + ex.Message,
+                    "Kopie erstellen", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            _customSave = new FileInfo(targetPath);
+            RebuildSaveCombo(selectCustom: true);
+            LoadClasses();
+            _lblInfo.Text = "Kopie erstellt: " + Path.GetFileName(targetPath);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Kopie konnte nicht erstellt werden:\n" + ex.Message,
+                "Kopie erstellen", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 

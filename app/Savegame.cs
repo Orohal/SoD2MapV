@@ -153,6 +153,20 @@ public static class Savegame
         return -1;
     }
 
+    private static string TryFormatGuid(byte[] data, int offset)
+    {
+        try
+        {
+            if (offset < 0 || offset + 16 > data.Length) return "(bad)";
+            var g = new byte[16];
+            Array.Copy(data, offset, g, 0, 16);
+            return new Guid(g).ToString("N");
+        }
+        catch { return "(bad)"; }
+    }
+
+    private static byte[] GuidToBytes(Guid g) => g.ToByteArray();
+
     private static void HexDump(byte[] data, int start, int end)
     {
         for (var off = start; off < end; off += 16)
@@ -700,6 +714,14 @@ public static class Savegame
                 Console.WriteLine($"[saveprops] {n} site guids");
                 return 0;
             }
+            if (node.Children.Count == 0)
+            {
+                var len = node.DataEnd - node.DataStart;
+                var take = Math.Min(len, 160);
+                Console.WriteLine($"[saveprops] payload @{node.DataStart:X}..@{node.DataEnd:X} ({len} bytes)");
+                Console.WriteLine($"[saveprops] payload hex: {Convert.ToHexString(data, node.DataStart, take)}");
+                Console.WriteLine($"[saveprops] payload ascii: {Sanitize(data, node.DataStart, node.DataStart + take)}");
+            }
             var kids = node.Children.Count > 50 ? node.Children.Take(3).ToList() : node.Children;
             if (kids.Count < node.Children.Count)
                 Console.WriteLine($"[saveprops] (showing first {kids.Count} of {node.Children.Count} children)");
@@ -708,7 +730,15 @@ public static class Savegame
         }
         Console.WriteLine($"[saveprops] parsed to 0x{pos:X} of 0x{data.Length:X} — top-level props: {root.Children.Count}");
         foreach (var c in root.Children)
-            Console.WriteLine($"  {c.Name} ({c.Type}) size={c.Size:N0} children={c.Children.Count} @0x{c.HeaderStart:X}");
+        {
+            var extra = "";
+            if ((c.Name == "ID" || c.Name == "GameId" || c.Name == "PersistentSaveId" || c.Name == "SaveSessionId")
+                && c.DataEnd - c.DataStart == 16)
+            {
+                extra = " guid=" + TryFormatGuid(data, c.DataStart);
+            }
+            Console.WriteLine($"  {c.Name} ({c.Type}) size={c.Size:N0} children={c.Children.Count} @0x{c.HeaderStart:X}{extra}");
+        }
 
         // locate VehicleCollection -> VehicleSaveCollection (nested anywhere in the tree,
         // e.g. under MapSaveCollection; older saves may use the name "VehicleSaves")
@@ -1639,4 +1669,6 @@ public static class Savegame
         }
         return result;
     }
+
+
 }

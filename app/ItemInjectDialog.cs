@@ -48,6 +48,7 @@ public sealed class ItemInjectDialog : Form
     private readonly Button _btnLoadFromAllSaves = new() { Text = "Presets aus allen Saves", AutoSize = true };
     private readonly Button _btnSavePreset = new() { Text = "Preset speichern", AutoSize = true };
     private readonly Button _btnDeletePreset = new() { Text = "Preset löschen", AutoSize = true };
+    private readonly Button _btnCopySave = new() { Text = "Kopie erstellen", AutoSize = true };
     private readonly Button _btnCancel = new() { Text = "Schließen", AutoSize = true, DialogResult = DialogResult.Cancel };
 
     private FileInfo[] _saves = Array.Empty<FileInfo>();
@@ -60,14 +61,16 @@ public sealed class ItemInjectDialog : Form
     {
         Text = "Inject item into survivor backpack";
         StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        AutoSize = true;
-        AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MaximizeBox = true;
+        MinimizeBox = true;
         Padding = new Padding(10);
+        MinimumSize = new Size(620, 480);
+        ClientSize = new Size(680, 540);
+        LoadSize();
+        FormClosing += (s, e) => SaveSize();
 
-        var root = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Dock = DockStyle.Fill };
+        var root = new TableLayoutPanel { ColumnCount = 2, Dock = DockStyle.Fill };
         root.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         root.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
@@ -85,7 +88,8 @@ public sealed class ItemInjectDialog : Form
         var btnBrowse = new Button { Text = "📁…", AutoSize = true, Height = _cboSave.PreferredHeight };
         btnRefresh.Click += (s, e) => LoadSaves();
         btnBrowse.Click += (s, e) => BrowseSave();
-        saveRow.Controls.AddRange(new Control[] { _cboSave, btnRefresh, btnBrowse });
+        _btnCopySave.Click += (s, e) => CopySelectedSave();
+        saveRow.Controls.AddRange(new Control[] { _cboSave, btnRefresh, btnBrowse, _btnCopySave });
         AddRow("Savegame:", saveRow);
 
         _cboSave.SelectedIndexChanged += (s, e) => { UpdateInfo(); LoadItemsFromSelectedSave(auto: true); };
@@ -115,7 +119,10 @@ public sealed class ItemInjectDialog : Form
         Controls.Add(root);
         AcceptButton = _btnInject;
         CancelButton = _btnCancel;
+        LoadSize();
+        FormClosing += (s, e) => SaveSize();
 
+        _btnCopySave.Click += (s, e) => CopySelectedSave();
         _btnAdd.Click += (s, e) => AddCurrent();
         _btnRemove.Click += (s, e) => RemoveSelected();
         _btnInject.Click += (s, e) => DoInject();
@@ -127,6 +134,38 @@ public sealed class ItemInjectDialog : Form
         ApplyPreset();
         LoadSaves();
     }
+
+    private string SizePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoD2MapViewer", "iteminjectdialog_size.txt");
+
+    private void LoadSize()
+    {
+        try
+        {
+            if (File.Exists(SizePath))
+            {
+                var parts = File.ReadAllText(SizePath).Split('x');
+                if (parts.Length == 2 && int.TryParse(parts[0], out var w) && int.TryParse(parts[1], out var h))
+                {
+                    w = Math.Max(w, MinimumSize.Width);
+                    h = Math.Max(h, MinimumSize.Height);
+                    ClientSize = new Size(w, h);
+                }
+            }
+        }
+        catch { }
+    }
+
+    private void SaveSize()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(SizePath)!);
+            File.WriteAllText(SizePath, $"{ClientSize.Width}x{ClientSize.Height}");
+        }
+        catch { }
+    }
+
+    // (size persistence helpers above)
 
     private void ApplyPreset()
     {
@@ -463,6 +502,51 @@ public sealed class ItemInjectDialog : Form
         {
             MessageBox.Show(this, "Die ausgewählte Datei konnte nicht als SoD2-Save gelesen werden:\n" + ex.Message,
                 "Ungültiges Savegame", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private void CopySelectedSave()
+    {
+        var sav = SelectedSave();
+        if (sav == null)
+        {
+            MessageBox.Show(this, "Kein Savegame ausgewählt.", "Kopie erstellen", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        try
+        {
+            var dir = Path.GetDirectoryName(sav) ?? "";
+            var name = Path.GetFileNameWithoutExtension(sav);
+            var ext = Path.GetExtension(sav);
+            var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var targetPath = Path.Combine(dir, $"{name}_copy_{stamp}{ext}");
+            var counter = 1;
+            while (File.Exists(targetPath))
+                targetPath = Path.Combine(dir, $"{name}_copy_{stamp}_{counter++}{ext}");
+
+            File.Copy(sav, targetPath, overwrite: false);
+            try
+            {
+                Savegame.ReadInfo(targetPath);
+            }
+            catch (Exception ex)
+            {
+                try { File.Delete(targetPath); } catch { }
+                MessageBox.Show(this, "Die Kopie konnte nicht als gültiges Savegame gelesen werden und wurde gelöscht:\n" + ex.Message,
+                    "Kopie erstellen", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            _customSave = new FileInfo(targetPath);
+            RebuildSaveCombo(selectCustom: true);
+            UpdateInfo();
+            LoadItemsFromSelectedSave(auto: true);
+            _lblInfo.Text = "Kopie erstellt: " + Path.GetFileName(targetPath);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Kopie konnte nicht erstellt werden:\n" + ex.Message,
+                "Kopie erstellen", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
