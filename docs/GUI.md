@@ -54,6 +54,8 @@ Toolbar **"Hintergrundkarte (Spiel-Asset)"** overlays the in-game vector map bui
 
 Claimable buildings and site boxes from the region `.tgc` are drawn at their real positions. The boxes are **clickable** — clicking a box (or its name label) selects all objects of that site. The **Site:** dropdown lists the sites of the current tile (`OUT Autoshop (84D09511)`), sorted alphabetically with object counts, and jumps the view to the site.
 
+**Region-wide site selection:** clicking a **region group node** in the map list (e.g. "Trumbull Valley (37)") lists **all sites of the region** across all tiles, labelled with their tile (`OUT Autoshop (84D09511)  @ faustite_x2_y3`). Selecting a site from another tile loads that tile automatically, selects the site and centres the view.
+
 ## Vehicle injection
 
 Toolbar **Inject vehicle…** (or right-click on the map → position). Calibrate once per save (probe vehicle → measure offset → enter East/North in meters). Then inject real vehicles at the chosen spot. Requires the game to be closed; automatic backup under `Backups\`. Calibration persists in `%LOCALAPPDATA%\SoD2MapViewer\calibration.json`.
