@@ -288,7 +288,7 @@ public sealed class MainForm : Form
         _chkSites.CheckedChanged += (s, e) => { _canvas.ShowSites = _chkSites.Checked; _canvas.Invalidate(); };
         _chkEditBg = new CheckBox { Text = "Feinjustierung (Drag)", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
         _chkEditBg.CheckedChanged += (s, e) => { _canvas.EditBgOffset = _chkEditBg.Checked; _canvas.Invalidate(); };
-        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, labelSite, _cmbSites, _chkEdit, btnExport, btnAdjustZ, btnInjectMenu, btnChar, btnUndo, _chkBg, _chkSites, _chkEditBg });
+        flow.Controls.AddRange(new Control[] { btnOpen, labelMap, _search, labelHouse, _cmbHouses, labelSite, _cmbSites, btnExport, btnAdjustZ, btnInjectMenu, btnChar, btnUndo, _chkBg, _chkSites, _chkEditBg, _chkEdit });
         top.Controls.Add(flow);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
         _canvas.SelectionChanged += _ => SaveSessionStateLight();
