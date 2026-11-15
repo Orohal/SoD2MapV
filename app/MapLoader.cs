@@ -128,7 +128,14 @@ public sealed class MapLoader
                         { pkgData = d; break; }
                 }
             }
-            exports = package!.GetExports().ToArray();
+            if (package == null)
+            {
+                model.FailedExports = -1;
+                model.Error = "Failed to load package";
+                model.LoadMs = sw.ElapsedMilliseconds;
+                return model;
+            }
+            exports = package.GetExports().ToArray();
         }
         catch (Exception e)
         {
@@ -168,9 +175,12 @@ public sealed class MapLoader
                         // using the raw value directly resolved the NEIGHBORING component's transform.
                         comp = package.GetExport(rootIdx.Index - 1);
                         obj.ComponentExportIndex = rootIdx.Index - 1;
-                        var cexp = ((Package)package).ExportMap[rootIdx.Index - 1];
-                        obj.ComponentSerialOffset = cexp.SerialOffset;
-                        obj.ComponentSerialSize = cexp.SerialSize;
+                        if (package is Package pkg)
+                        {
+                            var cexp = pkg.ExportMap[rootIdx.Index - 1];
+                            obj.ComponentSerialOffset = cexp.SerialOffset;
+                            obj.ComponentSerialSize = cexp.SerialSize;
+                        }
                     }
                     else if (rootIdx.IsImport)
                         comp = package.FindObject(rootIdx)?.Value; // rarely: root comp outside map package

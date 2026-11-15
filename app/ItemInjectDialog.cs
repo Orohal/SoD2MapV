@@ -578,7 +578,29 @@ public sealed class ItemInjectDialog : Form
 
     private static bool IsGameRunning()
     {
-        try { return Process.GetProcessesByName("StateOfDecay2").Length > 0; }
+        try
+        {
+            // Check for multiple possible SoD2 process names (UWP, Steam, Xbox, etc.)
+            var processNames = new[]
+            {
+                "StateOfDecay2",                    // Steam/Win32
+                "StateOfDecay2-WinGDK-Shipping",   // Xbox/MS Store (GDK)
+                "StateOfDecay2-WinGDK-Test",       // Xbox/MS Store test build
+                "StateOfDecay2-WinGDK-Development", // Xbox/MS Store dev build
+                "StateOfDecay2-Win64-Shipping",    // Alternative Win64 build name
+            };
+            foreach (var name in processNames)
+            {
+                if (Process.GetProcessesByName(name).Length > 0)
+                    return true;
+            }
+            // Fallback: check for any process with "StateOfDecay2" in the name
+            return Process.GetProcesses().Any(p =>
+            {
+                try { return p.ProcessName.Contains("StateOfDecay2", StringComparison.OrdinalIgnoreCase); }
+                catch { return false; }
+            });
+        }
         catch { return false; }
     }
 

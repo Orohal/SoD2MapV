@@ -313,7 +313,29 @@ public sealed class InjectDialog : Form
 
     private static bool GameRunning()
     {
-        try { return Process.GetProcessesByName("StateOfDecay2").Length > 0; }
+        try
+        {
+            // Check for multiple possible SoD2 process names (UWP, Steam, Xbox, etc.)
+            var processNames = new[]
+            {
+                "StateOfDecay2",                    // Steam/Win32
+                "StateOfDecay2-WinGDK-Shipping",   // Xbox/MS Store (GDK)
+                "StateOfDecay2-WinGDK-Test",       // Xbox/MS Store test build
+                "StateOfDecay2-WinGDK-Development", // Xbox/MS Store dev build
+                "StateOfDecay2-Win64-Shipping",    // Alternative Win64 build name
+            };
+            foreach (var name in processNames)
+            {
+                if (Process.GetProcessesByName(name).Length > 0)
+                    return true;
+            }
+            // Fallback: check for any process with "StateOfDecay2" in the name
+            return Process.GetProcesses().Any(p =>
+            {
+                try { return p.ProcessName.Contains("StateOfDecay2", StringComparison.OrdinalIgnoreCase); }
+                catch { return false; }
+            });
+        }
         catch { return false; }
     }
 
@@ -410,27 +432,49 @@ public sealed class InjectDialog : Form
             StartPosition = FormStartPosition.CenterParent,
             MaximizeBox = false,
             MinimizeBox = false,
-            ClientSize = new Size(430, 150),
+            ClientSize = new Size(500, 180),
         };
         var lbl = new Label
         {
             Text = "Where did the probe vehicle end up, relative to the clicked map point?\n" +
-                   "East: positive = east, negative = west.   North: positive = north, negative = south.",
+                   "East:  positive = East,  negative = West.\n" +
+                   "North: positive = North, negative = South.\n" +
+                   "Values are in meters. Leave as 0 if the probe appeared exactly at the clicked point.",
             AutoSize = true,
             Location = new Point(12, 10),
+            MaximumSize = new Size(470, 60),
         };
-        var lblE = new Label { Text = "East (m):", AutoSize = true, Location = new Point(12, 68) };
-        var lblN = new Label { Text = "North (m):", AutoSize = true, Location = new Point(160, 68) };
-        txtE.Location = new Point(70, 65);
-        txtN.Location = new Point(225, 65);
-        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(330, 105) };
-        var cancel = new Button { Text = "Skip", DialogResult = DialogResult.Cancel, Location = new Point(330, 65) };
+        var lblE = new Label { Text = "East (m):", AutoSize = true, Location = new Point(12, 80) };
+        var lblN = new Label { Text = "North (m):", AutoSize = true, Location = new Point(200, 80) };
+        txtE.Location = new Point(70, 77);
+        txtN.Location = new Point(260, 77);
+        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(395, 135) };
+        var cancel = new Button { Text = "Skip calibration", DialogResult = DialogResult.Cancel, Location = new Point(395, 95) };
         form.Controls.AddRange(new Control[] { lbl, lblE, txtE, lblN, txtN, ok, cancel });
         form.AcceptButton = ok;
         form.CancelButton = cancel;
         if (form.ShowDialog(this) != DialogResult.OK) return false;
-        return double.TryParse(txtE.Text, System.Globalization.NumberStyles.Float, inv, out east)
+
+        var parseOk = double.TryParse(txtE.Text, System.Globalization.NumberStyles.Float, inv, out east)
             & double.TryParse(txtN.Text, System.Globalization.NumberStyles.Float, inv, out north);
+
+        if (!parseOk)
+        {
+            MessageBox.Show(this, "Invalid offset values. Please enter numeric values.", "Invalid Input",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        // Validate offset values are reasonable
+        const double MaxOffsetM = 10000; // 10 km max offset
+        if (Math.Abs(east) > MaxOffsetM || Math.Abs(north) > MaxOffsetM)
+        {
+            MessageBox.Show(this, $"Offset values exceed reasonable bounds (±{MaxOffsetM} m). Please re-enter.", "Invalid Offset",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        return true;
     }
 
     private void DeleteProbe()

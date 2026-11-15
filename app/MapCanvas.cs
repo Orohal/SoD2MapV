@@ -186,6 +186,18 @@ namespace SoD2MapViewer;
         Cursor = Cursors.Cross;
     }
 
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            foreach (var brush in _brushCache.Values)
+                brush.Dispose();
+            _brushCache.Clear();
+            _tip?.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+
     public void SetObjects(IReadOnlyList<MapObject> objects)
     {
         Objects = objects;
@@ -679,7 +691,8 @@ namespace SoD2MapViewer;
                         var end = new PointF(p.X + MathF.Cos(yaw) * arrowLen, p.Y - MathF.Sin(yaw) * arrowLen);
                         using var arr = new Pen(Color.Yellow, 2f);
                         g.DrawLine(arr, p.X, p.Y, end.X, end.Y);
-                        g.FillEllipse(new SolidBrush(Color.Yellow), end.X - 3, end.Y - 3, 6, 6);
+                        using var yellowBrush = new SolidBrush(Color.Yellow);
+                        g.FillEllipse(yellowBrush, end.X - 3, end.Y - 3, 6, 6);
                     }
                     else if (Mode == EditMode.Scale)
                     {

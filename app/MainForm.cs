@@ -480,7 +480,7 @@ public sealed class MainForm : Form
                 var names = new List<string>();
                 foreach (var idx in sel)
                 {
-                    if (idx < 0 || idx >= _visible.Count) continue;
+                    if (!IsVisibleIndex(idx)) continue;
                     names.Add(_visible[idx].Name);
                 }
                 _session.SelectedNames = names;
@@ -518,11 +518,9 @@ public sealed class MainForm : Form
         return null;
     }
 
-    private void RestorePendingSelection(string mapPath)
+    private void RestorePendingSelection()
     {
         if (_pendingRestoreSelectionNames == null) return;
-        if (!string.Equals(_session.LastMapPath, mapPath, StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(_pendingRestoreSelectionNames.Count > 0 ? mapPath : mapPath, mapPath, StringComparison.Ordinal)) { }
         var names = _pendingRestoreSelectionNames;
         var primary = _pendingRestorePrimaryName;
         _pendingRestoreSelectionNames = null;
@@ -582,6 +580,25 @@ public sealed class MainForm : Form
                   "Drag in Move mode to relocate; 'Export mod .pak' writes map + tgc patch so the claim follows.");
     }
 
+    private static string SiteLabelCore(TgcPatcher.SiteBox s)
+    {
+        var outp = s.Tags?.Contains("Outpostable") ?? false;
+        var type = string.IsNullOrEmpty(s.SiteType) ? "Site" : s.SiteType;
+        var g = s.Guid.Length >= 8 ? s.Guid[..8] : s.Guid;
+        return $"{(outp ? "OUT " : "")}{type} ({g})";
+    }
+
+    private static void SortSiteEntries(List<(string Label, int Index, string Tile)> entries)
+    {
+        // alphabetical by type name (OUT prefix ignored)
+        entries.Sort((a, b) =>
+        {
+            var ta = a.Label.StartsWith("OUT ") ? a.Label[4..] : a.Label;
+            var tb = b.Label.StartsWith("OUT ") ? b.Label[4..] : b.Label;
+            return string.Compare(ta, tb, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
     private async void MapTreeSelected(object? sender, TreeViewEventArgs e)
     {
         // region group node: populate the Site dropdown with ALL sites of the region (region-wide list);
@@ -598,19 +615,19 @@ public sealed class MainForm : Form
     }
 
     /// <summary>Populates the Site dropdown with all sites of a region (from the region tgc), across all tiles.</summary>
-    private async Task PopulateRegionSites(string regionKey)
+    private Task PopulateRegionSites(string regionKey)
     {
         // any tile umap of this region provides the tgc path
         var anyMap = _loader.MapPaths.FirstOrDefault(m =>
             m.EndsWith(".umap", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(MapRegions.FromMapPath(m)?.Key, regionKey, StringComparison.OrdinalIgnoreCase));
-        if (anyMap == null) { SetStatus($"region '{regionKey}': no tile maps found."); return; }
+        if (anyMap == null) { SetStatus($"region '{regionKey}': no tile maps found."); return Task.CompletedTask; }
         var tgcPath = TgcPatcher.FindTgcPath(_loader.Provider, anyMap);
-        if (tgcPath == null) { SetStatus($"region '{regionKey}': no .tgc tag database found."); return; }
+        if (tgcPath == null) { SetStatus($"region '{regionKey}': no .tgc tag database found."); return Task.CompletedTask; }
 
         List<TgcPatcher.SiteBox> boxes;
         try { boxes = TgcPatcher.GetSiteBoxes(TgcPatcher.Parse(_loader.ReadMapBytes(tgcPath))); }
-        catch (Exception ex) { SetStatus($"region '{regionKey}': tgc parse failed: {ex.Message}"); return; }
+        catch (Exception ex) { SetStatus($"region '{regionKey}': tgc parse failed: {ex.Message}"); return Task.CompletedTask; }
 
         _siteComboUpdating = true;
         _cmbSites.Items.Clear();
@@ -624,19 +641,10 @@ public sealed class MainForm : Form
                 m.EndsWith(".umap", StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(Path.GetFileNameWithoutExtension(m), s.Tile, StringComparison.OrdinalIgnoreCase));
             if (tileMap == null) continue;
-            var outp = s.Tags?.Contains("Outpostable") ?? false;
-            var type = string.IsNullOrEmpty(s.SiteType) ? "Site" : s.SiteType;
-            var g = s.Guid.Length >= 8 ? s.Guid[..8] : s.Guid;
-            var label = $"{(outp ? "OUT " : "")}{type} ({g})  @ {s.Tile}";
+            var label = SiteLabelCore(s) + $"  @ {s.Tile}";
             entries.Add((label, i, tileMap));
         }
-        // alphabetical by type name (OUT prefix ignored) — same convention as the per-tile list
-        entries.Sort((a, b) =>
-        {
-            var ta = a.Label.StartsWith("OUT ") ? a.Label[4..] : a.Label;
-            var tb = b.Label.StartsWith("OUT ") ? b.Label[4..] : b.Label;
-            return string.Compare(ta, tb, StringComparison.OrdinalIgnoreCase);
-        });
+        SortSiteEntries(entries);
         foreach (var en in entries)
         {
             _siteEntries.Add(en);
@@ -647,7 +655,7 @@ public sealed class MainForm : Form
         _siteComboUpdating = false;
         SetStatus($"region '{MapRegions.FromMapPath(anyMap)?.Display ?? regionKey}': {entries.Count} site(s) across all tiles. " +
                   "Selecting a site loads its tile automatically and jumps to it.");
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     }
 
     private void SetMap(MapModel model)
@@ -710,19 +718,10 @@ public sealed class MainForm : Form
                     if (Math.Abs(qx) <= s.ExtentX && Math.Abs(qy) <= s.ExtentY) count++;
                 }
                 if (count == 0) continue; // empty box (e.g. tgc/map state mismatch) — not selectable
-                var outp = s.Tags?.Contains("Outpostable") ?? false;
-                var type = string.IsNullOrEmpty(s.SiteType) ? "Site" : s.SiteType;
-                var g = s.Guid.Length >= 8 ? s.Guid[..8] : s.Guid;
-                var label = $"{(outp ? "OUT " : "")}{type} ({g})  {count} obj";
+                var label = SiteLabelCore(s) + $"  {count} obj";
                 entries.Add((label, i, ""));
             }
-            // alphabetical by type name (OUT prefix ignored, then GUID)
-            entries.Sort((a, b) =>
-            {
-                var ta = a.Label.StartsWith("OUT ") ? a.Label[4..] : a.Label;
-                var tb = b.Label.StartsWith("OUT ") ? b.Label[4..] : b.Label;
-                return string.Compare(ta, tb, StringComparison.OrdinalIgnoreCase);
-            });
+            SortSiteEntries(entries);
             foreach (var en in entries)
             {
                 _siteEntries.Add(en);
@@ -755,7 +754,7 @@ public sealed class MainForm : Form
                 (ok ? "" : $"  |  ERROR: {model.Error}"));
         ApplyFilter();
         RenderLegend();
-        RestorePendingSelection(model.Path);
+        RestorePendingSelection();
         SaveSessionStateLight();
     }
 
@@ -883,14 +882,22 @@ public sealed class MainForm : Form
         return e;
     }
 
-    private void CanvasObjectMoved(int idx, float oldX, float oldY)
+    private bool IsVisibleIndex(int idx) => idx >= 0 && idx < _visible.Count;
+
+    private UndoItem MoveSnapshot(int idx, float oldX, float oldY)
     {
-        if (idx < 0 || idx >= _visible.Count) return;
         var item = Snapshot(idx);
         item.OldX = oldX;
         item.OldY = oldY;
         // Z unchanged by 2D drag
         item.OldZ = _visible[idx].Z;
+        return item;
+    }
+
+    private void CanvasObjectMoved(int idx, float oldX, float oldY)
+    {
+        if (!IsVisibleIndex(idx)) return;
+        var item = MoveSnapshot(idx, oldX, oldY);
         var o = _visible[idx];
         _undo.Push(Entry(item));
         o.Edited = true;
@@ -904,12 +911,8 @@ public sealed class MainForm : Form
         var items = new List<UndoItem>();
         foreach (var m in moves)
         {
-            if (m.Idx < 0 || m.Idx >= _visible.Count) continue;
-            var item = Snapshot(m.Idx);
-            item.OldX = m.OldX;
-            item.OldY = m.OldY;
-            item.OldZ = _visible[m.Idx].Z;
-            items.Add(item);
+            if (!IsVisibleIndex(m.Idx)) continue;
+            items.Add(MoveSnapshot(m.Idx, m.OldX, m.OldY));
             _visible[m.Idx].Edited = true;
         }
         _undo.Push(new UndoEntry { Items = items });
@@ -920,7 +923,7 @@ public sealed class MainForm : Form
 
     private void CanvasObjectRotated(int idx, float oldQX, float oldQY, float oldQZ, float oldQW)
     {
-        if (idx < 0 || idx >= _visible.Count) return;
+        if (!IsVisibleIndex(idx)) return;
         var item = Snapshot(idx);
         item.OldQX = oldQX; item.OldQY = oldQY; item.OldQZ = oldQZ; item.OldQW = oldQW;
         var o = _visible[idx];
@@ -934,7 +937,7 @@ public sealed class MainForm : Form
 
     private void CanvasObjectScaled(int idx, float oldSX, float oldSY, float oldSZ)
     {
-        if (idx < 0 || idx >= _visible.Count) return;
+        if (!IsVisibleIndex(idx)) return;
         var item = Snapshot(idx);
         item.OldSX = oldSX; item.OldSY = oldSY; item.OldSZ = oldSZ;
         var o = _visible[idx];
@@ -946,7 +949,7 @@ public sealed class MainForm : Form
 
     private void CanvasObjectDeleted(int idx)
     {
-        if (idx < 0 || idx >= _visible.Count) return;
+        if (!IsVisibleIndex(idx)) return;
         var o = _visible[idx];
         // snapshot BEFORE marking deleted (canvas now delegates flag setting to us)
         var item = Snapshot(idx);
@@ -962,7 +965,7 @@ public sealed class MainForm : Form
         var items = new List<UndoItem>();
         foreach (var idx in idxs)
         {
-            if (idx < 0 || idx >= _visible.Count) continue;
+            if (!IsVisibleIndex(idx)) continue;
             var o = _visible[idx];
             if (o.Deleted) continue;
             items.Add(Snapshot(idx));
@@ -1096,7 +1099,7 @@ public sealed class MainForm : Form
         var touched = new HashSet<int>(sel);
         foreach (var idx in sel)
         {
-            if (idx < 0 || idx >= _visible.Count) continue;
+            if (!IsVisibleIndex(idx)) continue;
             var o = _visible[idx];
             if (o.Deleted) continue;
             items.Add(Snapshot(idx));
@@ -1105,7 +1108,7 @@ public sealed class MainForm : Form
             // owner-linked function actors (outpost/homesite interactables) follow the height
             foreach (var li in _canvas.FindOwnerLinked(idx))
             {
-                if (li < 0 || li >= _visible.Count) continue;
+                if (!IsVisibleIndex(li)) continue;
                 if (!touched.Add(li)) continue;
                 var lo = _visible[li];
                 if (lo.Deleted) continue;
@@ -1467,7 +1470,7 @@ public sealed class MainForm : Form
         var restored = 0;
         foreach (var it in entry.Items)
         {
-            if (it.Idx < 0 || it.Idx >= _visible.Count) continue;
+            if (!IsVisibleIndex(it.Idx)) continue;
             var o = _visible[it.Idx];
             o.X = it.OldX;
             o.Y = it.OldY;

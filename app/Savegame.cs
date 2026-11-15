@@ -743,10 +743,7 @@ public static class Savegame
         // locate VehicleCollection -> VehicleSaveCollection (nested anywhere in the tree,
         // e.g. under MapSaveCollection; older saves may use the name "VehicleSaves")
         var coll = FindNamedStatic(root, "VehicleCollection");
-        var saves = (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaveCollection"))
-                    ?? (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaves"))
-                    ?? FindNamedStatic(root, "VehicleSaveCollection")
-                    ?? FindNamedStatic(root, "VehicleSaves");
+        var saves = FindVehicleSaves(root, coll);
         if (saves == null) { Console.WriteLine("[saveprops] no VehicleSaveCollection found"); return 3; }
         Console.WriteLine($"[saveprops] VehicleSaves: {saves.Type} count={saves.Count} layout={saves.Layout} size={saves.Size:N0} @0x{saves.HeaderStart:X} data 0x{saves.DataStart:X}..0x{saves.DataEnd:X}");
 
@@ -758,10 +755,7 @@ public static class Savegame
             var p = classes.DataStart;
             for (var i = 0; i < classes.Count && p + 4 <= classes.DataEnd; i++)
             {
-                var len = BitConverter.ToInt32(data, p); p += 4;
-                string s;
-                if (len < 0) { s = Encoding.Unicode.GetString(data, p, Math.Max(0, -len - 1) * 2); p += -len * 2; }
-                else { s = Encoding.ASCII.GetString(data, p, Math.Max(0, len - 1)); p += len; }
+                var s = ReadArrayFString(data, ref p);
                 var num = "";
                 if (classes.StructType == "NameProperty" && p + 4 <= classes.DataEnd)
                 { var n = BitConverter.ToInt32(data, p); p += 4; if (n != 0) num = $" ({n})"; }
@@ -800,7 +794,6 @@ public static class Savegame
             }
         }
 
-        var ci = System.Globalization.CultureInfo.InvariantCulture;
         for (var i = 0; i < saves.Children.Count; i++)
         {
             var e = saves.Children[i];
@@ -885,12 +878,56 @@ public static class Savegame
         return null;
     }
 
+    /// <summary>Locates the vehicle save array: VehicleCollection's VehicleSaveCollection
+    /// (or legacy VehicleSaves), falling back to a top-level node of either name.</summary>
+    private static GvasNode? FindVehicleSaves(GvasNode root, GvasNode? coll)
+    {
+        return (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaveCollection"))
+               ?? (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaves"))
+               ?? FindNamedStatic(root, "VehicleSaveCollection")
+               ?? FindNamedStatic(root, "VehicleSaves");
+    }
+
+    /// <summary>Locates the vehicle save array by name only (used for self-check reparses).</summary>
+    private static GvasNode? FindVehicleSavesByName(GvasNode root) =>
+        FindNamedStatic(root, "VehicleSaveCollection") ?? FindNamedStatic(root, "VehicleSaves");
+
+    /// <summary>Path from root to the vehicle save array, preferring VehicleSaveCollection.</summary>
+    private static List<GvasNode>? FindVehicleSavesPath(GvasNode root) =>
+        FindPath(root, "VehicleSaveCollection") ?? FindPath(root, "VehicleSaves");
+
     /// <summary>Offset of the 8-byte size field of a property header (name + type headers precede it).</summary>
     private static int SizeFieldOffset(byte[] d, GvasNode n)
     {
         var nameLen = BitConverter.ToInt32(d, n.HeaderStart);
         var typeLen = BitConverter.ToInt32(d, n.HeaderStart + 4 + nameLen);
         return n.HeaderStart + 4 + nameLen + 4 + typeLen;
+    }
+
+    /// <summary>True when the node has its own property header; array elements in the
+    /// header-once layout are bare property lists whose HeaderStart points at the first
+    /// child's header, so they must be skipped.</summary>
+    private static bool HasOwnHeader(byte[] d, GvasNode n)
+    {
+        try
+        {
+            var (hn, _) = ReadFString(d, n.HeaderStart);
+            var (ht, _) = ReadFString(d, n.HeaderStart + 4 + BitConverter.ToInt32(d, n.HeaderStart));
+            return hn == n.Name && ht == n.Type;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>For a header-once struct array, the wrapped header repeats the total element
+    /// byte size — the parser (and likely the game) validates it, so it must grow too.</summary>
+    private static void PatchArraySizes(byte[] oldData, byte[] newData, GvasNode arr, int delta)
+    {
+        BitConverter.GetBytes(arr.Size + delta).CopyTo(newData, SizeFieldOffset(oldData, arr));
+        var hn = BitConverter.ToInt32(oldData, arr.DataStart);
+        var ht = BitConverter.ToInt32(oldData, arr.DataStart + 4 + hn);
+        var hsizeOff = arr.DataStart + 4 + hn + 4 + ht;
+        var hsize = BitConverter.ToInt64(oldData, hsizeOff);
+        BitConverter.GetBytes(hsize + delta).CopyTo(newData, hsizeOff);
     }
 
     /// <summary>
@@ -914,6 +951,37 @@ public static class Savegame
         }
         ms.Write(src, 0, l);
         return ms.ToArray();
+    }
+
+    /// <summary>Recompresses the properties block as a pure-literal LZ4 block and rebuilds
+    /// the .sav file (header + block + verbatim footer) at outPath.</summary>
+    private static (int BlockLength, int FileLength) WriteCompressedProps(string outPath, byte[] original, int originalCompressedLen, byte[] props)
+    {
+        var block = Lz4LiteralBlock(props);
+        var outFile = new byte[HeaderEnd + block.Length + FooterSize];
+        Array.Copy(original, 0, outFile, 0, HeaderEnd);
+        BitConverter.GetBytes(block.Length).CopyTo(outFile, 0x25d);
+        BitConverter.GetBytes(props.Length).CopyTo(outFile, 0x261);
+        Array.Copy(block, 0, outFile, HeaderEnd, block.Length);
+        Array.Copy(original, HeaderEnd + originalCompressedLen, outFile, HeaderEnd + block.Length, FooterSize);
+        File.WriteAllBytes(outPath, outFile);
+        return (block.Length, outFile.Length);
+    }
+
+    /// <summary>Self-check: re-reads the written .sav, decodes the properties block and
+    /// re-parses it; warns (with the given tag) when the reparse does not end cleanly.</summary>
+    private static (byte[] Data, GvasNode Root, int End) DecodeWrittenProps(string outPath, string tag)
+    {
+        var check = File.ReadAllBytes(outPath);
+        var c2 = BitConverter.ToInt32(check, 0x25d);
+        var u2 = BitConverter.ToInt32(check, 0x261);
+        var src2 = new byte[c2];
+        Array.Copy(check, HeaderEnd, src2, 0, c2);
+        var data2 = Lz4Linked.DecodeSingleBlock(src2, u2);
+        var root2 = ParseRoot(data2, out var end2);
+        if (end2 != data2.Length && end2 + 4 != data2.Length)
+            Console.WriteLine($"[{tag}] WARNING: reparse ended at 0x{end2:X} of 0x{data2.Length:X}");
+        return (data2, root2, end2);
     }
 
     /// <summary>
@@ -954,10 +1022,7 @@ public static class Savegame
         // ---- parse + locate ----
         var root = ParseRoot(data, out _);
         var coll = FindNamedStatic(root, "VehicleCollection");
-        var saves = (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaveCollection"))
-                    ?? (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaves"))
-                    ?? FindNamedStatic(root, "VehicleSaveCollection")
-                    ?? FindNamedStatic(root, "VehicleSaves");
+        var saves = FindVehicleSaves(root, coll);
         if (saves == null) { Console.Error.WriteLine("[saveinject] no VehicleSaveCollection found"); return 3; }
         if (saves.Layout != "header-once")
         { Console.Error.WriteLine($"[saveinject] unexpected array layout '{saves.Layout}'"); return 3; }
@@ -1038,35 +1103,8 @@ public static class Savegame
 
         BitConverter.GetBytes(saves.Count + 1).CopyTo(newData, saves.CountPos);
 
-        // Patch a node's 8-byte size field; only nodes with their own property header have
-        // one. Array elements in the header-once layout are bare property lists whose
-        // HeaderStart points at the first child's header — those must be skipped.
-        static bool HasOwnHeader(byte[] d, GvasNode n)
-        {
-            try
-            {
-                var (hn, _) = ReadFString(d, n.HeaderStart);
-                var (ht, _) = ReadFString(d, n.HeaderStart + 4 + BitConverter.ToInt32(d, n.HeaderStart));
-                return hn == n.Name && ht == n.Type;
-            }
-            catch { return false; }
-        }
-
-        // For a header-once struct array, the wrapped header repeats the total element
-        // byte size — the parser (and likely the game) validates it, so it must grow too.
-        static void PatchArraySizes(byte[] oldData, byte[] newData, GvasNode arr, int delta)
-        {
-            BitConverter.GetBytes(arr.Size + delta).CopyTo(newData, SizeFieldOffset(oldData, arr));
-            var hn = BitConverter.ToInt32(oldData, arr.DataStart);
-            var ht = BitConverter.ToInt32(oldData, arr.DataStart + 4 + hn);
-            var hsizeOff = arr.DataStart + 4 + hn + 4 + ht;
-            var hsize = BitConverter.ToInt64(oldData, hsizeOff);
-            BitConverter.GetBytes(hsize + delta).CopyTo(newData, hsizeOff);
-        }
-
         PatchArraySizes(data, newData, saves, entryLen);        // the target array itself
-        var path = FindPath(root, "VehicleSaveCollection")
-                   ?? FindPath(root, "VehicleSaves");
+        var path = FindVehicleSavesPath(root);
         if (path != null)
         {
             foreach (var anc in path)                           // enclosing structs / arrays
@@ -1080,27 +1118,12 @@ public static class Savegame
         }
 
         // ---- recompress (pure-literal LZ4 block) and rebuild the file ----
-        var block = Lz4LiteralBlock(newData);
-        var outFile = new byte[HeaderEnd + block.Length + FooterSize];
-        Array.Copy(bytes, 0, outFile, 0, HeaderEnd);
-        BitConverter.GetBytes(block.Length).CopyTo(outFile, 0x25d);
-        BitConverter.GetBytes(newData.Length).CopyTo(outFile, 0x261);
-        Array.Copy(block, 0, outFile, HeaderEnd, block.Length);
-        Array.Copy(bytes, HeaderEnd + compressedLen, outFile, HeaderEnd + block.Length, FooterSize);
-        File.WriteAllBytes(outPath, outFile);
-        Console.WriteLine($"[saveinject] wrote {outPath}: file {outFile.Length:N0} B, block {block.Length:N0} B, props {newData.Length:N0} B, guid={guidText}");
+        var (blockLen, fileLen) = WriteCompressedProps(outPath, bytes, compressedLen, newData);
+        Console.WriteLine($"[saveinject] wrote {outPath}: file {fileLen:N0} B, block {blockLen:N0} B, props {newData.Length:N0} B, guid={guidText}");
 
         // ---- self-check: re-decode and re-parse the written file ----
-        var check = File.ReadAllBytes(outPath);
-        var c2 = BitConverter.ToInt32(check, 0x25d);
-        var u2 = BitConverter.ToInt32(check, 0x261);
-        var src2 = new byte[c2];
-        Array.Copy(check, HeaderEnd, src2, 0, c2);
-        var data2 = Lz4Linked.DecodeSingleBlock(src2, u2);
-        var root2 = ParseRoot(data2, out var end2);
-        if (end2 != data2.Length && end2 + 4 != data2.Length)
-            Console.WriteLine($"[saveinject] WARNING: reparse ended at 0x{end2:X} of 0x{data2.Length:X}");
-        var saves2 = FindNamedStatic(root2, "VehicleSaveCollection") ?? FindNamedStatic(root2, "VehicleSaves");
+        var (data2, root2, end2) = DecodeWrittenProps(outPath, "saveinject");
+        var saves2 = FindVehicleSavesByName(root2);
         if (saves2 == null || saves2.Count != saves.Count + 1)
         {
             Console.Error.WriteLine($"[saveinject] self-check FAILED: reparse count={saves2?.Count.ToString() ?? "<node missing>"} (expected {saves.Count + 1}), layout={saves2?.Layout}, end2=0x{end2:X} of 0x{data2.Length:X}");
@@ -1129,6 +1152,16 @@ public static class Savegame
         BitConverter.GetBytes(text.Length + 1).CopyTo(buf, 0);   // length includes the NUL
         Array.Copy(text, 0, buf, 4, text.Length);
         return buf;
+    }
+
+    /// <summary>Reads one length-prefixed FString (ASCII or UTF-16LE) at p, advancing p past it.</summary>
+    private static string ReadArrayFString(byte[] d, ref int p)
+    {
+        var len = BitConverter.ToInt32(d, p); p += 4;
+        string s;
+        if (len < 0) { s = Encoding.Unicode.GetString(d, p, Math.Max(0, -len - 1) * 2); p += -len * 2; }
+        else { s = Encoding.ASCII.GetString(d, p, Math.Max(0, len - 1)); p += len; }
+        return s;
     }
 
     /// <summary>Offset of the wrapped element-size field of a header-once struct array.</summary>
@@ -1248,11 +1281,13 @@ public static class Savegame
             }
             return null;
         }
+        static GvasNode? FindClassIndex(GvasNode n) =>
+            n.Children.FirstOrDefault(c => c.Name == "ClassIndex") ?? FindDesc(n, "ClassIndex");
         GvasNode? FindTemplateForClass(int classIndex)
         {
             foreach (var inst in instances.Children)
             {
-                var cn = inst.Children.FirstOrDefault(c => c.Name == "ClassIndex") ?? FindDesc(inst, "ClassIndex");
+                var cn = FindClassIndex(inst);
                 if (cn != null && cn.DataStart + 4 <= data.Length && BitConverter.ToInt32(data, cn.DataStart) == classIndex)
                     return inst;
             }
@@ -1460,10 +1495,7 @@ public static class Savegame
 
         var root = ParseRoot(data, out _);
         var coll = FindNamedStatic(root, "VehicleCollection");
-        var saves = (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaveCollection"))
-                    ?? (coll?.Children.FirstOrDefault(c => c.Name == "VehicleSaves"))
-                    ?? FindNamedStatic(root, "VehicleSaveCollection")
-                    ?? FindNamedStatic(root, "VehicleSaves");
+        var saves = FindVehicleSaves(root, coll);
         if (saves == null || saves.Layout != "header-once")
         { Console.Error.WriteLine("[savedelete] VehicleSaveCollection (header-once) not found"); return 3; }
 
@@ -1492,26 +1524,6 @@ public static class Savegame
         var delta = (int)-removed;
         BitConverter.GetBytes(saves.Count - idxSet.Count).CopyTo(newData, saves.CountPos);
 
-        static bool HasOwnHeader(byte[] d, GvasNode n)
-        {
-            try
-            {
-                var (hn, _) = ReadFString(d, n.HeaderStart);
-                var (ht, _) = ReadFString(d, n.HeaderStart + 4 + BitConverter.ToInt32(d, n.HeaderStart));
-                return hn == n.Name && ht == n.Type;
-            }
-            catch { return false; }
-        }
-        static void PatchArraySizes(byte[] oldData, byte[] newData, GvasNode arr, int dl)
-        {
-            BitConverter.GetBytes(arr.Size + dl).CopyTo(newData, SizeFieldOffset(oldData, arr));
-            var hn = BitConverter.ToInt32(oldData, arr.DataStart);
-            var ht = BitConverter.ToInt32(oldData, arr.DataStart + 4 + hn);
-            var hsizeOff = arr.DataStart + 4 + hn + 4 + ht;
-            var hsize = BitConverter.ToInt64(oldData, hsizeOff);
-            BitConverter.GetBytes(hsize + dl).CopyTo(newData, hsizeOff);
-        }
-
         PatchArraySizes(data, newData, saves, delta);
         var path = FindPath(root, "VehicleSaveCollection") ?? FindPath(root, "VehicleSaves");
         if (path != null)
@@ -1527,27 +1539,12 @@ public static class Savegame
         }
 
         // ---- recompress (pure-literal LZ4 block) and rebuild the file ----
-        var block = Lz4LiteralBlock(newData);
-        var outFile = new byte[HeaderEnd + block.Length + FooterSize];
-        Array.Copy(bytes, 0, outFile, 0, HeaderEnd);
-        BitConverter.GetBytes(block.Length).CopyTo(outFile, 0x25d);
-        BitConverter.GetBytes(newData.Length).CopyTo(outFile, 0x261);
-        Array.Copy(block, 0, outFile, HeaderEnd, block.Length);
-        Array.Copy(bytes, HeaderEnd + compressedLen, outFile, HeaderEnd + block.Length, FooterSize);
-        File.WriteAllBytes(outPath, outFile);
-        Console.WriteLine($"[savedelete] wrote {outPath}: removed [{string.Join(',', idxSet)}] ({removed:N0} B), file {outFile.Length:N0} B");
+        var (blockLen, fileLen) = WriteCompressedProps(outPath, bytes, compressedLen, newData);
+        Console.WriteLine($"[savedelete] wrote {outPath}: removed [{string.Join(',', idxSet)}] ({removed:N0} B), file {fileLen:N0} B");
 
         // ---- self-check: re-decode and re-parse ----
-        var check = File.ReadAllBytes(outPath);
-        var c2 = BitConverter.ToInt32(check, 0x25d);
-        var u2 = BitConverter.ToInt32(check, 0x261);
-        var src2 = new byte[c2];
-        Array.Copy(check, HeaderEnd, src2, 0, c2);
-        var data2 = Lz4Linked.DecodeSingleBlock(src2, u2);
-        var root2 = ParseRoot(data2, out var end2);
-        if (end2 != data2.Length && end2 + 4 != data2.Length)
-            Console.WriteLine($"[savedelete] WARNING: reparse ended at 0x{end2:X} of 0x{data2.Length:X}");
-        var saves2 = FindNamedStatic(root2, "VehicleSaveCollection") ?? FindNamedStatic(root2, "VehicleSaves");
+        var (data2, root2, end2) = DecodeWrittenProps(outPath, "savedelete");
+        var saves2 = FindVehicleSavesByName(root2);
         if (saves2 == null || saves2.Count != saves.Count - idxSet.Count)
         {
             Console.Error.WriteLine($"[savedelete] self-check FAILED: reparse count={saves2?.Count.ToString() ?? "<missing>"} (expected {saves.Count - idxSet.Count})");

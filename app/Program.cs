@@ -2,6 +2,8 @@ namespace SoD2MapViewer;
 
 internal static class Program
 {
+    private const string DefaultGameDir = @"D:\Games\State of Decay 2\StateOfDecay2";
+
     [STAThread]
     static int Main(string[] args)
     {
@@ -10,7 +12,7 @@ internal static class Program
         {
             try
             {
-                return Diag.Run(args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                return Diag.Run(args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "StateOfDecay2/Content/maps/trumbull_valley/trumbull_valley/trumbull_valley_x0_y0.umap");
             }
             catch (Exception e)
@@ -23,7 +25,7 @@ internal static class Program
         {
             try
             {
-                return Smoke.RunAll(args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2");
+                return Smoke.RunAll(args.Length > 1 ? args[1] : DefaultGameDir);
             }
             catch (Exception e)
             {
@@ -275,9 +277,14 @@ internal static class Program
                 var sid = args.Length > 3 && int.TryParse(args[3], ci, out var p0) ? p0 : -1;
                 var itype = args.Length > 4 ? args[4] : "";
                 var rest = args.Length > 5 ? args[5..] : Array.Empty<string>();
-                if (rest.Length == 0 || rest.Length % 2 != 0)
+                if (rest.Length == 0)
                 {
-                    Console.Error.WriteLine("[saveitems] usage: --saveitems <savIn> <savOut> <survivorId|-1> <itemType> <classPath1> <stack1> [...]");
+                    Console.Error.WriteLine("[saveitems] usage: --saveitems <savIn> <savOut> <survivorId|-1> <itemType> <classPath1> <stack1> [<classPath2> <stack2> ...]");
+                    return 2;
+                }
+                if (rest.Length % 2 != 0)
+                {
+                    Console.Error.WriteLine("[saveitems] error: odd number of remaining arguments (need pairs of classPath and stack)");
                     return 2;
                 }
                 var paths = new string[rest.Length / 2];
@@ -309,7 +316,7 @@ internal static class Program
             try
             {
                 return Smoke.Levels(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "");
             }
             catch (Exception e)
@@ -323,7 +330,7 @@ internal static class Program
             try
             {
                 return UmapGen.UmapInfo(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "",
                     args.Length > 3 ? args[3] : "",
                     args.Length > 4 ? long.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture) : 0,
@@ -340,7 +347,7 @@ internal static class Program
             try
             {
                 return UmapGen.UmapDecode(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "",
                     args.Length > 3 ? int.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : 0);
             }
@@ -355,7 +362,7 @@ internal static class Program
             try
             {
                 return UmapGen.DumpSummary(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "");
             }
             catch (Exception e)
@@ -396,7 +403,7 @@ internal static class Program
             try
             {
                 return Smoke.ListFiles(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "");
             }
             catch (Exception e)
@@ -410,7 +417,7 @@ internal static class Program
             try
             {
                 return Smoke.TileInfo(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "");
             }
             catch (Exception e)
@@ -424,7 +431,7 @@ internal static class Program
             try
             {
                 return Smoke.Where(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "");
             }
             catch (Exception e)
@@ -438,7 +445,7 @@ internal static class Program
             try
             {
                 return Smoke.DupScan(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "");
             }
             catch (Exception e)
@@ -452,7 +459,7 @@ internal static class Program
             try
             {
                 return Smoke.ListMaps(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "");
             }
             catch (Exception e)
@@ -466,7 +473,7 @@ internal static class Program
             try
             {
                 return Smoke.FindObjects(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "",
                     args.Length > 3 ? args[3] : "");
             }
@@ -481,7 +488,7 @@ internal static class Program
             try
             {
                 return Smoke.DumpProps(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "",
                     args.Length > 3 ? args[3] : "");
             }
@@ -496,7 +503,7 @@ internal static class Program
             try
             {
                 return Smoke.Strings(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "",
                     args.Length > 3 ? args[3] : "");
             }
@@ -511,7 +518,7 @@ internal static class Program
             try
             {
                 return Smoke.DumpPackage(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "",
                     args.Length > 3 ? args[3] : "");
             }
@@ -526,7 +533,7 @@ internal static class Program
             try
             {
                 return Smoke.ListObjects(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "StateOfDecay2/Content/maps/amethyst_tiled_region_map/amethyst_region_map.umap",
                     args.Length > 3 ? args[3] : "");
             }
@@ -541,7 +548,7 @@ internal static class Program
             try
             {
                 return Smoke.PatchTest(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "StateOfDecay2/Content/maps/trumbull_valley/trumbull_valley/trumbull_valley_x0_y0.umap",
                     args.Length > 3 ? args[3] : "",
                     args.Length > 4 ? float.Parse(args[4]) : 1000f,
@@ -559,7 +566,7 @@ internal static class Program
             try
             {
                 return Smoke.ExtractMap(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "",
                     args.Length > 3 ? args[3] : Path.Combine(Path.GetTempPath(), "sod2mapv_baseline.umap.bin"));
             }
@@ -595,7 +602,7 @@ internal static class Program
                 }
                 if (moves.Count == 0) { Console.Error.WriteLine("usage: --paktest <gameDir> <mapPath> [--baseline <file>] (<name> <dx> <dy> [<dz>])+"); return 2; }
                 return Smoke.PakTest(
-                    args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2",
+                    args.Length > 1 ? args[1] : DefaultGameDir,
                     args.Length > 2 ? args[2] : "StateOfDecay2/Content/maps/amethyst_tiled_region_map/amethyst_region_map.umap",
                     moves.ToArray(),
                     baseline);
@@ -610,7 +617,7 @@ internal static class Program
         {
             try
             {
-                var gameDir = args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2";
+                var gameDir = args.Length > 1 ? args[1] : DefaultGameDir;
                 var mapPath = args.Length > 2 ? args[2] : "StateOfDecay2/Content/maps/faustite/faustite/faustite_x2_y3.umap";
                 return Smoke.Sites(gameDir, mapPath);
             }
@@ -645,7 +652,7 @@ internal static class Program
         {
             try
             {
-                return Smoke.Run(args.Length > 1 ? args[1] : @"D:\Games\State of Decay 2\StateOfDecay2");
+                return Smoke.Run(args.Length > 1 ? args[1] : DefaultGameDir);
             }
             catch (Exception e)
             {
