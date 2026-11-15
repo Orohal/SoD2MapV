@@ -251,7 +251,7 @@ public static class UmapGen
     }
 
     // ---------------------------------------------------------------------------------------------
-    // --genmap: synthetic flat test map
+    // --genmap / --genplatform: synthetic flat test map / single flat platform
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
@@ -562,6 +562,447 @@ public static class UmapGen
         Console.WriteLine($"[genmap] {fileSize} bytes, {names.Count} names, {imports.Length} imports, {serials.Count} exports ({objs.Count} objects)");
         Console.WriteLine($"[genmap] summary={SummarySize} names@0x{nameOffset:X} imports@0x{importOffset:X} exports@0x{exportOffset:X} header=0x{totalHeaderSize:X}");
         return 0;
+    }
+
+    /// <summary>
+    /// --genplatform &lt;out.umap&gt; &lt;x&gt; &lt;y&gt; &lt;z&gt; &lt;sizeM&gt; [yawDeg]
+    /// Emits a single flat platform (StaticMeshActor) at (x,y,z) in UE units (cm), scaled to sizeM x sizeM meters.
+    /// Uses WaterPlane_01 (10x10 m base) like --genmap; layout identical to GenMap for parse compatibility.
+    /// </summary>
+    public static int GenPlatform(string outFile, float x, float y, float z, float sizeM, float yawDeg = 0f)
+    {
+        if (sizeM <= 0f) { Console.Error.WriteLine("[genplatform] sizeM must be > 0"); return 2; }
+        const string MeshPackage = "/game/art/environment/props/exterior/water/waterplane01/waterplane_01";
+        const string MeshObject = "WaterPlane_01";
+        var scale = sizeM / 10f; // WaterPlane_01 is 10x10 m
+        var name = "Platform_30x30";
+        var objs = new List<(string Name, float X, float Y, float Z, float Pitch, float Yaw, float Roll, float SX, float SY, float SZ)>
+        {
+            (name, x, y, z, 0f, yawDeg, 0f, scale, scale, 1f),
+        };
+
+        var names = new List<string>
+        {
+            "None", "StaticMesh", "RelativeLocation", "RelativeRotation", "RelativeScale3D",
+            "StaticMeshComponent", "RootComponent", "ObjectProperty", "StructProperty", "Vector", "Rotator",
+            "/Script/CoreUObject", "Class", "Package", "/Script/Engine", "StaticMeshActor", "StaticMeshComponent0",
+            MeshPackage, MeshObject,
+        };
+        foreach (var o in objs) names.Add(o.Name);
+        var N = new Dictionary<string, int>();
+        for (var i = 0; i < names.Count; i++) N[names[i]] = i;
+
+        var imports = new[]
+        {
+            (CP: N["/Script/CoreUObject"], CN: N["Package"],            Outer: 0,  ON: N["/Script/Engine"]),
+            (CP: N["/Script/CoreUObject"], CN: N["Class"],              Outer: -1, ON: N["StaticMeshActor"]),
+            (CP: N["/Script/CoreUObject"], CN: N["Class"],              Outer: -1, ON: N["StaticMeshComponent"]),
+            (CP: N["/Script/CoreUObject"], CN: N["Package"],            Outer: 0,  ON: N[MeshPackage]),
+            (CP: N["/Script/Engine"],      CN: N["StaticMesh"],         Outer: -4, ON: N[MeshObject]),
+        };
+
+        var compTrailer = new byte[]
+        {
+            0x01, 0x00, 0x00, 0x00,
+            0x45, 0x48, 0x44, 0x84, 0x2B, 0xBE, 0xA4, 0x4C, 0x91, 0xDD, 0xB2, 0x4A, 0xB3, 0x66, 0xD1, 0x16,
+            0x00, 0x00, 0x00, 0x00,
+        };
+
+        byte[] ComponentSerial(float lx, float ly, float lz, float p, float yaw, float r, float sx, float sy, float sz)
+        {
+            var ms = new MemoryStream();
+            var w = new BinaryWriter(ms);
+            Tag(w, N["StaticMesh"], N["ObjectProperty"], 4, -1, br => br.Write(-5));
+            Tag(w, N["RelativeLocation"], N["StructProperty"], 12, N["Vector"], br => { br.Write(lx); br.Write(ly); br.Write(lz); });
+            Tag(w, N["RelativeRotation"], N["StructProperty"], 12, N["Rotator"], br => { br.Write(p); br.Write(yaw); br.Write(r); });
+            Tag(w, N["RelativeScale3D"], N["StructProperty"], 12, N["Vector"], br => { br.Write(sx); br.Write(sy); br.Write(sz); });
+            FName(w, N["None"]);
+            w.Write(compTrailer);
+            w.Flush();
+            return ms.ToArray();
+        }
+
+        byte[] ActorSerial(int compExportIdx1Based)
+        {
+            var ms = new MemoryStream();
+            var w = new BinaryWriter(ms);
+            Tag(w, N["StaticMeshComponent"], N["ObjectProperty"], 4, -1, br => br.Write(compExportIdx1Based));
+            Tag(w, N["RootComponent"], N["ObjectProperty"], 4, -1, br => br.Write(compExportIdx1Based));
+            FName(w, N["None"]);
+            w.Write(0);
+            w.Flush();
+            return ms.ToArray();
+        }
+
+        var serials = new List<byte[]>();
+        for (var i = 0; i < objs.Count; i++)
+        {
+            var o = objs[i];
+            serials.Add(ActorSerial(2 * i + 2));
+            serials.Add(ComponentSerial(o.X, o.Y, o.Z, o.Pitch, o.Yaw, o.Roll, o.SX, o.SY, o.SZ));
+        }
+
+        var nameOffset = SummarySize;
+        var importOffset = nameOffset + NamesSize(names);
+        var exportOffset = importOffset + imports.Length * 28;
+        var totalHeaderSize = exportOffset + serials.Count * 72 + 4;
+        var dependsOffset = totalHeaderSize - 4;
+        var serialBase = totalHeaderSize;
+        var serialOffsets = new int[serials.Count];
+        var pos = serialBase;
+        for (var i = 0; i < serials.Count; i++) { serialOffsets[i] = pos; pos += serials[i].Length; }
+        var fileSize = pos;
+
+        using (var fs = new FileStream(outFile, FileMode.Create, FileAccess.Write))
+        using (var w = new BinaryWriter(fs))
+        {
+            w.Write(0x9E2A83C1); w.Write(-6); w.Write(864); w.Write(506); w.Write(7);
+            w.Write(0); w.Write(totalHeaderSize); FString(w, "None"); w.Write(0x80020000u);
+            w.Write(names.Count); w.Write(nameOffset);
+            w.Write(0); w.Write(0);
+            w.Write(serials.Count); w.Write(exportOffset);
+            w.Write(imports.Length); w.Write(importOffset);
+            w.Write(dependsOffset);
+            w.Write(0); w.Write(0); w.Write(0);
+            w.Write(0x534F4432); w.Write(0x54455354); w.Write(0x4D415030); w.Write(0x30303031);
+            w.Write(1); w.Write(serials.Count); w.Write(names.Count);
+            EngineVersion(w); EngineVersion(w);
+            w.Write(0); w.Write(0); w.Write(0); w.Write(0); w.Write(0);
+            w.Write(0);                          // AssetRegistryDataOffset
+            w.Write((long)totalHeaderSize);      // BulkDataStartOffset
+            w.Write(0);                          // WorldTileInfoDataOffset
+            w.Write(0);                          // ChunkIds count
+
+            if (w.BaseStream.Position != nameOffset) throw new InvalidOperationException($"summary size mismatch: {w.BaseStream.Position} != {nameOffset}");
+            foreach (var n in names) { FString(w, n); w.Write(0); }
+            if (w.BaseStream.Position != importOffset) throw new InvalidOperationException($"name map size mismatch: {w.BaseStream.Position} != {importOffset}");
+            foreach (var im in imports) { FName(w, im.CP); FName(w, im.CN); w.Write(im.Outer); FName(w, im.ON); }
+            if (w.BaseStream.Position != exportOffset) throw new InvalidOperationException($"import map size mismatch: {w.BaseStream.Position} != {exportOffset}");
+            for (var i = 0; i < objs.Count; i++)
+            {
+                ExportEntry(w, -2, 0, N[objs[i].Name], 8, serials[2 * i].Length, serialOffsets[2 * i]);
+                ExportEntry(w, -3, 2 * i + 1, N["StaticMeshComponent0"], 0x00040008, serials[2 * i + 1].Length, serialOffsets[2 * i + 1]);
+            }
+            if (w.BaseStream.Position != dependsOffset) throw new InvalidOperationException($"export map size mismatch: {w.BaseStream.Position} != {dependsOffset}");
+            w.Write(0);
+            if (w.BaseStream.Position != totalHeaderSize) throw new InvalidOperationException($"depends size mismatch: {w.BaseStream.Position} != {totalHeaderSize}");
+            foreach (var sdata in serials) w.Write(sdata);
+            if (w.BaseStream.Position != fileSize) throw new InvalidOperationException($"file size mismatch: {w.BaseStream.Position} != {fileSize}");
+        }
+
+        Console.WriteLine($"[genplatform] {outFile}");
+        Console.WriteLine($"[genplatform] {sizeM:0.##}x{sizeM:0.##} m platform at ({x / 100:0.##},{y / 100:0.##},{z / 100:0.##}) m yaw={yawDeg:0.#} mesh={MeshObject} scale={scale:0.###}");
+        Console.WriteLine($"[genplatform] {fileSize} bytes, {names.Count} names, {imports.Length} imports, {serials.Count} exports (1 object)");
+        return 0;
+    }
+
+    /// <summary>
+    /// Prototype Phase 3: inserts a flat platform actor into a GenMap-compatible .umap (layout produced by GenMap/GenPlatform:
+    /// SummarySize=185, customVersions=0, empty gatherable/softpkg, depends=4-byte zero count, no worldTile/assetRegistry chunks).
+    /// Rebuilds name/import/export tables and shifts all serial offsets by the header growth delta.
+    /// </summary>
+    public static int InsertPlatformIntoMap(string inFile, string outFile, float x, float y, float z, float sizeM, float yawDeg = 0f)
+    {
+        if (sizeM <= 0f) { Console.Error.WriteLine("[insertplatform] sizeM must be > 0"); return 2; }
+        var data = File.ReadAllBytes(inFile);
+        using var ms = new MemoryStream(data);
+        using var r = new BinaryReader(ms);
+
+        // --- read summary (GenMap layout) ---
+        uint tag = r.ReadUInt32();
+        int legacy = r.ReadInt32();
+        int ue3 = r.ReadInt32();
+        int verUE4 = r.ReadInt32();
+        int lic = r.ReadInt32();
+        int customCount = r.ReadInt32();
+        int totalHeaderSize = r.ReadInt32();
+        string folder = ReadFString(r);
+        uint pkgFlags = r.ReadUInt32();
+        int nameCount = r.ReadInt32(); int nameOffset = r.ReadInt32();
+        r.ReadInt32(); r.ReadInt32(); // gatherable
+        int exportCount = r.ReadInt32(); int exportOffset = r.ReadInt32();
+        int importCount = r.ReadInt32(); int importOffset = r.ReadInt32();
+        int dependsOffset = r.ReadInt32();
+        r.ReadInt32(); r.ReadInt32(); // softpkg
+        int thumbnail = r.ReadInt32();
+        r.ReadBytes(16); // guid
+        int genCount = r.ReadInt32();
+        int gen0Exports = r.ReadInt32(); int gen0Names = r.ReadInt32();
+        r.ReadBytes(14); r.ReadBytes(14); // engine versions
+        r.ReadUInt32(); r.ReadInt32(); r.ReadInt32(); r.ReadInt32(); r.ReadInt32(); // compression, chunks, pkgsrc, additional, texalloc
+        int assetReg = r.ReadInt32();
+        long bulkStart = r.ReadInt64();
+        int worldTile = r.ReadInt32();
+        int chunkIds = r.ReadInt32();
+
+        if (tag != 0x9E2A83C1 || nameOffset != SummarySize || customCount != 0 || thumbnail != 0 || assetReg != 0 || worldTile != 0 || chunkIds != 0)
+        {
+            Console.Error.WriteLine("[insertplatform] unsupported package layout (only GenMap/GenPlatform-compatible packages are supported by this prototype).");
+            Console.Error.WriteLine($"  tag=0x{tag:X8} nameOffset={nameOffset} custom={customCount} thumb={thumbnail} assetReg={assetReg} worldTile={worldTile} chunks={chunkIds}");
+            return 3;
+        }
+        if (ms.Position != nameOffset)
+        {
+            Console.Error.WriteLine($"[insertplatform] unexpected summary end {ms.Position} (expected {nameOffset})");
+            return 3;
+        }
+
+        // --- read name map ---
+        ms.Position = nameOffset;
+        var names = new List<string>(nameCount);
+        for (int i = 0; i < nameCount; i++) { names.Add(ReadFString(r)); r.ReadInt32(); /*hash*/ }
+
+        // --- read import map (28B entries) ---
+        ms.Position = importOffset;
+        var imports = new List<(int CP, int CN, int Outer, int ON)>(importCount);
+        for (int i = 0; i < importCount; i++)
+        {
+            int cp = ReadFNameIndex(r); int cn = ReadFNameIndex(r);
+            int outer = r.ReadInt32();
+            int on = ReadFNameIndex(r);
+            imports.Add((cp, cn, outer, on));
+        }
+
+        // --- read export map (72B entries) ---
+        ms.Position = exportOffset;
+        var exportEntries = new List<byte[]>(exportCount);
+        for (int i = 0; i < exportCount; i++) exportEntries.Add(r.ReadBytes(72));
+
+        // --- depends + serials ---
+        ms.Position = dependsOffset;
+        var dependsAndRestHeader = r.ReadBytes(totalHeaderSize - dependsOffset); // includes depends (+ anything up to header end)
+        var serialBase = totalHeaderSize;
+        ms.Position = serialBase;
+        var serialData = r.ReadBytes((int)(data.Length - serialBase));
+
+        // --- ensure required names/imports exist ---
+        int EnsureName(string s)
+        {
+            int idx = names.IndexOf(s);
+            if (idx < 0) { idx = names.Count; names.Add(s); }
+            return idx;
+        }
+        // reuse GenMap's mesh/import set if present; otherwise add
+        int NNone = EnsureName("None");
+        int NStaticMesh = EnsureName("StaticMesh");
+        int NRelLoc = EnsureName("RelativeLocation");
+        int NRelRot = EnsureName("RelativeRotation");
+        int NRelScale = EnsureName("RelativeScale3D");
+        int NStaticMeshComponent = EnsureName("StaticMeshComponent");
+        int NRootComponent = EnsureName("RootComponent");
+        int NObjProp = EnsureName("ObjectProperty");
+        int NStructProp = EnsureName("StructProperty");
+        int NVector = EnsureName("Vector");
+        int NRotator = EnsureName("Rotator");
+        int NScriptCore = EnsureName("/Script/CoreUObject");
+        int NClass = EnsureName("Class");
+        int NPackage = EnsureName("Package");
+        int NScriptEngine = EnsureName("/Script/Engine");
+        int NStaticMeshActor = EnsureName("StaticMeshActor");
+        int NStaticMeshComponent0 = EnsureName("StaticMeshComponent0");
+        const string MeshPackage = "/game/art/environment/props/exterior/water/waterplane01/waterplane_01";
+        const string MeshObject = "WaterPlane_01";
+        int NMeshPkg = EnsureName(MeshPackage);
+        int NMeshObj = EnsureName(MeshObject);
+        string platformName = "Platform_Inserted";
+        int NPlat = EnsureName(platformName);
+
+        int EnsureImport(int cp, int cn, int outer, int on)
+        {
+            for (int i = 0; i < imports.Count; i++)
+                if (imports[i].CP == cp && imports[i].CN == cn && imports[i].Outer == outer && imports[i].ON == on) return -(i + 1);
+            imports.Add((cp, cn, outer, on));
+            return -imports.Count;
+        }
+        int impEnginePkg = EnsureImport(NScriptCore, NPackage, 0, NScriptEngine);           // /Script/Engine
+        int impActorClass = EnsureImport(NScriptCore, NClass, impEnginePkg, NStaticMeshActor);
+        int impCompClass = EnsureImport(NScriptCore, NClass, impEnginePkg, NStaticMeshComponent);
+        int impMeshPkg = EnsureImport(NScriptCore, NPackage, 0, NMeshPkg);
+        int impMesh = EnsureImport(NScriptEngine, NStaticMesh, impMeshPkg, NMeshObj);
+
+        // --- build new actor/component serials ---
+        float scale = sizeM / 10f;
+        var compTrailer = new byte[]
+        {
+            0x01, 0x00, 0x00, 0x00,
+            0x45, 0x48, 0x44, 0x84, 0x2B, 0xBE, 0xA4, 0x4C, 0x91, 0xDD, 0xB2, 0x4A, 0xB3, 0x66, 0xD1, 0x16,
+            0x00, 0x00, 0x00, 0x00,
+        };
+        byte[] BuildComponent(float lx, float ly, float lz, float p, float yaw, float rr, float sx, float sy, float sz)
+        {
+            using var oms = new MemoryStream(); using var w = new BinaryWriter(oms);
+            void TagW(int nIdx, int tIdx, int size, int sIdx, Action<BinaryWriter> val)
+            { w.Write(nIdx); w.Write(0); w.Write(tIdx); w.Write(0); w.Write(size); w.Write(0); if (sIdx >= 0) { w.Write(sIdx); w.Write(0); w.Write(0L); w.Write(0L); } w.Write((byte)0); val(w); }
+            TagW(NStaticMesh, NObjProp, 4, -1, bw => bw.Write(impMesh));
+            TagW(NRelLoc, NStructProp, 12, NVector, bw => { bw.Write(lx); bw.Write(ly); bw.Write(lz); });
+            TagW(NRelRot, NStructProp, 12, NRotator, bw => { bw.Write(p); bw.Write(yaw); bw.Write(rr); });
+            TagW(NRelScale, NStructProp, 12, NVector, bw => { bw.Write(sx); bw.Write(sy); bw.Write(sz); });
+            w.Write(NNone); w.Write(0);
+            w.Write(compTrailer);
+            w.Flush(); return oms.ToArray();
+        }
+        byte[] BuildActor(int comp1Based)
+        {
+            using var oms = new MemoryStream(); using var w = new BinaryWriter(oms);
+            void TagW(int nIdx, int tIdx, int size, int sIdx, Action<BinaryWriter> val)
+            { w.Write(nIdx); w.Write(0); w.Write(tIdx); w.Write(0); w.Write(size); w.Write(0); if (sIdx >= 0) { w.Write(sIdx); w.Write(0); w.Write(0L); w.Write(0L); } w.Write((byte)0); val(w); }
+            TagW(NStaticMeshComponent, NObjProp, 4, -1, bw => bw.Write(comp1Based));
+            TagW(NRootComponent, NObjProp, 4, -1, bw => bw.Write(comp1Based));
+            w.Write(NNone); w.Write(0);
+            w.Write(0);
+            w.Flush(); return oms.ToArray();
+        }
+
+        int newActorExport1Based = exportEntries.Count + 1; // actor
+        int newCompExport1Based = exportEntries.Count + 2;  // component
+        var actorSerial = BuildActor(newCompExport1Based);
+        var compSerial = BuildComponent(x, y, z, 0f, yawDeg, 0f, scale, scale, 1f);
+
+        // --- compute new layout ---
+        int newNameCount = names.Count;
+        int newImportCount = imports.Count;
+        int newExportCount = exportEntries.Count + 2;
+        int newNameOffset = SummarySize;
+        int newImportOffset = newNameOffset + NamesSize(names);
+        int newExportOffset = newImportOffset + newImportCount * 28;
+        int newDependsOffset = newExportOffset + newExportCount * 72;
+        int newTotalHeaderSize = newDependsOffset + dependsAndRestHeader.Length;
+        int headerDelta = newTotalHeaderSize - totalHeaderSize;
+
+        // adjust existing export serial offsets by headerDelta (SerialOffset at byte 28 in 72-byte GenMap layout)
+        for (int i = 0; i < exportEntries.Count; i++)
+        {
+            int off = BitConverter.ToInt32(exportEntries[i], 28);
+            BitConverter.GetBytes(off + headerDelta).CopyTo(exportEntries[i], 28);
+        }
+
+        // new export entries
+        byte[] MakeExport(int classIdx, int outerIdx, int objNameIdx, uint flags, int serialSize, int serialOffsetVal)
+        {
+            using var ems = new MemoryStream(); using var w = new BinaryWriter(ems);
+            w.Write(classIdx); w.Write(0); w.Write(outerIdx);
+            w.Write(objNameIdx); w.Write(0);
+            w.Write(flags); w.Write(serialSize); w.Write(serialOffsetVal);
+            w.Write(new byte[32]); w.Write(1); w.Write(0);
+            return ems.ToArray();
+        }
+        int serialCursor = newTotalHeaderSize + serialData.Length;
+        int actorSerialOff = serialCursor; serialCursor += actorSerial.Length;
+        int compSerialOff = serialCursor; serialCursor += compSerial.Length;
+        var newActorExport = MakeExport(impActorClass, 0, NPlat, 8, actorSerial.Length, actorSerialOff);
+        var newCompExport = MakeExport(impCompClass, newActorExport1Based, NStaticMeshComponent0, 0x00040008, compSerial.Length, compSerialOff);
+        int newFileSize = serialCursor;
+
+        // --- write output ---
+        using (var ofs = new FileStream(outFile, FileMode.Create, FileAccess.Write))
+        using (var w = new BinaryWriter(ofs))
+        {
+            w.Write(tag); w.Write(legacy); w.Write(ue3); w.Write(verUE4); w.Write(lic);
+            w.Write(0); w.Write(newTotalHeaderSize); FString(w, "None"); w.Write(pkgFlags);
+            w.Write(newNameCount); w.Write(newNameOffset);
+            w.Write(0); w.Write(0);
+            w.Write(newExportCount); w.Write(newExportOffset);
+            w.Write(newImportCount); w.Write(newImportOffset);
+            w.Write(newDependsOffset);
+            w.Write(0); w.Write(0); w.Write(0);
+            w.Write(0x534F4432); w.Write(0x54455354); w.Write(0x4D415030); w.Write(0x30303031);
+            w.Write(1); w.Write(newExportCount); w.Write(newNameCount);
+            EngineVersion(w); EngineVersion(w);
+            w.Write(0); w.Write(0); w.Write(0); w.Write(0); w.Write(0);
+            w.Write(0); w.Write((long)newTotalHeaderSize); w.Write(0); w.Write(0);
+            if (w.BaseStream.Position != newNameOffset) throw new InvalidOperationException($"summary mismatch {w.BaseStream.Position}!={newNameOffset}");
+            foreach (var n in names) { FString(w, n); w.Write(0); }
+            if (w.BaseStream.Position != newImportOffset) throw new InvalidOperationException($"name map mismatch {w.BaseStream.Position}!={newImportOffset}");
+            foreach (var im in imports) { w.Write(im.CP); w.Write(0); w.Write(im.CN); w.Write(0); w.Write(im.Outer); w.Write(im.ON); w.Write(0); }
+            if (w.BaseStream.Position != newExportOffset) throw new InvalidOperationException($"import map mismatch {w.BaseStream.Position}!={newExportOffset}");
+            foreach (var ee in exportEntries) w.Write(ee);
+            w.Write(newActorExport); w.Write(newCompExport);
+            if (w.BaseStream.Position != newDependsOffset) throw new InvalidOperationException($"export map mismatch {w.BaseStream.Position}!={newDependsOffset}");
+            w.Write(dependsAndRestHeader);
+            if (w.BaseStream.Position != newTotalHeaderSize) throw new InvalidOperationException($"header size mismatch {w.BaseStream.Position}!={newTotalHeaderSize}");
+            w.Write(serialData);
+            w.Write(actorSerial); w.Write(compSerial);
+            if (w.BaseStream.Position != newFileSize) throw new InvalidOperationException($"file size mismatch {w.BaseStream.Position}!={newFileSize}");
+        }
+
+        Console.WriteLine($"[insertplatform] {inFile} -> {outFile}");
+        Console.WriteLine($"[insertplatform] added {platformName} ({sizeM:0.##}x{sizeM:0.##} m) at ({x / 100:0.##},{y / 100:0.##},{z / 100:0.##}) m yaw={yawDeg:0.#}");
+        Console.WriteLine($"[insertplatform] exports {exportCount}->{newExportCount}, imports {importCount}->{newImportCount}, names {nameCount}->{newNameCount}, headerDelta={headerDelta}, size {data.Length}->{newFileSize}");
+        return 0;
+    }
+
+    private static string ReadFString(BinaryReader r)
+    {
+        int len = r.ReadInt32();
+        if (len == 0) return "";
+        bool unicode = len < 0;
+        if (unicode)
+        {
+            len = -len;
+            var bytes = r.ReadBytes(len * 2);
+            return Encoding.Unicode.GetString(bytes, 0, Math.Max(0, bytes.Length - 2));
+        }
+        else
+        {
+            var bytes = r.ReadBytes(len);
+            return Encoding.ASCII.GetString(bytes, 0, Math.Max(0, bytes.Length - 1));
+        }
+    }
+    private static int ReadFNameIndex(BinaryReader r) { int idx = r.ReadInt32(); r.ReadInt32(); return idx; }
+
+    /// <summary>Baseline: structured 1:1 roundtrip of a .umap by splitting into contiguous raw sections
+    /// [summary..NameOffset), [names), [imports), [exports), [depends..TotalHeaderSize), [serials..EOF).
+    /// Verifies byte-identical output when no modifications are applied. Uses CUE4Parse summary offsets.</summary>
+    public static int RoundtripMap(string inFile, string outFile)
+    {
+        var versions = new CUE4Parse.UE4.Versions.VersionContainer(CUE4Parse.UE4.Versions.EGame.GAME_StateOfDecay2);
+        var data = File.ReadAllBytes(inFile);
+        var ar = new CUE4Parse.UE4.Assets.Readers.FAssetArchive(new FByteArchive(Path.GetFileName(inFile), data, versions), null);
+        var s = new CUE4Parse.UE4.Objects.UObject.FPackageFileSummary(ar);
+
+        int nameOff = s.NameOffset;
+        int importOff = s.ImportOffset;
+        int exportOff = s.ExportOffset;
+        int dependsOff = s.DependsOffset;
+        int headerEnd = s.TotalHeaderSize;
+
+        if (!(0 < nameOff && nameOff <= importOff && importOff <= exportOff && exportOff <= dependsOff && dependsOff <= headerEnd && headerEnd <= data.Length))
+        {
+            Console.Error.WriteLine($"[roundtrip] invalid section layout: name={nameOff} import={importOff} export={exportOff} depends={dependsOff} headerEnd={headerEnd} len={data.Length}");
+            return 3;
+        }
+
+        var summary = data.AsSpan(0, nameOff).ToArray();
+        var namesSec = data.AsSpan(nameOff, importOff - nameOff).ToArray();
+        var importsSec = data.AsSpan(importOff, exportOff - importOff).ToArray();
+        var exportsSec = data.AsSpan(exportOff, dependsOff - exportOff).ToArray();
+        var dependsSec = data.AsSpan(dependsOff, headerEnd - dependsOff).ToArray();
+        var serialSec = data.AsSpan(headerEnd, data.Length - headerEnd).ToArray();
+
+        using (var fs = new FileStream(outFile, FileMode.Create, FileAccess.Write))
+        using (var w = new BinaryWriter(fs))
+        {
+            w.Write(summary); w.Write(namesSec); w.Write(importsSec); w.Write(exportsSec); w.Write(dependsSec); w.Write(serialSec);
+        }
+        var outData = File.ReadAllBytes(outFile);
+        bool identical = outData.Length == data.Length && outData.AsSpan().SequenceEqual(data);
+        Console.WriteLine($"[roundtrip] {inFile} -> {outFile}");
+        Console.WriteLine($"[roundtrip] sections: summary={summary.Length} names={namesSec.Length} imports={importsSec.Length} exports={exportsSec.Length} depends+hdr={dependsSec.Length} serials={serialSec.Length}");
+        Console.WriteLine($"[roundtrip] verUE4={(int)s.FileVersionUE.FileVersionUE4} lic={s.FileVersionLicenseeUE} legacy={s.FileVersionUE.Value} custom={s.CustomVersionContainer?.Versions.Length ?? -1} flags=0x{(uint)s.PackageFlags:X} totalHdr={s.TotalHeaderSize} bulk={s.BulkDataStartOffset} worldTile={s.WorldTileInfoDataOffset} assetReg={s.AssetRegistryDataOffset}");
+        Console.WriteLine($"[roundtrip] counts: names={s.NameCount} imports={s.ImportCount} exports={s.ExportCount} dependsOff={s.DependsOffset} preloadDepCount={s.PreloadDependencyCount} preloadDepOff={s.PreloadDependencyOffset}");
+        if (s.ExportCount > 0)
+        {
+            var pkg = new CUE4Parse.UE4.Assets.Package(new FByteArchive(Path.GetFileName(inFile), data, versions), null, null, null, null, useLazySerialization: true);
+            var em = pkg.ExportMap;
+            var sizes = new HashSet<int>();
+            for (int i = 0; i < Math.Min(em.Length, 20); i++) sizes.Add((int)em[i].SerialSize);
+            Console.WriteLine($"[roundtrip] exportMap entries={em.Length}, sampleSerialSizes(first20 distinct-ish)={string.Join(",", sizes.Take(10))}");
+            if (em.Length >= 2) Console.WriteLine($"[roundtrip] export[0] off={em[0].SerialOffset} size={em[0].SerialSize} name={em[0].ObjectName} class={em[0].ClassIndex}");
+            if (em.Length >= 2) Console.WriteLine($"[roundtrip] export[1] off={em[1].SerialOffset} size={em[1].SerialSize} name={em[1].ObjectName}");
+            // infer export entry byte size from raw: (depends - exportOff) vs count is not reliable if preload deps follow; try distance between consecutive serial offsets? no.
+        }
+        Console.WriteLine($"[roundtrip] byte-identical={identical} size={outData.Length}");
+        return identical ? 0 : 4;
     }
 
     /// <summary>Summary length with CustomVersions count=0 and FolderName "None" (byte-pinned against the reference: 325 - 7*20 entry bytes).</summary>

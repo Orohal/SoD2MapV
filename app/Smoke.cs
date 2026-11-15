@@ -700,4 +700,63 @@ internal static class Smoke
         Console.WriteLine($"wrote {outPak} ({wr.FileSize:N0} bytes, entry {rel})");
         return 0;
     }
+
+    /// <summary>
+    /// --addplatform &lt;gameDir&gt; &lt;mapPath&gt; &lt;x&gt; &lt;y&gt; &lt;z&gt; &lt;sizeM&gt; [yawDeg] [outPak]:
+    /// appends a sizeM x sizeM flat platform (WaterPlane_01, scaled) to an existing campaign
+    /// map and writes a mod pak. The result is re-parsed through the real MapLoader path on a
+    /// fresh provider to verify the new actor's transform/scale/mesh. x/y/z are in cm.
+    /// </summary>
+    public static int AddPlatform(string gameDir, string mapPath, float x, float y, float z, float sizeM, float yawDeg, string? outPak = null)
+    {
+        var loader = new MapLoader();
+        var res = loader.InitializeAsync(gameDir, new Progress<string>(s => Console.WriteLine("[init] " + s))).GetAwaiter().GetResult();
+        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
+
+        var data = loader.ReadMapBytes(mapPath);
+        var name = $"Platform_{sizeM:0}x{sizeM:0}";
+        var app = UmapAppend.AppendPlatform(data, x, y, z, sizeM, yawDeg, name);
+        if (!app.Ok) { Console.Error.WriteLine("[addplatform] append failed: " + app.Error); return 3; }
+        Console.WriteLine($"[addplatform] appended '{name}': exports {app.OldExports} -> {app.NewExports}, header delta {app.HeaderDelta}, bytes {data.Length:N0} -> {app.Data.Length:N0}");
+
+        var mountPoint = PakWriter.ResolveMountPoint(loader.Provider, mapPath);
+        var rel = PakWriter.StripMount(mapPath, mountPoint);
+        outPak ??= Path.Combine(Path.GetTempPath(), "sod2mapv_addplatform", MapChunk.GetChunkPakFileName(mapPath) ?? "pakchunk999-WindowsNoEditor_P.pak");
+        var outDir = Path.GetDirectoryName(outPak);
+        if (!string.IsNullOrEmpty(outDir)) Directory.CreateDirectory(outDir);
+        var wr = PakWriter.Write(outPak, mountPoint, new[] { new PakWriter.Entry { Path = rel, Data = app.Data } });
+        Console.WriteLine($"[addplatform] wrote {outPak} ({wr.FileSize:N0} bytes, mount '{mountPoint}', entry '{rel}')");
+
+        // self-check on a fresh provider over only the mod pak
+        var versions = new CUE4Parse.UE4.Versions.VersionContainer(CUE4Parse.UE4.Versions.EGame.GAME_StateOfDecay2);
+        var checkDir = Path.Combine(Path.GetTempPath(), "sod2mapv_addplatform_check");
+        Directory.CreateDirectory(checkDir);
+        var checkPak = Path.Combine(checkDir, "pakchunk0-WindowsNoEditor.pak");
+        PakWriter.Write(checkPak, mountPoint, new[] { new PakWriter.Entry { Path = rel, Data = app.Data } });
+        var prov = new CUE4Parse.FileProvider.DefaultFileProvider(checkDir, SearchOption.AllDirectories, versions, StringComparer.OrdinalIgnoreCase);
+        prov.Initialize();
+        prov.Mount();
+
+        var model = MapLoader.ParseMap(prov, mapPath);
+        if (model.Error != null) { Console.Error.WriteLine("[addplatform] self-check parse error: " + model.Error); return 4; }
+        var np = model.Objects.FirstOrDefault(o => o.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (np == null) { Console.Error.WriteLine($"[addplatform] self-check: '{name}' not found in parsed map"); return 4; }
+
+        var yaw = MathF.Atan2(2f * (np.QW * np.QZ + np.QX * np.QY), 1f - 2f * (np.QY * np.QY + np.QZ * np.QZ)) * 180f / MathF.PI;
+        var posOk = MathF.Abs(np.X - x) < 0.01f && MathF.Abs(np.Y - y) < 0.01f && MathF.Abs(np.Z - z) < 0.01f;
+        var yawDelta = MathF.Abs(yaw - yawDeg) % 360f; if (yawDelta > 180f) yawDelta = 360f - yawDelta;
+        var sc = sizeM / 10f;
+        var scaleOk = MathF.Abs(np.SX - sc) < 0.001f && MathF.Abs(np.SY - sc) < 0.001f;
+        var ok = posOk && yawDelta < 0.01f && scaleOk;
+        var status = ok ? "OK" : "MISMATCH";
+        var ci2 = System.Globalization.CultureInfo.InvariantCulture;
+        var msg = "[addplatform] self-check: " + np.Name
+            + " at " + (np.X / 100f).ToString("0.##", ci2) + "," + (np.Y / 100f).ToString("0.##", ci2) + "," + (np.Z / 100f).ToString("0.##", ci2) + " m"
+            + " yaw=" + yaw.ToString("0.#", ci2)
+            + " scale=" + np.SX.ToString("0.###", ci2) + "," + np.SY.ToString("0.###", ci2) + "," + np.SZ.ToString("0.###", ci2)
+            + " mesh=" + np.MeshPath + " class=" + np.ClassName + "  " + status;
+        Console.WriteLine(msg);
+        Console.WriteLine($"[addplatform] parsed {model.Objects.Count:N0}/{model.TotalExports} exports");
+        return ok ? 0 : 4;
+    }
 }

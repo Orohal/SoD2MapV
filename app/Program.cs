@@ -399,6 +399,54 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--genplatform")
+        {
+            try
+            {
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                // --genplatform <out.umap> <x> <y> <z> <sizeM> [yawDeg]  (x/y/z in cm)
+                if (args.Length < 6) { Console.Error.WriteLine("usage: --genplatform <out.umap> <x> <y> <z> <sizeM> [yawDeg]"); return 2; }
+                float x = float.Parse(args[2], ci), y = float.Parse(args[3], ci), z = float.Parse(args[4], ci), sizeM = float.Parse(args[5], ci);
+                float yaw = args.Length > 6 ? float.Parse(args[6], ci) : 0f;
+                return UmapGen.GenPlatform(args[1], x, y, z, sizeM, yaw);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--insertplatform")
+        {
+            try
+            {
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                // --insertplatform <in.umap> <out.umap> <x> <y> <z> <sizeM> [yawDeg]  (prototype: GenMap-compatible packages)
+                if (args.Length < 7) { Console.Error.WriteLine("usage: --insertplatform <in.umap> <out.umap> <x> <y> <z> <sizeM> [yawDeg]"); return 2; }
+                float x = float.Parse(args[3], ci), y = float.Parse(args[4], ci), z = float.Parse(args[5], ci), sizeM = float.Parse(args[6], ci);
+                float yaw = args.Length > 7 ? float.Parse(args[7], ci) : 0f;
+                return UmapGen.InsertPlatformIntoMap(args[1], args[2], x, y, z, sizeM, yaw);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--umaproundtrip")
+        {
+            try
+            {
+                // --umaproundtrip <in.umap> <out.umap>
+                if (args.Length < 3) { Console.Error.WriteLine("usage: --umaproundtrip <in.umap> <out.umap>"); return 2; }
+                return UmapGen.RoundtripMap(args[1], args[2]);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--testmap")
         {
             try
@@ -668,6 +716,26 @@ internal static class Program
             try
             {
                 return Smoke.Run(args.Length > 1 ? args[1] : DefaultGameDir);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--addplatform")
+        {
+            try
+            {
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                // --addplatform <gameDir> <mapPath> <x> <y> <z> <sizeM> [yawDeg] [outPak]  (x/y/z in cm)
+                if (args.Length < 8) { Console.Error.WriteLine("usage: --addplatform <gameDir> <mapPath> <x> <y> <z> <sizeM> [yawDeg] [outPak]"); return 2; }
+                var gameDir = args[1];
+                var mapPath = args[2];
+                float x = float.Parse(args[3], ci), y = float.Parse(args[4], ci), z = float.Parse(args[5], ci), sizeM = float.Parse(args[6], ci);
+                float yaw = args.Length > 7 ? float.Parse(args[7], ci) : 0f;
+                string? outPak = args.Length > 8 ? args[8] : null;
+                return Smoke.AddPlatform(gameDir, mapPath, x, y, z, sizeM, yaw, outPak);
             }
             catch (Exception e)
             {
