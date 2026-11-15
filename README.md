@@ -4,7 +4,7 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 
 <a href="https://www.buymeacoffee.com/Orohal" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-**Aktueller Stand: [v0.6.4](https://github.com/Orohal/SoD2MapV/releases/latest)** - Viewer + Voll-Editor + Fahrzeug- & **Item-Injektion** (GUI/CLI, Presets aus Save, persistent) + **Häuser/Objekte & Sites verschieben** (Gruppen-Auswahl, Undo, **Chunk-Patch-Export** für spielwirksame Tile-Mods, **Auto-Multi-Map**: Tile + `<region>_sites.umap` automatisch in einem Patch) + **Höhenanpassung (Z)** + **versetzte Sites vollständig claimbar im Spiel** (Tag-DB-Patch + Kind-Actor-Frame-Fix, ingame verifiziert) + **regionweite Site-Auswahl** (Klick auf den Regions-Knoten in der Map-Liste listet alle Sites aller Tiles; Auswahl lädt die Tile automatisch) + **Session-Wiederherstellung** + **Koordinaten-Fix** (Welt vs. Kachel-lokal für Spieler-Marker, Ansicht, Injektion) + **Funktion-Actoren** (Outpost-/Homesite-Interactables wandern mit dem Gebäude) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen, automatisch verankert) + **tgc-Site/Outpostable-Overlay** (claimbare Gebäude an ihren echten Positionen, klickbar in Box **und** Name). Details: [Repo-Status](#repo-status) (eingeklappt).
+**Aktueller Stand: [v0.6.5](https://github.com/Orohal/SoD2MapV/releases/latest)** - Viewer + Voll-Editor + Fahrzeug- & **Item-Injektion** (GUI/CLI, Presets aus Save, persistent) + **Häuser/Objekte & Sites verschieben** (Gruppen-Auswahl, Undo, **Chunk-Patch-Export** für spielwirksame Tile-Mods, **Auto-Multi-Map**: Tile + `<region>_sites.umap` automatisch in einem Patch) + **Höhenanpassung (Z)** + **versetzte Sites vollständig claimbar im Spiel** (Tag-DB-Patch + Kind-Actor-Frame-Fix, ingame verifiziert) + **regionweite Site-Auswahl** (Klick auf den Regions-Knoten in der Map-Liste listet alle Sites aller Tiles; Auswahl lädt die Tile automatisch) + **Neue Gruppe** (Kopie einer Community mit neuer Identität als eigenen Spielstand anlegen — ingame verifiziert; „Neue Gruppe…"-Button in beiden Inject-Dialogen, CLI `--saveclone`) + **Session-Wiederherstellung** + **Koordinaten-Fix** (Welt vs. Kachel-lokal für Spieler-Marker, Ansicht, Injektion) + **Funktion-Actoren** (Outpost-/Homesite-Interactables wandern mit dem Gebäude) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen, automatisch verankert) + **tgc-Site/Outpostable-Overlay** (claimbare Gebäude an ihren echten Positionen, klickbar in Box **und** Name). Details: [Repo-Status](#repo-status--versionshistorie) (eingeklappt).
 
 ## Features
 
@@ -47,7 +47,7 @@ Was beim Injizieren passiert (pro Item):
 ## To do .
 
 1. **Feinschliff / Polish:** Viele kleine Verfeinerungen, Bugfixes und UX-Polish; Fokus auf Stabilität, Konsistenz und Detailarbeit im Editor, Export und UI.
-2. **Injects verbessern für Map-Erkundung & Tests:** Fahrzeug-/Item-Injektion so erweitern, dass sich bearbeitete Maps bequem bereisen und testen lassen — u. a. Unterstützung für eine **„neue Gruppe"** (neue Community/Überlebendengruppe anlegen bzw. in eine frische Gruppe injizieren), damit man Maps von Grund auf durchspielen und verifizieren kann (Spawn, Fahrzeuge, Items, Claimables an neuen Positionen).
+2. **Injects verbessern für Map-Erkundung & Tests (umgesetzt):** Fahrzeug-/Item-Injektion erweitert — **„Neue Gruppe"** angelegt als Kopie einer bestehenden Community mit neuer Identität (frische `ID`/`GameId`-GUIDs), ingame als eigener, spielbarer Spielstand verifiziert; beide Inject-Dialoge („Neue Gruppe…"-Button) und CLI `--saveclone` erlauben direktes Reininjizieren in die frische Gruppe.
 3. **Hintergrund-Ausrichtung der uebrigen Regionen** - Faustite/Trumbull ist kalibriert (per Drag + Auto-Fit); fuer Cascade Hills, Drucker County, Meagher Valley, Providence Ridge und die Trumbull-Variante stehen Scale/Offset noch aus (Auto-Fit: `--bgfit`, Feinjustierung per Drag)
 4. **Persistent Item-Presets (umgesetzt):** Class-Paths + Item-Typ + Bezeichnung werden in `%LOCALAPPDATA%\SoD2MapViewer\item_presets.json` gespeichert und im Inject-Dialog über **„Preset speichern" / „Preset löschen"** verwaltet; **„Presets aus allen Saves"** scannt alle Savegames und legt fehlende Item-Klassen automatisch als Presets an. Presets sind damit über Saves hinweg wiederverwendbar (Cross-Save-kompatibel).
 
@@ -103,6 +103,8 @@ Einmalig **Kalibrierung** (pro Save): Toolbar **„Inject vehicle…"** oder **R
 
 **Schnell: „Inject at player“ (ab v0.5.3):** Zuerst **„Show character"** klicken (liest die zuletzt gespeicherte Spielerposition aus dem Save, `PlayerBreadcrumbs`, nutzt die Save-Kalibrierung) → dann **„Inject at player"**. Der Injekt-Dialog wird mit Spieler-Pos/Höhe (+10 m Offset) vorausgefüllt. **Hinweis:** Möglichst auf einer **freien Fläche** stehen, sonst kann das Fahrzeug in einem Objekt spawnen. Die Blickrichtung ist aus dem Save nicht ablesbar — **Yaw/Position/Höhe** im Dialog bei Bedarf anpassen. Zahlenfelder akzeptieren `,` oder `.`; leere Z-/Shift-/Yaw-Felder = `0`.
 
+**Neue Gruppe (ab v0.6.5):** Button **„Neue Gruppe…"** im Inject-Dialog klont das gewählte Save unter dem nächsten freien Slot-Namen (`SaveGame_Vanilla_3.sav` usw.) und schreibt die Identitäts-GUIDs (`ID`, `GameId`) neu — das Spiel sieht die Kopie als **eigene Community** (ingame verifiziert). Der Klon wird sofort ausgewählt, sodass Fahrzeuge direkt reininjiziert werden können. Existierende Ziele werden nie überschrieben; bei fehlgeschlagenem Self-Check wird die Datei wieder gelöscht. CLI: `--saveclone`.
+
 </details>
 
 <details>
@@ -114,6 +116,7 @@ Menü **Inject ▾** → **„Inject item…"**: Save wählen (automatisches Bac
 - Manuelle Eingabe möglich: Item-Klassenpfad + Stack-Anzahl; **StackCount ist bei Waffen optional** (Waffen werden über eine klassenbezogene Vorlage injiziert, Stacks über Zahl-Feld)
 - Es werden freie Rucksack-Slots im Ziel-Überlebenden benötigt (einer pro Item); fehlen sie, bricht der Vorgang sauber ab
 - CLI-Äquivalent: `--saveitems` (injizieren), `--saveitemlist` (Item-Klassen des Saves auflisten)
+- **„Neue Gruppe…"** (ab v0.6.5, wie im Fahrzeug-Dialog): Save mit neuer Identität klonen und Items direkt in die frische Gruppe injizieren
 
 </details>
 
@@ -171,6 +174,11 @@ SoD2MapViewer.exe --saveitemlist <save.sav> [filter]
 # Schreibt <out.sav>, das Eingabe-Save bleibt unverändert.
 SoD2MapViewer.exe --saveitems <save.sav> <out.sav> <survivorId> <itemType> <classPath1> <stack1> [<classPath2> <stack2> ...]
 
+# "Neue Gruppe": Save unter dem nächsten freien Slot-Namen klonen (z. B. SaveGame_Vanilla_2 -> SaveGame_Vanilla_3.sav)
+# und die Identitäts-GUIDs (ID, GameId) neu schreiben — das Spiel sieht die Kopie als eigene Community.
+# Weltzustand (Fahrzeuge, Items, Base) bleibt erhalten; Self-Check inklusive; existierende Ziele werden nie überschrieben.
+SoD2MapViewer.exe --saveclone <save.sav> [dst.sav]
+
 # Live-Savegames auflisten (%LOCALAPPDATA%\StateOfDecay2, neueste zuerst)
 SoD2MapViewer.exe --saves
 ```
@@ -193,6 +201,7 @@ SoD2MapViewer.exe --saves
 <details>
 <summary><b>Repo-Status / Versionshistorie</b></summary>
 
+- **v0.6.5** - **Neue Gruppe (Kopie + Identität, ingame verifiziert)**: Ein Save wird unter dem **nächsten freien Slot-Namen** geklont (`SaveGame_Vanilla_2` → `SaveGame_Vanilla_3.sav`) und die **Identitäts-GUIDs (`ID` + `GameId`) neu geschrieben** — das Spiel behandelt die Kopie als **eigene, spielbare Community** (im Spiel verifiziert). Weltzustand (Fahrzeuge, Items, Base) bleibt erhalten. **„Neue Gruppe…"**-Button in beiden Inject-Dialogen (Klon wird sofort ausgewählt, direkt reininjizierbar), CLI `--saveclone <save.sav> [dst.sav]`. Fail-safe: Self-Check (Reparse, GUID-Vergleich, Fahrzeuganzahl) — bei Fehlschlag wird die geschriebene Datei wieder gelöscht; existierende Ziele werden nie überschrieben. Bugfix: doppelte `_btnCopySave.Click`-Registrierung im Item-Inject-Dialog entfernt (Handler lief pro Klick zweimal).
 - **v0.6.4** - **Regionweite Site-Auswahl + persistente Item-Presets + Toolbar-Organisation**: Klick auf einen **Regions-Knoten** in der Map-Liste listet **alle Sites der Region** über alle Tiles (Label mit Tile-Name, aus den tgc-Entity-Pfaden abgeleitet); Auswahl einer fremden Tile lädt diese automatisch und springt zur Site. **Persistente Item-Presets** in `%LOCALAPPDATA%\SoD2MapViewer\item_presets.json`: „Preset speichern/löschen" im Inject-Dialog, **„Presets aus allen Saves"** scannt alle Savegames und legt fehlende Item-Klassen als Presets an (Cross-Save-kompatibel). **Toolbar** in vier logische Gruppen gegliedert (Game | Filter | Selection | Actions), „Enable editing" rechts neben „Feinjustierung (Drag)" mit rotem Label. Preset-Dropdowns alphabetisch sortiert.
 - **v0.6.3** - **Versetzte Sites vollständig claimbar (ingame verifiziert)**: Das Kind-Actor-Problem von v0.6.2 ist gefixt — Türen, Claim-Terminals und Container hängen als Kind-Aktoren an einem (um Yaw gedrehten) Gebäude-Prefab und speichern ihre Transforms **relativ zu dessen lokalem Frame**. Der Export schrieb bisher den Welt-Delta roh hinein (doppelte Bewegung + Rotation-Smear → Terminal landete ~300 m daneben). Jetzt erkennt der Export mitgezogene Kinder und lässt deren relative Transforms **unverändert** (sie folgen dem Prefab automatisch); einzeln verschobene Kinder bekommen ihren Delta korrekt in den Owner-Frame rotiert. Der Export-Dialog meldet die Anzahl der mitgeführten Kind-Aktoren. Carried-Erkennung robust gegen Float32-Auslöschung bei Kachel-Koordinaten (~10⁵ cm). BUGFIX-Paket: Nullability-Warnungen in `TgcPatcher`/`Smoke` bereinigt.
 - **v0.6.2** - **Cooked-Tag-Datenbank-Patch**: Das Spiel liest Runtime-Sites/Interactables/Container aus **`Tagged/Cooked/<region>_Tags.uasset`** (`TaggedDatabaseAsset.Database`), nicht aus der compiled JSON (`.tgc`). Der Export patcht jetzt **beide** Tag-Datenbanken im Chunk-1095-Pak (JSON + Cooked-Asset, bytegenaue X/Y/Z-Tripel-Shifts, auch bei unaligned Daten); Meldung `cooked asset: N position(s) shifted, M not found` im Export-Dialog. Ingame-Status: Meshes wandern korrekt, Laufzeit-Site-Actoren hingen noch an der alten Position (gefixt in v0.6.3).
@@ -227,14 +236,14 @@ Die gepackten Single-File-EXEs werden von einzelnen VirusTotal-Engines als gener
 
 **Wenn ungünstig:** Ordner-Variante ohne gepackte EXE nutzen — [SoD2MapViewer-framework-dependent-plain.zip](https://github.com/Orohal/SoD2MapV/releases/latest) (kleine EXE + DLLs, gleiche Funktion). Im eigenen Virenprogramm ggf. Ordner ausschließen.
 
-**Published Hashes (SHA256) - v0.6.4:**
+**Published Hashes (SHA256) - v0.6.5:**
 
 | Asset | SHA256 |
 | --- | --- |
-| `SoD2MapViewer-framework-dependent.zip` | `332598df73f835e5ae7ed48f24340e70ad0999cb3ef426035e81dc65466072ee` |
-| `SoD2MapViewer-framework-dependent-plain.zip` | `17777b8c0e69c64dedec395407741b0683d66ba89ac18308145dc2c8b7bd97df` |
-| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `12e64dacbfbae9234785b0ba8481b40a2e58ef559aed03d2237edfc984bfb30` |
-| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `13be5806cec1a92bee71a1ced1176d8af84278d1a39869c4285fde693971aad9` |
+| `SoD2MapViewer-framework-dependent.zip` | `48d3433e58f9f477d5e2032250f58b3fde87306ef35b2b22e8105bd0ee206360` |
+| `SoD2MapViewer-framework-dependent-plain.zip` | `ec44a7d98befad7ac0b211dce01a2143e0aceff143d9f32a539e183605f8fbd2` |
+| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `848247b4dae747d962d15abdace146b9006b376909c9b33dbe428d2191e04191` |
+| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `fd638e353e33d47f91fbcf841bc4a9465d7f15e9e13e5efcec9b59c1d9b227b8` |
 
 Historisch: v0.5.7-Artefakte siehe [Release v0.5.7](https://github.com/Orohal/SoD2MapV/releases/tag/v0.5.7). Die framework-dependent Single-File-EXE von **v0.4.0** (`9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A`) wurde von 9 VirusTotal-Engines generisch gemeldet (Packer-Heuristik der Single-File-Apphosts).
 
