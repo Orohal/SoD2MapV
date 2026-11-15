@@ -342,14 +342,20 @@ public static class TgcPatcher
                 ? ta.Select(t => t?.GetValue<string>() ?? "").ToArray()
                 : Array.Empty<string>();
             var tile = TileOfPath(path);
-            if (tile.Length == 0 && site?["contains"] is JsonArray contains)
-                foreach (var cg in contains)
-                {
-                    if (cg?.GetValue<string>() is not string cgGuid) continue;
-                    if (!pathByGuid.TryGetValue(cgGuid, out var ep)) continue;
-                    tile = TileOfPath(ep);
-                    if (tile.Length > 0) break;
-                }
+            // region-level sublevel prefixes (e.g. "faustite_sites", "faustite_sites_regions")
+            // are NOT tile names; resolve them via contained entities instead.
+            if (!IsTileName(tile))
+            {
+                tile = "";
+                if (site?["contains"] is JsonArray contains)
+                    foreach (var cg in contains)
+                    {
+                        if (cg?.GetValue<string>() is not string cgGuid) continue;
+                        if (!pathByGuid.TryGetValue(cgGuid, out var ep)) continue;
+                        var t = TileOfPath(ep);
+                        if (IsTileName(t)) { tile = t; break; }
+                    }
+            }
             if (site?["boxes"] is not JsonArray boxes) continue;
             foreach (var b in boxes)
             {
@@ -380,6 +386,15 @@ public static class TgcPatcher
         var tile = path[..i];
         if (tile.Contains('/') || tile.Contains('\\')) return ""; // asset paths, not tile prefixes
         return tile;
+    }
+
+    /// <summary>True when the prefix is an actual map tile name (e.g. "faustite_x2_y3"), not a region sublevel like "faustite_sites".</summary>
+    public static bool IsTileName(string tile)
+    {
+        if (string.IsNullOrEmpty(tile)) return false;
+        // tile name must end with "_xN_yM" (e.g. "faustite_x2_y3", "trumbull_valley_x0_y0")
+        var m = System.Text.RegularExpressions.Regex.Match(tile, @"_x\d+_y\d+$");
+        return m.Success;
     }
 
     /// <summary>Summary of one region's tag database (for CLI diagnostics).</summary>

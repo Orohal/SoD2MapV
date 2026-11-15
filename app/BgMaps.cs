@@ -145,7 +145,7 @@ public static class BgMaps
     /// Renders (or fetches from cache) the vector basemap of the region, in MapUIInfo colors.
     /// Bitmap coordinate system: widget X → px (right), widget Y → py (top-down, Y inverted).
     /// </summary>
-    public static BgMap? Get(DefaultFileProvider provider, MapRegion region, int targetPx = 1800, string? mapPath = null)
+    public static BgMap? Get(DefaultFileProvider provider, MapRegion region, int targetPx = 3200, string? mapPath = null)
     {
         var asset = AssetFor(region, mapPath);
         if (asset == null) return null;
@@ -170,12 +170,20 @@ public static class BgMaps
     static BgMap? Render(DefaultFileProvider provider, MapRegion region, string assetName, int targetPx)
     {
         var exp = LoadBackgroundExport(provider, assetName);
-        // engine colors of the in-game map screen (MapUIInfo_BP defaults)
-        var ground   = ColorFromLinear(exp, "GroundColor",    Color.FromArgb(255, 188, 183, 177));
-        var water    = ColorFromLinear(exp, "WaterColor",     Color.FromArgb(255, 185, 231, 243));
-        var road     = ColorFromLinear(exp, "RoadColor",      Color.FromArgb(255, 222, 221, 217));
-        var building = ColorFromLinear(exp, "BuildingColor",  Color.FromArgb(255, 222, 221, 217));
-        var outside  = ColorFromLinear(exp, "OutsideBoundsColor", Color.FromArgb(255, 214, 214, 208));
+        // colorful orientation palette (vivid, ingame-inspired) — map is meant as a rough guide
+        var ground   = Color.FromArgb(255, 156, 196, 120); // grassy green
+        var water    = Color.FromArgb(255, 100, 190, 230); // bright lake blue
+        var road     = Color.FromArgb(255, 248, 236, 190); // warm light road
+        var building = Color.FromArgb(255, 214, 110, 78);  // distinct building blocks
+        var outside  = Color.FromArgb(255, 186, 206, 160); // soft outside
+
+        // differentiate water bodies: lakes bright/calm, rivers deeper flow
+        static int C(int v) => Math.Clamp(v, 0, 255);
+        var lakeColor  = water;
+        var riverColor = Color.FromArgb(255, C(water.R - 40), C(water.G - 45), C(water.B - 15)); // deeper blue
+        var roadCasing = Color.FromArgb(255, 120, 95, 70);  // strong road outline for readability
+        var buildEdge  = Color.FromArgb(255, C(building.R - 45), C(building.G - 35), C(building.B - 25));
+        var shadow     = Color.FromArgb(45, 40, 35, 30);
 
         var buffers = new Dictionary<string, List<(float X, float Y)>>();
         foreach (var bufName in new[] { "RoadBuffer", "RiverBuffer", "LakesBuffer", "BuildingBuffer", "BorderBuffer" })
@@ -196,25 +204,38 @@ public static class BgMaps
         var py = (int)Math.Round(spanY * scale) + 24;
         var toPxX = (float X) => (float)((X - minX) * scale + 12);
         var toPxY = (float Y) => (float)(py - ((Y - minY) * scale + 12)); // Y inverted (widget north-up)
+        var shadowOff = (float)Math.Max(1.0, targetPx / 1800.0); // subtle depth at higher res
 
         var bmp = new Bitmap(px, py);
         using var g = Graphics.FromImage(bmp);
         g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
 
-        // ground fill = the whole blob; painting outside color first, then polygon ground is
-        // overkill — the vector data has no full ground patch, so flat ground color everywhere
-        using (var gb = new SolidBrush(ground)) g.Clear(ground);
+        // ground fill: flat ground color everywhere (vector data has no full ground patch)
+        g.Clear(ground);
 
-        using (var bRiver = new SolidBrush(water))
-        using (var bLake = new SolidBrush(water))
+        using (var bRiver = new SolidBrush(riverColor))
+        using (var bLake = new SolidBrush(lakeColor))
         using (var bRoad = new SolidBrush(road))
+        using (var bRoadCase = new SolidBrush(roadCasing))
         using (var bBuild = new SolidBrush(building))
-        using (var pBorder = new Pen(outside, 3f))
+        using (var bBuildEdge = new SolidBrush(buildEdge))
+        using (var bShadow = new SolidBrush(shadow))
+        using (var pBorder = new Pen(outside, Math.Max(2f, 3f * (float)(targetPx / 1800.0))))
         {
+            // water: lakes as calm fill, rivers as deeper flow on top
             DrawSegments(g, buffers, "LakesBuffer", bLake, toPxX, toPxY);
             DrawSegments(g, buffers, "RiverBuffer", bRiver, toPxX, toPxY);
-            DrawSegments(g, buffers, "RoadBuffer", bRoad, toPxX, toPxY);
+
+            // roads: shadow + darker casing pass for hierarchy/depth, then road surface
+            DrawSegments(g, buffers, "RoadBuffer", bShadow, x => toPxX(x) + shadowOff, y => toPxY(y) + shadowOff);
+            DrawSegments(g, buffers, "RoadBuffer", bRoadCase, toPxX, toPxY);
+            DrawSegments(g, buffers, "RoadBuffer", bRoad, x => toPxX(x) - 0.3f * shadowOff, y => toPxY(y) - 0.3f * shadowOff);
+
+            // buildings: subtle shadow and edge for map-symbol look
+            DrawSegments(g, buffers, "BuildingBuffer", bShadow, x => toPxX(x) + shadowOff, y => toPxY(y) + shadowOff);
             DrawSegments(g, buffers, "BuildingBuffer", bBuild, toPxX, toPxY);
+
             DrawBorder(g, buffers, pBorder, toPxX, toPxY);
         }
 
@@ -624,7 +645,7 @@ public static class BgMaps
         var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
         if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
         var dummy = new MapRegion("_", "_");
-        var map = Render(loader.Provider, dummy, assetName, 1800);
+        var map = Render(loader.Provider, dummy, assetName, 3200);
         if (map == null) { Console.Error.WriteLine("render failed: " + assetName); return 2; }
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(png))!);
         using (map.Bitmap) using (var fs = File.Create(png)) map.Bitmap.Save(fs, System.Drawing.Imaging.ImageFormat.Png);
@@ -657,7 +678,7 @@ public static class BgMaps
         foreach (var region in regions)
         {
             if (region == null) continue;
-            var map = Get(loader.Provider, region, 1800);
+            var map = Get(loader.Provider, region, 3200);
             if (map == null) { Console.Error.WriteLine($"[bgrender] {region.Key}: render failed"); continue; }
             var png = outPrefix.Replace(".png", "") + "-" + region.Key + ".png";
             using (map.Bitmap)

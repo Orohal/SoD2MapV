@@ -580,6 +580,14 @@ public sealed class MainForm : Form
                   "Drag in Move mode to relocate; 'Export mod .pak' writes map + tgc patch so the claim follows.");
     }
 
+    private static string TileNameFromPath(string path)
+    {
+        var name = Path.GetFileNameWithoutExtension(path ?? "");
+        // strip LOD suffix (e.g. "faustite_x3_y2_LOD1" -> "faustite_x3_y2")
+        var m = System.Text.RegularExpressions.Regex.Match(name, @"^(.*_x\d+_y\d+)(?:_LOD\d+)?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return m.Success ? m.Groups[1].Value : name;
+    }
+
     private static string SiteLabelCore(TgcPatcher.SiteBox s)
     {
         var outp = s.Tags?.Contains("Outpostable") ?? false;
@@ -609,9 +617,32 @@ public sealed class MainForm : Form
             return;
         }
         if (e.Node?.Tag is not string path) return; // group nodes have no Tag
+        if (string.Equals(_map?.Path, path, StringComparison.OrdinalIgnoreCase)) return;
+        await LoadMapPathAsync(path);
+    }
+
+    private async Task LoadMapPathAsync(string path)
+    {
         SetStatus($"parsing {Path.GetFileName(path)} ...");
         var model = await _loader.LoadMapAsync(path);
         SetMap(model);
+    }
+
+    private void SelectTreeNodeForMapPath(string path)
+    {
+        foreach (TreeNode region in _mapTree.Nodes)
+        {
+            foreach (TreeNode n in region.Nodes)
+            {
+                if (n.Tag is string p && string.Equals(p, path, StringComparison.OrdinalIgnoreCase))
+                {
+                    _mapTree.SelectedNode = n;
+                    n.EnsureVisible();
+                    region.Expand();
+                    return;
+                }
+            }
+        }
     }
 
     /// <summary>Populates the Site dropdown with all sites of a region (from the region tgc), across all tiles.</summary>
@@ -665,6 +696,8 @@ public sealed class MainForm : Form
         // tiled maps store local object coords; background is anchored automatically to the tile/world offset
         _canvas.MapWorldOffsetX = model.HasWorldTileOffset ? model.WorldTileOffsetX : 0;
         _canvas.MapWorldOffsetY = model.HasWorldTileOffset ? model.WorldTileOffsetY : 0;
+        // tile name used to filter the region-wide tgc site boxes to the currently loaded tile
+        _canvas.MapTile = TileNameFromPath(model.Path);
         // select the matching background region/asset from the map path
         _canvas.MapRegion = MapRegions.FromMapPath(model.Path);
         _canvas.MapPath = model.Path;
@@ -697,9 +730,12 @@ public sealed class MainForm : Form
                 }
             const float margin = 20000f; // 200 m
             var entries = new List<(string Label, int Index, string Tile)>();
+            var currentTile = TileNameFromPath(model.Path);
             for (int i = 0; i < _canvas.Sites.Count; i++)
             {
                 var s = _canvas.Sites[i];
+                // only sites of the currently loaded tile (region tgc covers many tiles)
+                if (!string.IsNullOrEmpty(s.Tile) && !string.Equals(s.Tile, currentTile, StringComparison.OrdinalIgnoreCase)) continue;
                 var lx = s.X - _canvas.MapWorldOffsetX;
                 var ly = s.Y - _canvas.MapWorldOffsetY;
                 if (minX != float.MaxValue &&
@@ -991,7 +1027,7 @@ public sealed class MainForm : Form
     private void OpenItemInjectDialog() =>
         new ItemInjectDialog().ShowDialog(this);
 
-    private void ShowCharacterPosition()
+    private async void ShowCharacterPosition()
     {
         try
         {
@@ -1024,6 +1060,14 @@ public sealed class MainForm : Form
                 return;
             }
 
+            // auto-load the most likely map (tile) for the player's position before showing marker
+            var bestMap = FindBestMapForPlayer(pos.Value);
+            if (bestMap != null && !string.Equals(_map?.Path, bestMap, StringComparison.OrdinalIgnoreCase))
+            {
+                await LoadMapPathAsync(bestMap);
+                SelectTreeNodeForMapPath(bestMap);
+            }
+
             var (sx, sy, sz, arch) = pos.Value; // save coords, cm
             var cal = Calibration.Get(savPath);
             double dx = cal?.ShiftX ?? 0, dy = cal?.ShiftY ?? 0, dz = cal?.ShiftZ ?? 0; // shift cm: save = world + shift => world = save - shift
@@ -1037,12 +1081,71 @@ public sealed class MainForm : Form
             _canvas.CenterOn(wx - _canvas.MapWorldOffsetX, wy - _canvas.MapWorldOffsetY);
             _canvas.Invalidate();
             var calNote = cal == null ? " (keine Kalibrierung — evtl. versetzt; wie bei Fahrzeug-Injektion kalibrieren)" : "";
-            SetStatus($"Character: save({sx / 100:0.#}, {sy / 100:0.#}, {sz / 100:0.#}) m, world({wx / 100:0.#}, {wy / 100:0.#}, {wz / 100:0.#}) m, map={arch}, save={Path.GetFileName(savPath)}{calNote}");
+            var mapNote = bestMap != null && string.Equals(_map?.Path, bestMap, StringComparison.OrdinalIgnoreCase) ? "" : (bestMap == null ? " (passende Karte nicht eindeutig gefunden)" : "");
+            SetStatus($"Character: save({sx / 100:0.#}, {sy / 100:0.#}, {sz / 100:0.#}) m, world({wx / 100:0.#}, {wy / 100:0.#}, {wz / 100:0.#}) m, map={arch}, save={Path.GetFileName(savPath)}{calNote}{mapNote}");
         }
         catch (Exception ex)
         {
             SetStatus("Character position error: " + ex.Message);
         }
+    }
+
+    /// <summary>Best-effort: find the tile .umap that matches the player's breadcrumb (by archetype name, else by region+tile offset).</summary>
+    private string? FindBestMapForPlayer((float X, float Y, float Z, string MapArchetype) pos)
+    {
+        var arch = pos.MapArchetype ?? "";
+        var paths = _loader.MapPaths.Where(p => p.EndsWith(".umap", StringComparison.OrdinalIgnoreCase)).ToList();
+        if (paths.Count == 0) return null;
+
+        // 1) direct filename token match from MapArchetype (e.g. tile name like faustite_x2_y3)
+        if (!string.IsNullOrWhiteSpace(arch))
+        {
+            string best = "";
+            int bestScore = 0;
+            foreach (var p in paths)
+            {
+                var name = Path.GetFileNameWithoutExtension(p);
+                if (name.Length < 4) continue;
+                if (arch.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0 && name.Length > bestScore)
+                { best = p; bestScore = name.Length; }
+            }
+            if (bestScore >= 5) return best;
+        }
+
+        // 2) infer region, then pick tile whose world offset best contains the player position
+        MapRegion? region = null;
+        var a = arch.ToLowerInvariant();
+        if (a.Contains("faustite") || a.Contains("trumbull")) region = MapRegions.All.FirstOrDefault(r => r.Key == "trumbull-valley");
+        else if (a.Contains("amethyst") || a.Contains("cascade")) region = MapRegions.All.FirstOrDefault(r => r.Key == "cascade-hills");
+        else if (a.Contains("basalt") || a.Contains("drucker")) region = MapRegions.All.FirstOrDefault(r => r.Key == "drucker-county");
+        else if (a.Contains("copper") || a.Contains("meagher")) region = MapRegions.All.FirstOrDefault(r => r.Key == "meagher-valley");
+        else if (a.Contains("danburite") || a.Contains("providence")) region = MapRegions.All.FirstOrDefault(r => r.Key == "providence-ridge");
+
+        if (region == null) return null;
+        var candidates = paths.Where(p => string.Equals(MapRegions.FromMapPath(p)?.Key, region.Key, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (candidates.Count == 0) return null;
+
+        // world coords: use calibrated world if current save/cal context unknown here; pos.X/Y are save coords (cm).
+        // best-effort: choose tile whose offset is closest with player "in front" of offset (local >= 0 small) — approximation.
+        string? bestTile = null;
+        double bestDist = double.MaxValue;
+        var vc = _loader.Provider.Versions;
+        foreach (var p in candidates)
+        {
+            try
+            {
+                var data = _loader.ReadMapBytes(p);
+                if (!MapLoader.TryReadWorldTileOffset(p, data, vc, out var ox, out var oy)) continue;
+                var lx = pos.X - ox; var ly = pos.Y - oy;
+                // prefer tiles where player lies within a plausible tile extent (~49600 cm) of the offset
+                var inExtent = lx >= -10000 && lx <= 70000 && ly >= -10000 && ly <= 70000;
+                var dist = Math.Abs(lx) + Math.Abs(ly);
+                var score = inExtent ? dist : dist + 1e9;
+                if (score < bestDist) { bestDist = score; bestTile = p; }
+            }
+            catch { }
+        }
+        return bestTile ?? candidates.FirstOrDefault();
     }
 
     private void AdjustSelectionHeight()

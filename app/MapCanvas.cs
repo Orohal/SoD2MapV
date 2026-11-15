@@ -39,7 +39,9 @@ namespace SoD2MapViewer;
         [System.ComponentModel.Browsable(false)]
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public float MapWorldOffsetY { get; set; }  // cm
-
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public string MapTile { get; set; } = "";  // current tile name (e.g. "faustite_x3_y2"); filters which tgc boxes are drawn
         /// <summary>Region matching the currently loaded map (null = keep last / Trumbull).</summary>
         [System.ComponentModel.Browsable(false)]
         [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -461,6 +463,8 @@ namespace SoD2MapViewer;
         {
             var s = Sites[si];
             if (SitesOutpostableOnly && !(s.Tags?.Any(t => t == "Outpostable") ?? false)) continue;
+            // only draw boxes that belong to the currently loaded tile (region-wide tgc covers many tiles)
+            if (!string.IsNullOrEmpty(MapTile) && !string.IsNullOrEmpty(s.Tile) && !string.Equals(s.Tile, MapTile, StringComparison.Ordinal)) continue;
 
             // live-follow: average delta of edited objects contained in this box (screen-space)
             float fdx = 0f, fdy = 0f;
@@ -509,6 +513,7 @@ namespace SoD2MapViewer;
     {
         if (siteIndex < 0 || siteIndex >= Sites.Count) return false;
         var s = Sites[siteIndex];
+        if (!string.IsNullOrEmpty(MapTile) && !string.IsNullOrEmpty(s.Tile) && !string.Equals(s.Tile, MapTile, StringComparison.Ordinal)) return false;
         var p = WorldToScreen(s.X - MapWorldOffsetX, s.Y - MapWorldOffsetY);
         float w = Math.Max(4f, s.ExtentX * 2f * _zoom) / 2f;
         float h = Math.Max(4f, s.ExtentY * 2f * _zoom) / 2f;
@@ -551,6 +556,7 @@ namespace SoD2MapViewer;
     {
         if (siteIndex < 0 || siteIndex >= Sites.Count || _zoom <= 0.004f) return RectangleF.Empty;
         var s = Sites[siteIndex];
+        if (!string.IsNullOrEmpty(MapTile) && !string.IsNullOrEmpty(s.Tile) && !string.Equals(s.Tile, MapTile, StringComparison.Ordinal)) return RectangleF.Empty;
         var p = WorldToScreen(s.X - MapWorldOffsetX, s.Y - MapWorldOffsetY);
         if (p.X < -60 || p.Y < -60 || p.X > Width + 60 || p.Y > Height + 60) return RectangleF.Empty;
         float w = Math.Max(4f, s.ExtentX * 2f * _zoom);
