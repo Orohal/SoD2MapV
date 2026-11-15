@@ -241,6 +241,21 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--saveclone")
+        {
+            try
+            {
+                var src = args.Length > 1 ? args[1] : "";
+                if (src.Length == 0) { Console.Error.WriteLine("[saveclone] usage: --saveclone <src.sav> [dst.sav]"); return 2; }
+                Savegame.CloneNewIdentity(src, args.Length > 2 ? args[2] : "");
+                return 0;
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine($"[saveclone] FAILED: {e.Message}");
+                return 2;
+            }
+        }
         if (args.Length >= 1 && args[0] == "--saveitemlist")
         {
             try

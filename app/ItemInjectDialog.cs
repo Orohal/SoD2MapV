@@ -49,6 +49,7 @@ public sealed class ItemInjectDialog : Form
     private readonly Button _btnSavePreset = new() { Text = "Preset speichern", AutoSize = true };
     private readonly Button _btnDeletePreset = new() { Text = "Preset löschen", AutoSize = true };
     private readonly Button _btnCopySave = new() { Text = "Kopie erstellen", AutoSize = true };
+    private readonly Button _btnNewGroup = new() { Text = "Neue Gruppe…", AutoSize = true };
     private readonly Button _btnCancel = new() { Text = "Schließen", AutoSize = true, DialogResult = DialogResult.Cancel };
 
     private FileInfo[] _saves = Array.Empty<FileInfo>();
@@ -88,8 +89,7 @@ public sealed class ItemInjectDialog : Form
         var btnBrowse = new Button { Text = "📁…", AutoSize = true, Height = _cboSave.PreferredHeight };
         btnRefresh.Click += (s, e) => LoadSaves();
         btnBrowse.Click += (s, e) => BrowseSave();
-        _btnCopySave.Click += (s, e) => CopySelectedSave();
-        saveRow.Controls.AddRange(new Control[] { _cboSave, btnRefresh, btnBrowse, _btnCopySave });
+        saveRow.Controls.AddRange(new Control[] { _cboSave, btnRefresh, btnBrowse, _btnCopySave, _btnNewGroup });
         AddRow("Savegame:", saveRow);
 
         _cboSave.SelectedIndexChanged += (s, e) => { UpdateInfo(); LoadItemsFromSelectedSave(auto: true); };
@@ -123,6 +123,7 @@ public sealed class ItemInjectDialog : Form
         FormClosing += (s, e) => SaveSize();
 
         _btnCopySave.Click += (s, e) => CopySelectedSave();
+        _btnNewGroup.Click += (s, e) => NewGroupFromSelected();
         _btnAdd.Click += (s, e) => AddCurrent();
         _btnRemove.Click += (s, e) => RemoveSelected();
         _btnInject.Click += (s, e) => DoInject();
@@ -547,6 +548,32 @@ public sealed class ItemInjectDialog : Form
         {
             MessageBox.Show(this, "Kopie konnte nicht erstellt werden:\n" + ex.Message,
                 "Kopie erstellen", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    /// <summary>Creates a new community ("group"): copies the selected .sav under the next free
+    /// numbered slot name and rewrites its identity GUIDs, so the game sees a separate community.</summary>
+    private void NewGroupFromSelected()
+    {
+        var sav = SelectedSave();
+        if (sav == null)
+        {
+            MessageBox.Show(this, "Kein Savegame ausgewählt.", "Neue Gruppe", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        try
+        {
+            var targetPath = Savegame.CloneNewIdentity(sav);
+            _customSave = new FileInfo(targetPath);
+            RebuildSaveCombo(selectCustom: true);
+            UpdateInfo();
+            LoadItemsFromSelectedSave(auto: true);
+            _lblInfo.Text = "Neue Gruppe erstellt: " + Path.GetFileName(targetPath) + "  (Identität neu: ID + GameId)";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Neue Gruppe konnte nicht erstellt werden:\n" + ex.Message,
+                "Neue Gruppe", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 

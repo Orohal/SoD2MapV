@@ -1,6 +1,9 @@
 using System;
 using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace SoD2MapViewer;
 
@@ -1623,6 +1626,99 @@ public static class Savegame
             .Select(f => new FileInfo(f))
             .OrderByDescending(f => f.LastWriteTime)
             .ToArray();
+    }
+
+    /// <summary>
+    /// Creates a "new group": copies a .sav into the same folder under the next free
+    /// numbered slot name (e.g. SaveGame_Vanilla_3.sav) and rewrites the top-level
+    /// identity GUIDs (ID, GameId, plus 16-byte PersistentSaveId/SaveSessionId) with
+    /// fresh random values, so the game treats the copy as a separate community.
+    /// The world state (vehicles, items, base) is copied verbatim — sizes are unchanged,
+    /// only the GUID bytes are patched inside the recompressed property block.
+    /// Returns the output path; throws on any failure (self-check included — a failed clone
+    /// deletes the written file again, and an existing destination is never overwritten).
+    /// </summary>
+    public static string CloneNewIdentity(string savPath, string? dstPath = null, string tag = "saveclone")
+    {
+        var bytes = File.ReadAllBytes(savPath);
+        if (bytes.Length < HeaderEnd + FooterSize || Encoding.ASCII.GetString(bytes, 0, 4) != "GVAS")
+            throw new InvalidDataException("not a GVAS savegame (bad signature)");
+        var compressedLen = BitConverter.ToInt32(bytes, 0x25d);
+        if (compressedLen <= 0 || HeaderEnd + compressedLen + FooterSize != bytes.Length)
+            throw new InvalidDataException($"implausible header: compressed={compressedLen} fileSize={bytes.Length}");
+
+        var data = DecompressProps(bytes);
+        var root = ParseRoot(data, out _);
+
+        var idNodes = root.Children
+            .Where(c => (c.Name == "ID" || c.Name == "GameId" || c.Name == "PersistentSaveId" || c.Name == "SaveSessionId")
+                        && c.DataEnd - c.DataStart == 16)
+            .ToArray();
+        if (idNodes.Length == 0)
+            throw new InvalidDataException("no top-level identity GUIDs (ID/GameId) found");
+
+        var oldGuids = new Dictionary<string, string>();
+        foreach (var n in idNodes)
+        {
+            oldGuids[n.Name] = TryFormatGuid(data, n.DataStart);
+            var g = new byte[16];
+            RandomNumberGenerator.Fill(g.AsSpan());
+            Array.Copy(g, 0, data, n.DataStart, 16);
+        }
+
+        // ---- destination: next free numbered slot name in the source folder ----
+        if (string.IsNullOrEmpty(dstPath))
+        {
+            var dir = Path.GetDirectoryName(Path.GetFullPath(savPath)) ?? ".";
+            var stem = Path.GetFileNameWithoutExtension(savPath);
+            var m = Regex.Match(stem, @"^(.+?)_(\d+)$");
+            var prefix = m.Success ? m.Groups[1].Value : stem;
+            var num = 0;
+            foreach (var f in Directory.EnumerateFiles(dir, prefix + "_*.sav"))
+            {
+                var mm = Regex.Match(Path.GetFileNameWithoutExtension(f), "^" + Regex.Escape(prefix) + @"_(\d+)$");
+                if (mm.Success) num = Math.Max(num, int.Parse(mm.Groups[1].Value));
+            }
+            do { num++; dstPath = Path.Combine(dir, $"{prefix}_{num}.sav"); }
+            while (File.Exists(dstPath));
+        }
+
+        // fail-safe: an explicitly given destination must not already exist (a community save could be destroyed)
+        if (File.Exists(dstPath))
+            throw new InvalidDataException($"destination already exists, refusing to overwrite: {dstPath}");
+
+        WriteCompressedProps(dstPath, bytes, compressedLen, data);
+        try
+        {
+
+            // ---- self-check: re-decode, verify the rewritten GUIDs and unchanged vehicle count ----
+            var (data2, root2, _) = DecodeWrittenProps(dstPath, tag);
+            foreach (var n in root2.Children
+                     .Where(c => (c.Name == "ID" || c.Name == "GameId" || c.Name == "PersistentSaveId" || c.Name == "SaveSessionId")
+                                 && c.DataEnd - c.DataStart == 16))
+            {
+                var g = TryFormatGuid(data2, n.DataStart);
+                if (oldGuids.TryGetValue(n.Name, out var old) && (g == old || g.Length != 32))
+                    throw new InvalidDataException($"self-check failed: '{n.Name}' guid not rewritten");
+            }
+            var savesOld = FindVehicleSaves(root, FindNamedStatic(root, "VehicleCollection"));
+            var savesNew = FindVehicleSaves(root2, FindNamedStatic(root2, "VehicleCollection"));
+            if ((savesOld?.Count ?? -1) != (savesNew?.Count ?? -1))
+                throw new InvalidDataException("self-check failed: vehicle count changed after clone");
+
+            Console.WriteLine($"[{tag}] {Path.GetFileName(savPath)} -> {Path.GetFileName(dstPath)}");
+            foreach (var n in idNodes)
+                Console.WriteLine($"[{tag}]   {n.Name}: {oldGuids[n.Name]} -> {TryFormatGuid(data, n.DataStart)}");
+            Console.WriteLine($"[{tag}] vehicles={savesNew?.Count ?? 0}, file {new FileInfo(dstPath).Length:N0} B, self-check OK");
+        }
+        catch
+        {
+            // leave no half-written/invalid "ghost" save behind
+            try { File.Delete(dstPath); } catch { }
+            throw;
+        }
+
+        return dstPath;
     }
 
     /// <summary>Lists injectable item classes from a save's CommunitySave.ItemLibrary.

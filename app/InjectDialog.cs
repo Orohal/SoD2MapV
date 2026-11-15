@@ -29,6 +29,7 @@ public sealed class InjectDialog : Form
     };
     private readonly Button _btnBrowseSave = new() { Text = "📁…", AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
     private readonly Button _btnCopySave = new() { Text = "Kopie erstellen", AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
+    private readonly Button _btnNewGroup = new() { Text = "Neue Gruppe…", AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
     private readonly Button _btnInject = new() { Text = "Inject", AutoSize = true };
     private readonly Button _btnCalibrate = new() { Text = "Calibrate...", AutoSize = true };
     private readonly Button _btnDeleteProbe = new() { Text = "Delete probe vehicle", AutoSize = true, Visible = false };
@@ -67,7 +68,7 @@ public sealed class InjectDialog : Form
         }
 
         var saveRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty };
-        saveRow.Controls.AddRange(new Control[] { _cboSave, _btnBrowseSave, _btnCopySave });
+        saveRow.Controls.AddRange(new Control[] { _cboSave, _btnBrowseSave, _btnCopySave, _btnNewGroup });
         AddRow(0, "Save slot:", saveRow);
         AddRow(1, "Vehicle class:", _cboClass);
         AddRow(2, "World X/Y/Z (m):", _txtX, _txtY, _txtZ);
@@ -87,6 +88,7 @@ public sealed class InjectDialog : Form
         _cboSave.SelectedIndexChanged += (s, e) => LoadClasses();
         _btnBrowseSave.Click += (s, e) => BrowseSave();
         _btnCopySave.Click += (s, e) => CopySelectedSave();
+        _btnNewGroup.Click += (s, e) => NewGroupFromSelected();
         _btnInject.Click += (s, e) => Inject(calibrating: false);
         _btnCalibrate.Click += (s, e) => Inject(calibrating: true);
         _btnDeleteProbe.Click += (s, e) => DeleteProbe();
@@ -269,6 +271,31 @@ public sealed class InjectDialog : Form
         {
             MessageBox.Show(this, "Kopie konnte nicht erstellt werden:\n" + ex.Message,
                 "Kopie erstellen", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    /// <summary>Creates a new community ("group"): copies the selected .sav under the next free
+    /// numbered slot name and rewrites its identity GUIDs, so the game sees a separate community.</summary>
+    private void NewGroupFromSelected()
+    {
+        var save = CurrentSave;
+        if (save == null)
+        {
+            MessageBox.Show(this, "Kein Savegame ausgewählt.", "Neue Gruppe", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        try
+        {
+            var targetPath = Savegame.CloneNewIdentity(save.FullName);
+            _customSave = new FileInfo(targetPath);
+            RebuildSaveCombo(selectCustom: true);
+            LoadClasses();
+            _lblInfo.Text = "Neue Gruppe erstellt: " + Path.GetFileName(targetPath) + "  (Identität neu: ID + GameId)";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Neue Gruppe konnte nicht erstellt werden:\n" + ex.Message,
+                "Neue Gruppe", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
