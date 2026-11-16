@@ -51,7 +51,6 @@ Was beim Injizieren passiert (pro Item):
 
 1. **Feinschliff / Polish:** Viele kleine Verfeinerungen, Bugfixes und UX-Polish; Fokus auf Stabilität, Konsistenz und Detailarbeit im Editor, Export und UI.
 2. **Hintergrund-Ausrichtung der übrigen Regionen** — Faustite/Trumbull ist kalibriert (per Drag + Auto-Fit); für Cascade Hills, Drucker County, Meagher Valley, Providence Ridge und die Trumbull-Variante stehen Scale/Offset noch aus (Auto-Fit: `--bgfit`, Feinjustierung per Drag)
-3. **Yaw-Kalibrierung für Injektion/Plattform:** Drehrichtung (UE-Yaw vs. Kompass) einmalig per Marker-Test festnageln; gedrehte Prefabs exakt ausrichten.
 
 ## Dokumentation
 
@@ -242,7 +241,7 @@ SoD2MapViewer.exe --injectplatformauto "<gameDir>" [savePath] [sizeM] [yawDeg] [
 - **v0.3.5** — Framework-abhängiger Build als Release-Asset; `--saves`; Auto-Template-Injektion
 - **v0.3.x** — **GUI-Injektion**: Rechtsklick → Fahrzeug in Live-Save (Kalibrierungs-Assistent, Auto-Backup, Spiel-läuft-Check, Sonden-Löschung); `--savedelete`
 - **Voll-Editor (Phase 3)** — Move/Rotate/Scale/Delete mit Undo, Export als Mod-`.pak` (eigener Pak-Writer)
-- **Savegame-Kalibrierung** (empirisch per Sonden-Fahrzeugen): `save = world + shift` (pure Translation, pro Save unterschiedlich); Koordinaten-Frames ingame bewiesen: `world_save = RelLoc + WorldTileInfo.Position` (Identität, reine Translation) und **+X = Nord, +Y = Osten** (−Y = Westen, Marker-Tests ingame verifiziert); Spiel kann schiefe Einträge ~20 m verschieben (Injektionspunkt auf freier Stellfläche wählen)
+- **Savegame-Kalibrierung** (empirisch per Sonden-Fahrzeugen): `save = world + shift` (pure Translation, pro Save unterschiedlich); Koordinaten-Frames ingame bewiesen: `world_save = RelLoc + WorldTileInfo.Position` (Identität, reine Translation) und **+X = Nord, +Y = Osten** (−Y = Westen, Marker-Tests ingame verifiziert); **UE-Yaw positiv dreht +X (Nord) nach −Y (Westen)**, also gegen den Uhrzeigersinn (Vogelperspektive, Norden oben) — für Kompass-Drehrichtung (im Uhrzeigersinn) den Yaw-Wert negieren (Yaw-Marker-Test ingame verifiziert); Spiel kann schiefe Einträge ~20 m verschieben (Injektionspunkt auf freier Stellfläche wählen)
 - **Basis-Lokalisierung**: faustite-Tile-Weltpositionen über `WorldTileInfo.Position` (x2y3: +496/−992 m); Workflow über `--umapinfo`/`--umapdecode` dokumentiert
 - **Bugfixes**: Komponenten-Transform-Zuordnung (1-based `FPackageIndex`), `QuatFromRotator` UE-Konvention, `SetProperty`-Parsing (`SiteCollection`, 439 Sites), GUID-Arrays in `--umapdecode`
 - Testmap-Generator (`--genmap`/`--testmap`) für Viewer-Tests ohne Spielinhalte

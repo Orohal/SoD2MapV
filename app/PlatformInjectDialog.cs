@@ -69,7 +69,7 @@ public sealed class PlatformInjectDialog : Form
         sizePanel.Controls.Add(_txtSizeY);
         sizePanel.Controls.Add(new Label { Text = "(Standard 30x30)", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(8, 6, 0, 0) });
         top.Controls.Add(sizePanel, 1, row);
-        L("Yaw (°):", 2, row); top.Controls.Add(_txtYaw, 3, row);
+        L("Yaw (°, + dreht nach West):", 2, row); top.Controls.Add(_txtYaw, 3, row);
         L("Höhenoffset (cm):", 4, row); top.Controls.Add(_txtHeight, 5, row);
         row++;
 
