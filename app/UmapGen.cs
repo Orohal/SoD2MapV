@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using CUE4Parse.UE4.Assets;
 using CUE4Parse.UE4.Assets.Exports;
@@ -23,14 +24,11 @@ public static class UmapGen
     /// </summary>
     public static int UmapInfo(string gameDir, string file, string exportFilter, long hexOff, int hexLen)
     {
-        var loader = new MapLoader();
-        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
-        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
-
+        var versions = new CUE4Parse.UE4.Versions.VersionContainer(CUE4Parse.UE4.Versions.EGame.GAME_StateOfDecay2);
         var data = File.ReadAllBytes(file);
         Console.WriteLine($"[umapinfo] {file}: {data.Length:N0} bytes");
-        var uasset = new FByteArchive(Path.GetFileName(file), data, loader.Provider.Versions);
-        var package = new Package(uasset, null, null, null, loader.Provider, useLazySerialization: true);
+        var uasset = new FByteArchive(Path.GetFileName(file), data, versions);
+        var package = new Package(uasset, null, null, null, null, useLazySerialization: true);
         var s = package.Summary;
 
         // sidecar: full name map with indexes (for decoding FName references by hand)
@@ -126,13 +124,10 @@ public static class UmapGen
     /// </summary>
     public static int UmapDecode(string gameDir, string file, int exportIndex)
     {
-        var loader = new MapLoader();
-        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
-        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
-
+        var versions = new CUE4Parse.UE4.Versions.VersionContainer(CUE4Parse.UE4.Versions.EGame.GAME_StateOfDecay2);
         var data = File.ReadAllBytes(file);
-        var uasset = new FByteArchive(Path.GetFileName(file), data, loader.Provider.Versions);
-        var package = new Package(uasset, null, null, null, loader.Provider, useLazySerialization: true);
+        var uasset = new FByteArchive(Path.GetFileName(file), data, versions);
+        var package = new Package(uasset, null, null, null, null, useLazySerialization: true);
         var exports = package.ExportMap;
         if (exportIndex < 0 || exportIndex >= exports.Length) { Console.Error.WriteLine($"export index {exportIndex} out of range (0..{exports.Length - 1})"); return 2; }
         var e = exports[exportIndex];
@@ -261,12 +256,9 @@ public static class UmapGen
     /// </summary>
     public static int DumpSummary(string gameDir, string file)
     {
-        var loader = new MapLoader();
-        var res = loader.InitializeAsync(gameDir, new Progress<string>(_ => { })).GetAwaiter().GetResult();
-        if (res.Error != null) { Console.Error.WriteLine(res.Error); return 2; }
-
+        var versions = new CUE4Parse.UE4.Versions.VersionContainer(CUE4Parse.UE4.Versions.EGame.GAME_StateOfDecay2);
         var data = File.ReadAllBytes(file);
-        var uasset = new FByteArchive(Path.GetFileName(file), data, loader.Provider.Versions);
+        var uasset = new FByteArchive(Path.GetFileName(file), data, versions);
         var ar = new CUE4Parse.UE4.Assets.Readers.FAssetArchive(uasset, null);
         var s = new CUE4Parse.UE4.Objects.UObject.FPackageFileSummary(ar);
         Console.WriteLine($"[umapsum] {file}: {data.Length:N0} bytes");
@@ -701,7 +693,7 @@ public static class UmapGen
     /// SummarySize=185, customVersions=0, empty gatherable/softpkg, depends=4-byte zero count, no worldTile/assetRegistry chunks).
     /// Rebuilds name/import/export tables and shifts all serial offsets by the header growth delta.
     /// </summary>
-    public static int InsertPlatformIntoMap(string inFile, string outFile, float x, float y, float z, float sizeM, float yawDeg = 0f)
+    public static int InsertPlatformIntoMap(string inFile, string outFile, float x, float y, float z, float sizeM, float yawDeg = 0f, bool keepMesh = false, string? meshOverride = null, bool patchArray = true)
     {
         if (sizeM <= 0f) { Console.Error.WriteLine("[insertplatform] sizeM must be > 0"); return 2; }
         var data = File.ReadAllBytes(inFile);
@@ -719,7 +711,7 @@ public static class UmapGen
         // early detect non-GenMap
         if (tag != 0x9E2A83C1 || customCount != 0)
         {
-            return InsertPlatformIntoRealMap(data, inFile, outFile, x, y, z, sizeM, yawDeg);
+            return InsertPlatformIntoRealMap(data, inFile, outFile, x, y, z, sizeM, yawDeg, keepMesh, meshOverride, patchArray);
         }
         string folder = ReadFString(r);
         uint pkgFlags = r.ReadUInt32();
@@ -743,7 +735,7 @@ public static class UmapGen
         if (tag != 0x9E2A83C1 || nameOffset != SummarySize || customCount != 0 || thumbnail != 0 || assetReg != 0 || worldTile != 0 || chunkIds != 0)
         {
             // try real-layout path (72B exports, 1-list-per-export depends)
-            return InsertPlatformIntoRealMap(data, inFile, outFile, x, y, z, sizeM, yawDeg);
+            return InsertPlatformIntoRealMap(data, inFile, outFile, x, y, z, sizeM, yawDeg, keepMesh, meshOverride, patchArray);
         }
         if (ms.Position != nameOffset)
         {
@@ -935,7 +927,7 @@ public static class UmapGen
         return 0;
     }
 
-    private static int InsertPlatformIntoRealMap(byte[] data, string inFile, string outFile, float x, float y, float z, float sizeM, float yawDeg)
+    private static int InsertPlatformIntoRealMap(byte[] data, string inFile, string outFile, float x, float y, float z, float sizeM, float yawDeg, bool keepMesh = false, string? meshOverride = null, bool patchArray = true)
     {
         var versions = new CUE4Parse.UE4.Versions.VersionContainer(CUE4Parse.UE4.Versions.EGame.GAME_StateOfDecay2);
         var ar = new CUE4Parse.UE4.Assets.Readers.FAssetArchive(new FByteArchive(Path.GetFileName(inFile), data, versions), null);
@@ -1055,7 +1047,16 @@ public static class UmapGen
         int impCompClass = EnsureImport(NScriptCore, NClass, impEnginePkg, NStaticMeshComponent);
         int impMeshPkg = EnsureImport(NScriptCore, NPackage, 0, NMeshPkg);
         int impMesh = EnsureImport(NScriptEngine, NStaticMesh, impMeshPkg, NMeshObj);
-
+        // optional: point the new component's StaticMesh at an EXISTING import (by object name) -> guaranteed-valid asset
+        if (!string.IsNullOrEmpty(meshOverride))
+        {
+            int ovrName = names.IndexOf(meshOverride);
+            int found = 0;
+            for (int i = 0; i < importRaw.Count; i++)
+                if (ReadNameIdx(importRaw[i], 20) == ovrName) { found = -(i + 1); break; }
+            if (found < 0) { impMesh = found; Console.WriteLine($"[insertplatform:real] meshOverride '{meshOverride}' -> existing import {found}"); }
+            else Console.Error.WriteLine($"[insertplatform:real] meshOverride '{meshOverride}' not found in import table (using new import)");
+        }
         // find PersistentLevel export (1-based)
         int persistentLevel1Based = 0;
         int NPersistentLevel = names.IndexOf("PersistentLevel");
@@ -1065,21 +1066,150 @@ public static class UmapGen
         }
         if (persistentLevel1Based == 0) { Console.Error.WriteLine("[insertplatform] real-map: PersistentLevel export not found"); return 3; }
 
-        // serials (same format as GenMap prototype)
-        float scale = sizeM / 10f;
-        var compTrailer = new byte[] { 0x01,0,0,0, 0x45,0x48,0x44,0x84,0x2B,0xBE,0xA4,0x4C,0x91,0xDD,0xB2,0x4A,0xB3,0x66,0xD1,0x16, 0,0,0,0 };
-        byte[] BuildComponent(float lx, float ly, float lz, float p, float yaw, float rr, float sx, float sy, float sz)
+        // --- serial template helpers (tag walk + in-place patch, byte-stable where possible) ---
+        int GetSerialAbsOffset(byte[] exp) => BitConverter.ToInt32(exp, 28);
+        int GetSerialSize(byte[] exp) => BitConverter.ToInt32(exp, 24);
+        byte[] GetSerialBytes(byte[] exp)
+        {
+            int off = GetSerialAbsOffset(exp) - headerEnd;
+            int sz = GetSerialSize(exp);
+            return serials.AsSpan(off, sz).ToArray();
+        }
+        string NameStr(int idx) => idx >= 0 && idx < names.Count ? names[idx] : $"<{idx}>";
+        // Walks tagged properties and returns a map of (propNameIdx -> (valueOffset,size,tagStart,tagEndBeforeValue,valueOffset)) for simple props.
+        // Also returns offset of None terminator (tag start).
+        bool WalkProps(byte[] buf, out Dictionary<int, (int TagStart, int ValueOff, int Size)> map, out int noneOff)
+        {
+            map = new Dictionary<int, (int, int, int)>();
+            noneOff = -1;
+            int p = 0, end = buf.Length;
+            while (p + 8 <= end)
+            {
+                int nameIdx = BitConverter.ToInt32(buf, p);
+                int nameNum = BitConverter.ToInt32(buf, p + 4);
+                string nm = NameStr(nameIdx);
+                if (nm == "None" && nameNum == 0) { noneOff = p; return true; }
+                if (p + 24 > end) return false;
+                int typeIdx = BitConverter.ToInt32(buf, p + 8);
+                int size = BitConverter.ToInt32(buf, p + 16);
+                int tagStart = p;
+                p += 24;
+                string type = NameStr(typeIdx);
+                if (type == "StructProperty")
+                {
+                    if (p + 24 > end) return false;
+                    p += 8 + 16; // struct name + guid
+                }
+                else if (type == "BoolProperty") { if (p + 1 > end) return false; p += 1; }
+                else if (type == "ByteProperty" || type == "EnumProperty") { if (p + 8 > end) return false; p += 8; }
+                else if (type == "ArrayProperty" || type == "SetProperty") { if (p + 8 > end) return false; p += 8; }
+                else if (type == "MapProperty") { if (p + 16 > end) return false; p += 16; }
+                if (p >= end) return false;
+                byte hasGuid = buf[p++];
+                if (hasGuid != 0) { if (p + 16 > end) return false; p += 16; }
+                int valueOff = p;
+                if (valueOff + size > end) return false;
+                if (!map.ContainsKey(nameIdx)) map[nameIdx] = (tagStart, valueOff, size);
+                p = valueOff + size;
+            }
+            return false;
+        }
+        byte[] CloneAndPatchComponentSerial(byte[] templateSerial, int meshImportIdx, float lx, float ly, float lz, float pitch, float yaw, float roll, float sx, float sy, float sz,
+            bool keepMesh, out bool scalePatched, out bool scalePresent, out List<string> changes)
+        {
+            changes = new List<string>();
+            var buf = (byte[])templateSerial.Clone();
+            scalePatched = false; scalePresent = false;
+            if (!WalkProps(buf, out var props, out var noneOff))
+            {
+                changes.Add("WARN: tag-walk failed, using minimal fallback component");
+                // fallback minimal (keeps size different -> will work structurally but not byte-stable to template)
+                return BuildMinimalComponentSerial(meshImportIdx, lx, ly, lz, pitch, yaw, roll, sx, sy, sz);
+            }
+            // StaticMesh (skip when keepMesh: template's original mesh stays -> valid existing asset, spawn-only diagnostic)
+            if (props.TryGetValue(NStaticMesh, out var sm) && sm.Size == 4)
+            {
+                if (keepMesh)
+                {
+                    int kept = BitConverter.ToInt32(buf, sm.ValueOff);
+                    changes.Add($"StaticMesh @{sm.ValueOff}: KEPT {kept} (keepMesh)");
+                }
+                else
+                {
+                    int old = BitConverter.ToInt32(buf, sm.ValueOff);
+                    BitConverter.GetBytes(meshImportIdx).CopyTo(buf, sm.ValueOff);
+                    changes.Add($"StaticMesh @{sm.ValueOff}: {old}->{meshImportIdx}");
+                }
+            }
+            else changes.Add("WARN: StaticMesh tag not patched");
+            // RelativeLocation
+            if (props.TryGetValue(NRelLoc, out var loc) && loc.Size == 12)
+            {
+                BitConverter.GetBytes(lx).CopyTo(buf, loc.ValueOff);
+                BitConverter.GetBytes(ly).CopyTo(buf, loc.ValueOff + 4);
+                BitConverter.GetBytes(lz).CopyTo(buf, loc.ValueOff + 8);
+                changes.Add($"RelativeLocation @{loc.ValueOff}: ({lx},{ly},{lz})");
+            }
+            else changes.Add("WARN: RelativeLocation tag missing/not patched");
+            // RelativeRotation
+            if (props.TryGetValue(NRelRot, out var rot) && rot.Size == 12)
+            {
+                BitConverter.GetBytes(pitch).CopyTo(buf, rot.ValueOff);
+                BitConverter.GetBytes(yaw).CopyTo(buf, rot.ValueOff + 4);
+                BitConverter.GetBytes(roll).CopyTo(buf, rot.ValueOff + 8);
+                changes.Add($"RelativeRotation @{rot.ValueOff}: ({pitch},{yaw},{roll})");
+            }
+            else changes.Add("WARN: RelativeRotation tag missing/not patched");
+            // RelativeScale3D
+            if (props.TryGetValue(NRelScale, out var scl) && scl.Size == 12)
+            {
+                scalePresent = true;
+                BitConverter.GetBytes(sx).CopyTo(buf, scl.ValueOff);
+                BitConverter.GetBytes(sy).CopyTo(buf, scl.ValueOff + 4);
+                BitConverter.GetBytes(sz).CopyTo(buf, scl.ValueOff + 8);
+                scalePatched = true;
+                changes.Add($"RelativeScale3D @{scl.ValueOff}: ({sx},{sy},{sz}) in-place");
+            }
+            else
+            {
+                scalePresent = false;
+                changes.Add("RelativeScale3D missing in template: not added (byte-stable), scale left as template default");
+            }
+            return buf;
+        }
+        byte[] CloneAndPatchActorSerial(byte[] templateSerial, int comp1Based, out List<string> changes)
+        {
+            changes = new List<string>();
+            var buf = (byte[])templateSerial.Clone();
+            if (!WalkProps(buf, out var props, out _))
+            {
+                changes.Add("WARN: actor tag-walk failed, using minimal fallback actor");
+                return BuildMinimalActorSerial(comp1Based);
+            }
+            int patched = 0;
+            if (props.TryGetValue(NStaticMeshComponent, out var smc) && smc.Size == 4)
+            { BitConverter.GetBytes(comp1Based).CopyTo(buf, smc.ValueOff); changes.Add($"StaticMeshComponent @{smc.ValueOff} -> {comp1Based}"); patched++; }
+            else changes.Add("WARN: StaticMeshComponent tag missing in actor");
+            if (props.TryGetValue(NRootComponent, out var rc) && rc.Size == 4)
+            { BitConverter.GetBytes(comp1Based).CopyTo(buf, rc.ValueOff); changes.Add($"RootComponent @{rc.ValueOff} -> {comp1Based}"); patched++; }
+            else changes.Add("WARN: RootComponent tag missing in actor");
+            if (patched == 0) return BuildMinimalActorSerial(comp1Based);
+            return buf;
+        }
+        byte[] BuildMinimalComponentSerial(int meshImportIdx, float lx, float ly, float lz, float pitch, float yaw, float roll, float sx, float sy, float sz)
         {
             using var oms = new MemoryStream(); using var w = new BinaryWriter(oms);
             void TagW(int nIdx, int tIdx, int sizev, int sIdx, Action<BinaryWriter> val)
             { w.Write(nIdx); w.Write(0); w.Write(tIdx); w.Write(0); w.Write(sizev); w.Write(0); if (sIdx >= 0) { w.Write(sIdx); w.Write(0); w.Write(0L); w.Write(0L); } w.Write((byte)0); val(w); }
-            TagW(NStaticMesh, NObjProp, 4, -1, bw => bw.Write(impMesh));
+            TagW(NStaticMesh, NObjProp, 4, -1, bw => bw.Write(meshImportIdx));
             TagW(NRelLoc, NStructProp, 12, NVector, bw => { bw.Write(lx); bw.Write(ly); bw.Write(lz); });
-            TagW(NRelRot, NStructProp, 12, NRotator, bw => { bw.Write(p); bw.Write(yaw); bw.Write(rr); });
+            TagW(NRelRot, NStructProp, 12, NRotator, bw => { bw.Write(pitch); bw.Write(yaw); bw.Write(roll); });
             TagW(NRelScale, NStructProp, 12, NVector, bw => { bw.Write(sx); bw.Write(sy); bw.Write(sz); });
-            w.Write(NNone); w.Write(0); w.Write(compTrailer); w.Flush(); return oms.ToArray();
+            w.Write(NNone); w.Write(0);
+            w.Write(new byte[] { 0x01,0,0,0, 0x45,0x48,0x44,0x84,0x2B,0xBE,0xA4,0x4C,0x91,0xDD,0xB2,0x4A,0xB3,0x66,0xD1,0x16, 0,0,0,0 });
+            w.Flush(); return oms.ToArray();
         }
-        byte[] BuildActor(int comp1Based)
+        byte[] BuildMinimalActorSerial(int comp1Based)
         {
             using var oms = new MemoryStream(); using var w = new BinaryWriter(oms);
             void TagW(int nIdx, int tIdx, int sizev, int sIdx, Action<BinaryWriter> val)
@@ -1089,12 +1219,173 @@ public static class UmapGen
             w.Write(NNone); w.Write(0); w.Write(0); w.Flush(); return oms.ToArray();
         }
 
+        // find a REAL StaticMeshActor + StaticMeshComponent pair (same class indices)
+        int templateActorIdx = -1, templateCompIdx = -1;
+        for (int i = 0; i < exportRaw.Count; i++)
+        {
+            if (BitConverter.ToInt32(exportRaw[i], 0) != impActorClass) continue;
+            // parse actor serial to find RootComponent
+            var aser = GetSerialBytes(exportRaw[i]);
+            if (!WalkProps(aser, out var aprops, out _)) continue;
+            if (!aprops.TryGetValue(NRootComponent, out var rc) || rc.Size != 4) continue;
+            int comp1 = BitConverter.ToInt32(aser, rc.ValueOff);
+            if (comp1 <= 0 || comp1 > exportRaw.Count) continue;
+            int ci = comp1 - 1;
+            if (BitConverter.ToInt32(exportRaw[ci], 0) != impCompClass) continue;
+            if (BitConverter.ToInt32(exportRaw[ci], 8) != i + 1) continue; // component outer == actor
+            templateActorIdx = i; templateCompIdx = ci; break;
+        }
+        byte[]? actorTemplateExport = null, compTemplateExport = null;
+        byte[]? actorTemplateSerial = null, compTemplateSerial = null;
+        string componentStrategy = "minimal-handcrafted (no suitable template pair found)";
+        string actorStrategy = "minimal-handcrafted (no suitable template pair found)";
+        if (templateActorIdx >= 0 && templateCompIdx >= 0)
+        {
+            actorTemplateExport = (byte[])exportRaw[templateActorIdx].Clone();
+            compTemplateExport = (byte[])exportRaw[templateCompIdx].Clone();
+            actorTemplateSerial = GetSerialBytes(exportRaw[templateActorIdx]);
+            compTemplateSerial = GetSerialBytes(exportRaw[templateCompIdx]);
+            actorStrategy = $"cloned pair actor#{templateActorIdx} '{NameStr(BitConverter.ToInt32(exportRaw[templateActorIdx],12))}' ({actorTemplateSerial.Length}B, flags=0x{BitConverter.ToUInt32(exportRaw[templateActorIdx],20):X})";
+            componentStrategy = $"cloned pair comp#{templateCompIdx} '{NameStr(BitConverter.ToInt32(exportRaw[templateCompIdx],12))}' ({compTemplateSerial.Length}B, flags=0x{BitConverter.ToUInt32(exportRaw[templateCompIdx],20):X})";
+        }
+        else
+        {
+            // fallback: find any templates of same class (export entry) and build minimal serials
+            for (int i = 0; i < exportRaw.Count; i++)
+            {
+                int ci = BitConverter.ToInt32(exportRaw[i], 0);
+                if (actorTemplateExport == null && ci == impActorClass) actorTemplateExport = (byte[])exportRaw[i].Clone();
+                if (compTemplateExport == null && ci == impCompClass) compTemplateExport = (byte[])exportRaw[i].Clone();
+                if (actorTemplateExport != null && compTemplateExport != null) break;
+            }
+        }
+        if (actorTemplateExport == null || compTemplateExport == null)
+        { Console.Error.WriteLine("[insertplatform] real-map: could not find template exports for StaticMeshActor/StaticMeshComponent"); return 3; }
+
+        float scale = sizeM / 10f;
         int newActor1 = exportRaw.Count + 1;
         int newComp1 = exportRaw.Count + 2;
-        var actorSerial = BuildActor(newComp1);
-        var compSerial = BuildComponent(x, y, z, 0f, yawDeg, 0f, scale, scale, 1f);
 
-        // compute layout
+        var compChanges = new List<string>();
+        var actorChanges = new List<string>();
+        byte[] actorSerial, compSerial;
+        bool compScalePatched = false, compScalePresent = false;
+        if (actorTemplateSerial != null && compTemplateSerial != null)
+        {
+            actorSerial = CloneAndPatchActorSerial(actorTemplateSerial, newComp1, out actorChanges);
+            compSerial = CloneAndPatchComponentSerial(compTemplateSerial, impMesh, x, y, z, 0f, yawDeg, 0f, scale, scale, 1f, keepMesh, out compScalePatched, out compScalePresent, out compChanges);
+        }
+        else
+        {
+            actorSerial = BuildMinimalActorSerial(newComp1);
+            compSerial = BuildMinimalComponentSerial(impMesh, x, y, z, 0f, yawDeg, 0f, scale, scale, 1f);
+            actorChanges.Add("minimal actor serial built");
+            compChanges.Add("minimal component serial built");
+        }
+
+        // --- Level actors array patch (strict, high-confidence only) ---
+        bool levelPatched = false;
+        string levelStrategy = "not patched";
+        // Attempt to patch PersistentLevel serial: extend a detected actors TArray<ObjectProperty/export ref> if unambiguous.
+        var plExpOrig = (byte[])exportRaw[persistentLevel1Based - 1].Clone();
+        int plSerialOff = GetSerialAbsOffset(plExpOrig);
+        int plSerialSize = GetSerialSize(plExpOrig);
+        int plOffInSerials = plSerialOff - headerEnd;
+        if (!patchArray) levelStrategy = "skipped by request (noArray)";
+        else if (plOffInSerials >= 0 && plOffInSerials + plSerialSize <= serials.Length)
+        {
+            var plSerial = serials.AsSpan(plOffInSerials, plSerialSize).ToArray();
+            if (WalkProps(plSerial, out _, out int plNone))
+            {
+                int trailingStart = plNone + 8;
+                int trailingLen = plSerial.Length - trailingStart;
+                // build set of exports whose Outer == PersistentLevel
+                var plOuterSet = new HashSet<int>();
+                for (int i = 0; i < exportRaw.Count; i++) if (BitConverter.ToInt32(exportRaw[i], 8) == persistentLevel1Based) plOuterSet.Add(i + 1);
+                // find unique high-confidence candidate array in trailing data:
+                // TArray<FPackageIndex(int32)> [count][elements...] inside PL trailing bytes (may not end at serial end).
+                // Strict confidence: most elements reference exports whose Outer==PersistentLevel (or 0), and coverage of that set is very high.
+                var candidates = new List<(int Off, int Count, int InPl, int Zeros, long ArrEnd)>();
+                for (int o = trailingStart; o <= plSerial.Length - 8; o++)
+                {
+                    int c = BitConverter.ToInt32(plSerial, o);
+                    if (c < 100 || c > 20000) continue;
+                    long arrEnd = (long)o + 4 + (long)c * 4;
+                    if (arrEnd > plSerial.Length) continue;
+                    int inPl = 0, zeros = 0;
+                    for (int j = 0; j < c; j++)
+                    {
+                        int v = BitConverter.ToInt32(plSerial, o + 4 + j * 4);
+                        if (v == 0) zeros++; else if (plOuterSet.Contains(v)) inPl++;
+                    }
+                    double ratio = c > 0 ? (double)inPl / c : 0;
+                    double cov = plOuterSet.Count > 0 ? (double)inPl / plOuterSet.Count : 0;
+                    if (ratio >= 0.90 && cov >= 0.95)
+                        candidates.Add((o, c, inPl, zeros, arrEnd));
+                }
+                // disambiguate: if multiple, keep only those with maximal coverage then maximal ratio (unique result required)
+                if (candidates.Count > 1)
+                {
+                    int maxInPl = candidates.Max(x => x.InPl);
+                    candidates = candidates.Where(x => x.InPl == maxInPl).ToList();
+                }
+                if (candidates.Count > 1)
+                {
+                    double maxRatio = candidates.Max(x => x.Count > 0 ? (double)x.InPl / x.Count : 0);
+                    candidates = candidates.Where(x => Math.Abs((x.Count > 0 ? (double)x.InPl / x.Count : 0) - maxRatio) < 1e-9).ToList();
+                }
+                if (candidates.Count == 1)
+                {
+                    var cand = candidates[0];
+                    if (cand.Zeros > 0)
+                    {
+                        // minimal-invasive variant: reuse an existing NULL slot (count unchanged, serial size unchanged,
+                        // plSerialGrowth=0, no downstream offset shifting). The engine already loads the pristine file
+                        // with these 0-entries, so replacing one 0 with a valid export ref keeps the array byte-stable.
+                        int zeroIdx = -1;
+                        for (int j = 0; j < cand.Count; j++)
+                            if (BitConverter.ToInt32(plSerial, cand.Off + 4 + j * 4) == 0) { zeroIdx = j; break; }
+                        if (zeroIdx >= 0)
+                        {
+                            int elemOff = cand.Off + 4 + zeroIdx * 4;
+                            BitConverter.GetBytes(newActor1).CopyTo(plSerial, elemOff);
+                            levelPatched = true; // size unchanged; plSerialGrowth must be 0
+                            levelStrategy = $"patched actors array via ZERO-SLOT {zeroIdx} (abs 0x{plSerialOff + elemOff:X}): count {cand.Count} unchanged, inPL={cand.InPl + 1}, zeros={cand.Zeros - 1}, arrEnd=0x{plSerialOff + cand.ArrEnd:X}, serial size unchanged";
+                        }
+                        else levelStrategy = "not patched: zero-slot scan inconsistent with candidate zeros";
+                    }
+                    if (!levelPatched)
+                    {
+                        // extend: increment count and append new actor ref at end of array (insert 4B at arrEnd, shifting trailing tail)
+                        var newPl = new byte[plSerial.Length + 4];
+                        Buffer.BlockCopy(plSerial, 0, newPl, 0, (int)cand.ArrEnd);
+                        BitConverter.GetBytes(cand.Count + 1).CopyTo(newPl, cand.Off);
+                        BitConverter.GetBytes(newActor1).CopyTo(newPl, (int)cand.ArrEnd);
+                        Buffer.BlockCopy(plSerial, (int)cand.ArrEnd, newPl, (int)cand.ArrEnd + 4, plSerial.Length - (int)cand.ArrEnd);
+                        plSerial = newPl;
+                        levelPatched = true;
+                        levelStrategy = $"patched actors array at trailing+{cand.Off - trailingStart} (abs 0x{plSerialOff + cand.Off:X}): count {cand.Count}->{cand.Count + 1}, inPL={cand.InPl}, zeros={cand.Zeros}, arrEndOld=0x{plSerialOff + cand.ArrEnd:X}, endsAtSerial={cand.ArrEnd == plSerialSize}, +4B serial";
+                        var newSerials = new byte[serials.Length + 4];
+                        Buffer.BlockCopy(serials, 0, newSerials, 0, plOffInSerials);
+                        Buffer.BlockCopy(plSerial, 0, newSerials, plOffInSerials, plSerial.Length);
+                        Buffer.BlockCopy(serials, plOffInSerials + plSerialSize, newSerials, plOffInSerials + plSerial.Length, serials.Length - (plOffInSerials + plSerialSize));
+                        serials = newSerials;
+                        BitConverter.GetBytes(plSerial.Length).CopyTo(exportRaw[persistentLevel1Based - 1], 24);
+                    }
+                }
+                else
+                {
+                    levelStrategy = candidates.Count == 0
+                        ? $"not patched: no high-confidence actors array in trailing (trailing={trailingLen}B, plOuter={plOuterSet.Count})"
+                        : $"not patched: ambiguous ({candidates.Count} candidates) - " + string.Join("; ", candidates.Select(c => $"off=0x{plSerialOff + c.Off:X} count={c.Count} inPL={c.InPl} arrEnd=0x{plSerialOff + c.ArrEnd:X}"));
+                }
+            }
+            else levelStrategy = "not patched: PersistentLevel tag-walk failed";
+        }
+        else levelStrategy = "not patched: PersistentLevel serial bounds invalid";
+        int plSerialGrowth = levelPatched && !levelStrategy.Contains("serial size unchanged") ? 4 : 0;
+
+        // compute layout (depends on PL serial growth -> header unchanged, serial blob grows)
         int namesSize = 0; foreach (var ne in nameEntriesRaw) namesSize += ne.Length;
         int newNameCount = names.Count;
         int newImportCount = importRaw.Count;
@@ -1107,24 +1398,14 @@ public static class UmapGen
         int newHeaderEnd = newDependsRecordsEnd + postDependsLen;
         int headerDelta = newHeaderEnd - headerEnd;
 
-        // patch existing export serial offsets
-        foreach (var ee in exportRaw)
-        {
-            int so = BitConverter.ToInt32(ee, 28);
-            BitConverter.GetBytes(so + headerDelta).CopyTo(ee, 28);
-        }
-
-        // find template exports of same class to preserve version-specific fields (deps, guid, flags tail etc.)
-        byte[]? actorTemplate = null, compTemplate = null;
+        // patch existing export serial offsets by headerDelta (+plSerialGrowth for exports after PL in serial blob)
         for (int i = 0; i < exportRaw.Count; i++)
         {
-            int ci = BitConverter.ToInt32(exportRaw[i], 0);
-            if (actorTemplate == null && ci == impActorClass) actorTemplate = (byte[])exportRaw[i].Clone();
-            if (compTemplate == null && ci == impCompClass) compTemplate = (byte[])exportRaw[i].Clone();
-            if (actorTemplate != null && compTemplate != null) break;
+            int so = BitConverter.ToInt32(exportRaw[i], 28);
+            int delta = headerDelta;
+            if (plSerialGrowth != 0 && so > plSerialOff) delta += plSerialGrowth;
+            BitConverter.GetBytes(so + delta).CopyTo(exportRaw[i], 28);
         }
-        if (actorTemplate == null || compTemplate == null)
-        { Console.Error.WriteLine("[insertplatform] real-map: could not find template exports for StaticMeshActor/StaticMeshComponent"); return 3; }
 
         byte[] MakeExportFromTemplate(byte[] template, int classIdx, int outerIdx, int objNameIdx, uint flags, int serialSize, int serialOffsetVal)
         {
@@ -1143,8 +1424,8 @@ public static class UmapGen
         int serialCursor = newHeaderEnd + serials.Length;
         int actorSerialOff = serialCursor; serialCursor += actorSerial.Length;
         int compSerialOff = serialCursor; serialCursor += compSerial.Length;
-        exportRaw.Add(MakeExportFromTemplate(actorTemplate, impActorClass, persistentLevel1Based, NPlat, 8, actorSerial.Length, actorSerialOff));
-        exportRaw.Add(MakeExportFromTemplate(compTemplate, impCompClass, newActor1, NStaticMeshComponent0, 0x00040008, compSerial.Length, compSerialOff));
+        exportRaw.Add(MakeExportFromTemplate(actorTemplateExport, impActorClass, persistentLevel1Based, NPlat, 8, actorSerial.Length, actorSerialOff));
+        exportRaw.Add(MakeExportFromTemplate(compTemplateExport, impCompClass, newActor1, NStaticMeshComponent0, 0x00040008, compSerial.Length, compSerialOff));
 
         // build output: copy+patch summary
         var summary = data.AsSpan(0, nameOff).ToArray();
@@ -1155,7 +1436,7 @@ public static class UmapGen
         int customVerCount = BitConverter.ToInt32(summary, sp); sp += 4;
         sp += customVerCount * 20; // FCustomVersion: Guid(16)+Version(4)
         int posTotalHeader = sp; sp += 4; // TotalHeaderSize
-        int flen = BitConverter.ToInt32(summary, sp); sp += 4; sp += (flen < 0 ? -flen * 2 : flen); // FolderName
+        int flen2 = BitConverter.ToInt32(summary, sp); sp += 4; sp += (flen2 < 0 ? -flen2 * 2 : flen2); // FolderName
         sp += 4; // PackageFlags
         int posNameCount = sp; int posNameOff = sp + 4; sp += 8;
         int posGatherC = sp; int posGatherO = sp + 4; sp += 8;
@@ -1163,8 +1444,6 @@ public static class UmapGen
         int posImportCount = sp; int posImportOff = sp + 4; sp += 8;
         int posDependsOff = sp; sp += 4;
         int posSoftC = sp; int posSoftO = sp + 4; sp += 8;
-        // note: layout after this can vary by version (SearchableNamesOffset vs ThumbnailTableOffset etc.)
-        // but for faustite-like (UE4.25/26, ver 506) we handle common fields and rely on value-scan for AR/WT/Bulk
         int posAfterSoft = sp;
         // patch what we know
         PatchI32(summary, posTotalHeader, newHeaderEnd);
@@ -1175,14 +1454,12 @@ public static class UmapGen
         PatchI32(summary, posDependsOff, newDependsOff);
         if (BitConverter.ToInt32(summary, posSoftO) != 0) PatchI32(summary, posSoftO, BitConverter.ToInt32(summary, posSoftO) + headerDelta);
         // best-effort: find and patch Generations counts (search for old exportCount/nameCount pair near genCount pattern)
-        // and patch AR/WT/Bulk by scanning for their old values
         for (int i = posAfterSoft; i <= summary.Length - 8; i += 4)
         {
             int v = BitConverter.ToInt32(summary, i);
             int v2 = BitConverter.ToInt32(summary, i + 4);
             if (v == exportCount && v2 == nameCount)
             {
-                // likely a generation entry (ExportCount, NameCount)
                 PatchI32(summary, i, newExportCount);
                 PatchI32(summary, i + 4, newNameCount);
             }
@@ -1199,6 +1476,9 @@ public static class UmapGen
             if (lv == s.BulkDataStartOffset) PatchI64(summary, i, s.BulkDataStartOffset + headerDelta);
         }
 
+        // depends fields consistency: new exports get 0/empty depends entries (and we appended 2 records). Template export's dep counts/first kept in entry bytes.
+
+        // write output
         using (var ofs = new FileStream(outFile, FileMode.Create, FileAccess.Write))
         using (var w = new BinaryWriter(ofs))
         {
@@ -1217,10 +1497,39 @@ public static class UmapGen
             w.Write(actorSerial); w.Write(compSerial);
         }
 
+        // diff summary (template vs new serials)
+        int DiffCount(byte[] a, byte[] b) { int n = 0, m = Math.Min(a.Length, b.Length); for (int i = 0; i < m; i++) if (a[i] != b[i]) n++; return n + Math.Abs(a.Length - b.Length); }
         Console.WriteLine($"[insertplatform:real] {inFile} -> {outFile}");
-        Console.WriteLine($"[insertplatform:real] platform='{platformName}' {sizeM:0.##}x{sizeM:0.##}m at ({x/100:0.##},{y/100:0.##},{z/100:0.##})m outer=PersistentLevel#{persistentLevel1Based}");
-        Console.WriteLine($"[insertplatform:real] exports {exportCount}->{newExportCount}, imports {importCount}->{newImportCount}, names {nameCount}->{newNameCount}, headerDelta={headerDelta}, depends+8, postDepends={postDependsLen}");
+        Console.WriteLine($"[insertplatform:real] platform='{platformName}' {sizeM:0.##}x{sizeM:0.##}m at ({x/100:0.##},{y/100:0.##},{z/100:0.##})m yaw={yawDeg:0.#} outer=PersistentLevel#{persistentLevel1Based} (1-based)");
+        Console.WriteLine($"[insertplatform:real] exports {exportCount}->{newExportCount}, imports {importCount}->{newImportCount}, names {nameCount}->{newNameCount}, headerDelta={headerDelta}, depends+8, postDepends={postDependsLen}, plSerialGrowth={plSerialGrowth}");
         Console.WriteLine($"[insertplatform:real] size {data.Length}->{serialCursor}");
+        Console.WriteLine($"[insertplatform:real] STRATEGY component: {componentStrategy}; serial {compSerial.Length}B; scalePresent={compScalePresent} scalePatchedInPlace={compScalePatched}; meshImport={impMesh}");
+        foreach (var c in compChanges) Console.WriteLine($"[insertplatform:real]   comp: {c}");
+        if (compTemplateSerial != null)
+        {
+            Console.WriteLine($"[insertplatform:real]   comp diff vs template: {DiffCount(compTemplateSerial, compSerial)} bytes changed (template {compTemplateSerial.Length}B -> new {compSerial.Length}B)");
+            if (compTemplateSerial.Length == compSerial.Length)
+            {
+                var diffs = new List<string>();
+                for (int i = 0; i < compSerial.Length; i++) if (compTemplateSerial[i] != compSerial[i]) diffs.Add($"0x{i:X}({compTemplateSerial[i]:X2}->{compSerial[i]:X2})");
+                Console.WriteLine($"[insertplatform:real]   comp changed offsets: {(diffs.Count == 0 ? "(none)" : string.Join(", ", diffs.Take(48)) + (diffs.Count > 48 ? $" ... (+{diffs.Count - 48})" : ""))}");
+            }
+        }
+        Console.WriteLine($"[insertplatform:real] STRATEGY actor: {actorStrategy}; serial {actorSerial.Length}B");
+        foreach (var c in actorChanges) Console.WriteLine($"[insertplatform:real]   actor: {c}");
+        if (actorTemplateSerial != null)
+        {
+            Console.WriteLine($"[insertplatform:real]   actor diff vs template: {DiffCount(actorTemplateSerial, actorSerial)} bytes changed (template {actorTemplateSerial.Length}B -> new {actorSerial.Length}B)");
+            if (actorTemplateSerial.Length == actorSerial.Length)
+            {
+                var diffs = new List<string>();
+                for (int i = 0; i < actorSerial.Length; i++) if (actorTemplateSerial[i] != actorSerial[i]) diffs.Add($"0x{i:X}({actorTemplateSerial[i]:X2}->{actorSerial[i]:X2})");
+                Console.WriteLine($"[insertplatform:real]   actor changed offsets: {(diffs.Count == 0 ? "(none)" : string.Join(", ", diffs.Take(48)) + (diffs.Count > 48 ? $" ... (+{diffs.Count - 48})" : ""))}");
+            }
+        }
+        Console.WriteLine($"[insertplatform:real] STRATEGY level actors array: {levelStrategy}");
+        Console.WriteLine($"[insertplatform:real] STRATEGY depends: appended 2 empty depends records (count=0) for new actor/component exports; kept template export dependency fields in export table entries; PersistentLevel depends record {(levelPatched ? "unchanged (record not resized)" : "unchanged")}");
+        Console.WriteLine($"[insertplatform:real] new exports: actor#{newActor1} (class={impActorClass}, outer=PL#{persistentLevel1Based}, serOff={actorSerialOff}, serSize={actorSerial.Length}) comp#{newComp1} (class={impCompClass}, outer=actor#{newActor1}, serOff={compSerialOff}, serSize={compSerial.Length})");
         return 0;
     }
 
@@ -1299,7 +1608,11 @@ public static class UmapGen
         TryPatchStructVec(nLoc, x, y, z, "RelativeLocation");
         TryPatchStructVec(nRot, pitchDeg, yawDeg, rollDeg, "RelativeRotation");
         if (sx.HasValue || sy.HasValue || sz.HasValue)
-            TryPatchStructVec(nScale, sx ?? 1f, sy ?? 1f, sz ?? 1f, "RelativeScale3D");
+        {
+            bool scaleFound = TryPatchStructVec(nScale, sx ?? 1f, sy ?? 1f, sz ?? 1f, "RelativeScale3D");
+            if (!scaleFound)
+                Console.WriteLine("[patchsmc] WARNING: RelativeScale3D property not present in this component serial; scale left unchanged (no serial resize).");
+        }
 
         if (patched == 0) { Console.Error.WriteLine("[patchsmc] nothing patched"); return 4; }
         File.WriteAllBytes(outFile, data);

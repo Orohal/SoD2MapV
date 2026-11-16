@@ -421,11 +421,16 @@ internal static class Program
             try
             {
                 var ci = System.Globalization.CultureInfo.InvariantCulture;
-                // --insertplatform <in.umap> <out.umap> <x> <y> <z> <sizeM> [yawDeg]  (prototype: GenMap-compatible packages)
-                if (args.Length < 7) { Console.Error.WriteLine("usage: --insertplatform <in.umap> <out.umap> <x> <y> <z> <sizeM> [yawDeg]"); return 2; }
+                // --insertplatform <in.umap> <out.umap> <x> <y> <z> <sizeM> [yawDeg] [keepMesh] [meshOverride]
+                //   keepMesh=1: keep template's original StaticMesh reference (spawn diagnostic)
+                //   meshOverride: use an EXISTING import as mesh by object name (e.g. WaterPlane03)
+                if (args.Length < 7) { Console.Error.WriteLine("usage: --insertplatform <in.umap> <out.umap> <x> <y> <z> <sizeM> [yawDeg] [keepMesh] [meshOverride]"); return 2; }
                 float x = float.Parse(args[3], ci), y = float.Parse(args[4], ci), z = float.Parse(args[5], ci), sizeM = float.Parse(args[6], ci);
                 float yaw = args.Length > 7 ? float.Parse(args[7], ci) : 0f;
-                return UmapGen.InsertPlatformIntoMap(args[1], args[2], x, y, z, sizeM, yaw);
+                bool keepMesh = args.Length > 8 && args[8] == "1";
+                string? meshOverride = args.Length > 9 ? args[9] : null;
+                bool patchArray = !(args.Length > 10 && args[10] == "noArray");
+                return UmapGen.InsertPlatformIntoMap(args[1], args[2], x, y, z, sizeM, yaw, keepMesh, meshOverride, patchArray);
             }
             catch (Exception e)
             {
@@ -493,7 +498,7 @@ internal static class Program
             try
             {
                 var ci = System.Globalization.CultureInfo.InvariantCulture;
-                // --patchsmc <in.umap> <out.umap> <exportIndex1> <x> <y> <z> [pitch] [yaw] [roll] [sx] [sy] [sz]
+                // --patchsmc <in.umap> <out.umap> <exportIndex1> <x> <y> <z> [pitch] [yaw] [roll] [sx sy sz]
                 if (args.Length < 7) { Console.Error.WriteLine("usage: --patchsmc <in.umap> <out.umap> <exportIndex1> <x> <y> <z> [pitch] [yaw] [roll] [sx sy sz]"); return 2; }
                 int idx = int.Parse(args[3], ci);
                 float x = float.Parse(args[4], ci), y = float.Parse(args[5], ci), z = float.Parse(args[6], ci);
