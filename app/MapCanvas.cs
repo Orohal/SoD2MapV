@@ -653,7 +653,8 @@ namespace SoD2MapViewer;
                 g.DrawLine(gridPen, 0, WorldToScreen(0, y).Y, Width, WorldToScreen(0, y).Y);
         }
 
-        var dot = ClampF(0.2f * _zoom, 2.5f, 14f);
+        var dot = ClampF(0.2f * _zoom, 5f, 16f);
+        using var dotOutline = new Pen(Color.FromArgb(200, 8, 10, 14), 1f); // dark rim so dots pop on any background
         for (int i = 0; i < Objects.Count; i++)
         {
             var o = Objects[i];
@@ -671,8 +672,10 @@ namespace SoD2MapViewer;
             var size = dot;
             if (i == _selected) size = dot * 2f + 4f;
             else if (i == _hover) size = dot * 1.5f + 2f;
+            int dsz = Math.Max(2, (int)size);
             using (b)
-                g.FillRectangle(b, p.X - size / 2, p.Y - size / 2, size, size);
+                g.FillRectangle(b, p.X - dsz / 2, p.Y - dsz / 2, dsz, dsz);
+            g.DrawRectangle(dotOutline, p.X - dsz / 2, p.Y - dsz / 2, dsz, dsz);
 
             if (o.Deleted)
             {
