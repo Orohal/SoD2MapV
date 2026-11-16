@@ -15,10 +15,11 @@ public sealed record MapRegion(string Key, string Display)
 }
 
 /// <summary>
-/// The five campaign regions and the game map-folder codename mapping.
+/// The campaign regions and the game map-folder codename mapping.
 /// Codename→display mapping verified empirically: faustite = Trumbull Valley
 /// (region home-site layout matches the in-game map); amethyst = Cascade Hills,
 /// basalt = Drucker County, copper = Meagher Valley, danburite = Providence Ridge.
+/// Daybreak (Slay the Course) is a separate playable region under maps/Daybreak/.
 /// </summary>
 public static class MapRegions
 {
@@ -27,10 +28,11 @@ public static class MapRegions
     public static readonly MapRegion DruckerCounty = new("drucker-county", "Drucker County");
     public static readonly MapRegion MeagherValley = new("meagher-valley", "Meagher Valley");
     public static readonly MapRegion ProvidenceRidge = new("providence-ridge", "Providence Ridge");
+    public static readonly MapRegion Daybreak = new("daybreak", "Daybreak (Slay the Course)");
 
     public static readonly MapRegion[] All =
     {
-        TrumbullValley, CascadeHills, DruckerCounty, MeagherValley, ProvidenceRidge
+        TrumbullValley, CascadeHills, DruckerCounty, MeagherValley, ProvidenceRidge, Daybreak
     };
 
     public static MapRegion? FromKey(string key)
@@ -50,6 +52,7 @@ public static class MapRegions
             var s when s.Contains("maps/basalt") => BasaltRegion,
             var s when s.Contains("maps/copper") => CopperRegion,
             var s when s.Contains("maps/danburite") => DanburiteRegion,
+            var s when s.Contains("maps/daybreak/") || s.Contains("slay_the_course") => Daybreak,
             _ => null,
         };
     }

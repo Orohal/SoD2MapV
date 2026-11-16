@@ -53,16 +53,30 @@ internal static class Program
         }
         if (args.Length >= 1 && args[0] == "--bgset")
         {
-            // Usage: --bgset <regionKey> <sx> <sy> <ox> <oy>   (writes bgcalib_override.json next to the exe)
-            if (args.Length < 6) { Console.WriteLine("usage: --bgset <region> <sx> <sy> <ox> <oy>"); return 1; }
-            var reg = args[1];
-            double sx = double.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture);
-            double sy = double.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture);
-            double ox = double.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture);
-            double oy = double.Parse(args[5], System.Globalization.CultureInfo.InvariantCulture);
-            BgCalib.SetOverride(reg, sx, sy, ox, oy);
-            Console.WriteLine($"[bgset] {reg}: sx={sx} sy={sy} ox={ox} oy={oy}  -> {BgCalib.OverridePath()}");
-            return 0;
+            // Usage: --bgset <regionKey> <sx> <sy> <ox> <oy>  or  --bgset <regionKey> <assetName> <sx> <sy> <ox> <oy>
+            // (writes bgcalib_override.json next to the exe)
+            if (args.Length < 6) { Console.WriteLine("usage: --bgset <region|region|asset> <sx> <sy> <ox> <oy>  OR  --bgset <region> <assetName> <sx> <sy> <ox> <oy>"); return 1; }
+            if (args.Length >= 7)
+            {
+                var reg = args[1]; var asset = args[2];
+                double sx = double.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture);
+                double sy = double.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture);
+                double ox = double.Parse(args[5], System.Globalization.CultureInfo.InvariantCulture);
+                double oy = double.Parse(args[6], System.Globalization.CultureInfo.InvariantCulture);
+                BgCalib.SetOverride(reg, sx, sy, ox, oy, asset);
+                Console.WriteLine($"[bgset] {reg}|{asset}: sx={sx} sy={sy} ox={ox} oy={oy}  -> {BgCalib.OverridePath()}");
+                return 0;
+            }
+            {
+                var reg = args[1];
+                double sx = double.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture);
+                double sy = double.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture);
+                double ox = double.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture);
+                double oy = double.Parse(args[5], System.Globalization.CultureInfo.InvariantCulture);
+                BgCalib.SetOverride(reg, sx, sy, ox, oy);
+                Console.WriteLine($"[bgset] {reg}: sx={sx} sy={sy} ox={ox} oy={oy}  -> {BgCalib.OverridePath()}");
+                return 0;
+            }
         }
         if (args.Length >= 1 && args[0] == "--bgrender")
         {
@@ -73,6 +87,16 @@ internal static class Program
 
         {
             try { return BgMaps.RenderAssetCli(args.Length > 1 ? args[1..] : Array.Empty<string>()); }
+            catch (Exception e) { Console.Error.WriteLine(e); return 2; }
+        }
+        if (args.Length >= 1 && args[0] == "--meshview")
+        {
+            try { return MeshViewer.MeshViewCli(args.Length > 1 ? args[1..] : Array.Empty<string>()); }
+            catch (Exception e) { Console.Error.WriteLine(e); return 2; }
+        }
+        if (args.Length >= 1 && args[0] == "--meshsearch")
+        {
+            try { return MeshViewer.MeshSearchCli(args.Length > 1 ? args[1..] : Array.Empty<string>()); }
             catch (Exception e) { Console.Error.WriteLine(e); return 2; }
         }
         if (args.Length >= 1 && args[0] == "--bgprops")
@@ -815,6 +839,57 @@ internal static class Program
                 float yaw = args.Length > 7 ? float.Parse(args[7], ci) : 0f;
                 string? outPak = args.Length > 8 ? args[8] : null;
                 return Smoke.AddPlatform(gameDir, mapPath, x, y, z, sizeM, yaw, outPak);
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
+        if (args.Length >= 1 && args[0] == "--injectplatformat")
+        {
+            try
+            {
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                // --injectplatformat <gameDir> <mapPakPath> <pakEntryPath> <x> <y> [sizeM] [yawDeg] [heightCm] [outPak] [--mesh <nameSubstring>]
+                string? meshFilter = null;
+                var posArgs = new List<string>();
+                for (int i = 1; i < args.Length; i++)
+                {
+                    if (args[i] == "--mesh" && i + 1 < args.Length) { meshFilter = args[++i]; continue; }
+                    posArgs.Add(args[i]);
+                }
+                if (posArgs.Count < 5)
+                {
+                    Console.Error.WriteLine("usage: --injectplatformat <gameDir> <mapPakPath> <pakEntryPath> <x> <y> [sizeM] [yawDeg] [heightCm] [outPak] [--mesh <nameSubstring>]");
+                    return 2;
+                }
+                var gameDir = posArgs[0];
+                var mapPakPath = posArgs[1];
+                var pakEntryPath = posArgs[2];
+                float x = float.Parse(posArgs[3], ci);
+                float y = float.Parse(posArgs[4], ci);
+                float sizeM = posArgs.Count > 5 ? float.Parse(posArgs[5], ci) : 30f;
+                float yaw = posArgs.Count > 6 ? float.Parse(posArgs[6], ci) : 0f;
+                float height = posArgs.Count > 7 ? float.Parse(posArgs[7], ci) : 50f;
+                string? outPak = posArgs.Count > 8 ? posArgs[8] : null;
+
+                var loader = new MapLoader();
+                var init = loader.InitializeAsync(gameDir, new Progress<string>(s => Console.WriteLine("[init] " + s))).GetAwaiter().GetResult();
+                if (init.Error != null) { Console.Error.WriteLine(init.Error); return 2; }
+                Console.WriteLine($"[init] mounted={init.MountedPaks} files={init.TotalFiles} maps={init.MapCount}");
+
+                var res = PlatformInjector.RunAtTarget(loader.Provider, mapPakPath, pakEntryPath, x, y, null,
+                    sizeM * 100f, sizeM * 100f, yaw, height, outPak, 4000f, meshFilter, autoCenterIfNegative: true);
+                if (!res.Ok)
+                {
+                    Console.Error.WriteLine("[injectplatformat] FEHLER: " + res.Error);
+                    if (!string.IsNullOrEmpty(res.Warning)) Console.Error.WriteLine("[injectplatformat] Warnung: " + res.Warning);
+                    return 3;
+                }
+                Console.WriteLine($"[injectplatformat] OK target=({res.LocalX:0.##},{res.LocalY:0.##}) candidate={res.Chosen?.ActorName} export#={res.Chosen?.ComponentExport1Based} mesh={res.Chosen?.MeshLabel} scale=({res.Chosen?.Sx:0.####},{res.Chosen?.Sy:0.####},{res.Chosen?.Sz:0.####}) groundZ={(res.Chosen != null ? (res.Chosen.FinalZ + (res.Chosen.Bounds != null ? (res.Chosen.Bounds.OriginZ + res.Chosen.Bounds.ExtentZ) * res.Chosen.Sz : 0f) - res.HeightOffsetCm).ToString("0.##", ci) : "?")} topZ={(res.Chosen != null ? (res.Chosen.FinalZ + (res.Chosen.Bounds != null ? (res.Chosen.Bounds.OriginZ + res.Chosen.Bounds.ExtentZ) * res.Chosen.Sz : 0f)).ToString("0.##", ci) : "?")} finalLoc=({res.Chosen?.FinalX:0.##},{res.Chosen?.FinalY:0.##},{res.Chosen?.FinalZ:0.##}) roundtrip=OK pak={res.PakPath} entry={res.PakEntryPath}");
+                if (!string.IsNullOrEmpty(res.Warning)) Console.WriteLine("[injectplatformat] Warnung: " + res.Warning);
+                return 0;
             }
             catch (Exception e)
             {

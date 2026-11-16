@@ -54,9 +54,40 @@ public static class TgcPatcher
             var token = n.Split('_')[0];
             if (p.Contains(token, StringComparison.Ordinal)) { name = n; break; }
         }
-        if (name == null) return null;
-        var path = "StateOfDecay2/Content/Tagged/Compiled/" + name;
-        return provider.Files.ContainsKey(path) ? path : null;
+        if (name != null)
+        {
+            var path = "StateOfDecay2/Content/Tagged/Compiled/" + name;
+            return provider.Files.ContainsKey(path) ? path : null;
+        }
+
+        // Fallback: derive from path segments (e.g. Daybreak/Slay_The_Course -> slay_the_course*.tgc)
+        const string compiledPrefix = "StateOfDecay2/Content/Tagged/Compiled/";
+        try
+        {
+            var segments = p.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var candidates = new List<string>();
+            for (int i = 0; i < segments.Length; i++)
+            {
+                if (segments[i] == "maps" && i + 2 < segments.Length)
+                    candidates.Add(segments[i + 2]); // region/map folder, e.g. slay_the_course
+                if (segments[i] == "maps" && i + 1 < segments.Length)
+                    candidates.Add(segments[i + 1]); // group folder, e.g. daybreak
+            }
+            var baseName = Path.GetFileNameWithoutExtension(segments.LastOrDefault() ?? "");
+            if (!string.IsNullOrEmpty(baseName)) candidates.Add(baseName);
+
+            var compiled = provider.Files.Keys
+                .Where(k => k.StartsWith(compiledPrefix, StringComparison.OrdinalIgnoreCase) && k.EndsWith(".tgc", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            foreach (var cand in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (cand.Length < 3) continue;
+                var hit = compiled.FirstOrDefault(k => Path.GetFileNameWithoutExtension(k).Contains(cand, StringComparison.OrdinalIgnoreCase));
+                if (hit != null) return hit;
+            }
+        }
+        catch { }
+        return null;
     }
 
     public static JsonNode Parse(byte[] jsonBytes)

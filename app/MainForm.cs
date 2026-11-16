@@ -264,8 +264,11 @@ public sealed class MainForm : Form
         btnAdjustZ.Click += (s, e) => AdjustSelectionHeight();
         var btnChar = new Button { Text = "Show character", AutoSize = true, Height = 30 };
         btnChar.Click += (s, e) => ShowCharacterPosition();
+        _btnChar = btnChar;
         var btnUndo = new Button { Text = "Undo", AutoSize = true, Height = 30 };
         btnUndo.Click += (s, e) => UndoLastMove();
+        var btnMeshViewer = new Button { Text = "Mesh-Viewer", AutoSize = true, Height = 30 };
+        btnMeshViewer.Click += (s, e) => OpenMeshViewerDialog();
 
         var injectMenu = new ContextMenuStrip();
         injectMenu.Items.Add("Inject vehicle...", null, (s, e) => OpenInjectDialog(null));
@@ -299,7 +302,7 @@ public sealed class MainForm : Form
         var lblSelection = new Label { Text = "Selection", AutoSize = true, ForeColor = Color.Gray, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(8, 8, 6, 0), Margin = new Padding(0, 0, 0, 0) };
         var lblActions = new Label { Text = "Actions", AutoSize = true, ForeColor = Color.Gray, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(8, 8, 6, 0), Margin = new Padding(0, 0, 0, 0) };
 
-        flow.Controls.AddRange(new Control[] { lblGame, btnOpen, lblFilter, labelMap, _search, lblSelection, labelHouse, _cmbHouses, labelSite, _cmbSites, lblActions, btnExport, btnAdjustZ, btnInjectMenu, btnChar, btnUndo, _chkBg, _chkSites, _chkEditBg, _chkEdit });
+        flow.Controls.AddRange(new Control[] { lblGame, btnOpen, lblFilter, labelMap, _search, lblSelection, labelHouse, _cmbHouses, labelSite, _cmbSites, lblActions, btnExport, btnAdjustZ, btnInjectMenu, btnChar, btnUndo, btnMeshViewer, _chkBg, _chkSites, _chkEditBg, _chkEdit });
         top.Controls.Add(flow);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
         _canvas.SelectionChanged += _ => SaveSessionStateLight();
@@ -308,11 +311,12 @@ public sealed class MainForm : Form
         _status = new TextBox
         {
             Dock = DockStyle.Bottom,
-            Height = 26,
+            Height = 28,
             ReadOnly = true,
             BorderStyle = BorderStyle.None,
             BackColor = Color.FromArgb(38, 40, 48),
             ForeColor = Color.LightGray,
+            Font = new Font("Consolas", 9f),
         };
 
         Controls.Add(outer);
@@ -1040,10 +1044,34 @@ public sealed class MainForm : Form
         dlg.ShowDialog(this);
     }
 
+    private void OpenMeshViewerDialog()
+    {
+        if (_loader.Provider == null)
+        {
+            MessageBox.Show(this, "Provider noch nicht geladen. Bitte zuerst ein Spielverzeichnis wählen/laden.",
+                "Mesh-Viewer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        using var dlg = new MeshViewer.MeshViewDialog(_loader.Provider);
+        dlg.ShowDialog(this);
+    }
+
+    private Button? _btnChar;
+
     private async void ShowCharacterPosition()
     {
         try
         {
+            // toggle: if the marker is currently visible, hide it instead of re-reading the save
+            if (_canvas.PlayerWorldPos != null)
+            {
+                _canvas.PlayerWorldPos = null;
+                _canvas.PlayerLabel = "Player";
+                _canvas.Invalidate();
+                if (_btnChar != null) _btnChar.Text = "Show character";
+                SetStatus("Character marker hidden.");
+                return;
+            }
             var saves = Savegame.FindSavegames();
             string? savPath = null;
             if (saves.Length == 1)
@@ -1090,6 +1118,7 @@ public sealed class MainForm : Form
             _canvas.PlayerWorldPos = new System.Drawing.PointF(wx, wy);
             _canvas.PlayerWorldZCm = wz;
             _canvas.PlayerLabel = "Player";
+            if (_btnChar != null) _btnChar.Text = "Hide character";
             // canvas centers/edits in tile-local coords for tiled maps (world = local + offset)
             _canvas.CenterOn(wx - _canvas.MapWorldOffsetX, wy - _canvas.MapWorldOffsetY);
             _canvas.Invalidate();

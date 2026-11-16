@@ -54,6 +54,10 @@ public static class BgCalib
     static string CalibKey(string regionKey, string? assetName = null)
         => assetName != null && Regions.ContainsKey(regionKey + "|" + assetName) ? regionKey + "|" + assetName : regionKey;
 
+    /// <summary>Resolves the effective calibration key for lookups (prefers existing region|asset variant).</summary>
+    static string ResolveCalibKey(string regionKey, string? assetName = null)
+        => assetName != null && Regions.ContainsKey(regionKey + "|" + assetName) ? regionKey + "|" + assetName : regionKey;
+
     static BgCalib()
     {
         try
@@ -63,14 +67,23 @@ public static class BgCalib
             var obj = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(path));
             foreach (var prop in obj.Properties())
             {
-                if (!Regions.ContainsKey(prop.Name)) continue;
                 var v = prop.Value;
-                var cur = Regions[prop.Name];
-                Regions[prop.Name] = (
-                    v["sx"]?.ToObject<double>() ?? cur.SX,
-                    v["sy"]?.ToObject<double>() ?? cur.SY,
-                    v["ox"]?.ToObject<double>() ?? cur.OX,
-                    v["oy"]?.ToObject<double>() ?? cur.OY);
+                if (Regions.TryGetValue(prop.Name, out var cur))
+                {
+                    Regions[prop.Name] = (
+                        v["sx"]?.ToObject<double>() ?? cur.SX,
+                        v["sy"]?.ToObject<double>() ?? cur.SY,
+                        v["ox"]?.ToObject<double>() ?? cur.OX,
+                        v["oy"]?.ToObject<double>() ?? cur.OY);
+                }
+                else
+                {
+                    Regions[prop.Name] = (
+                        v["sx"]?.ToObject<double>() ?? 1.600,
+                        v["sy"]?.ToObject<double>() ?? 1.600,
+                        v["ox"]?.ToObject<double>() ?? 0.0,
+                        v["oy"]?.ToObject<double>() ?? 0.0);
+                }
             }
         }
         catch { }
@@ -81,8 +94,14 @@ public static class BgCalib
 
     public static void SetOverride(string region, double sx, double sy, double ox, double oy, string? assetName = null)
     {
-        var key = CalibKey(region, assetName);
-        if (!Regions.ContainsKey(key)) key = region; // persist under resolved key
+        // allow passing combined "region|asset" key as region
+        string key;
+        if (assetName == null && region.Contains('|'))
+            key = region;
+        else if (assetName != null)
+            key = region + "|" + assetName;
+        else
+            key = region;
         Newtonsoft.Json.Linq.JObject obj;
         var path = OverridePath();
         try { obj = File.Exists(path) ? Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(path)) : new Newtonsoft.Json.Linq.JObject(); }
@@ -98,7 +117,7 @@ public static class BgCalib
     public static (double X0, double Y0, double X1, double Y1) WorldRectFor(
         string regionKey, double wMinX, double wMaxX, double wMinY, double wMaxY, string? assetName = null)
     {
-        var key = CalibKey(regionKey, assetName);
+        var key = ResolveCalibKey(regionKey, assetName);
         var (sx, sy, ox, oy) = Regions.GetValueOrDefault(key, Regions.GetValueOrDefault(regionKey, (1.600, 1.600, 0, 0)));
         var x0 = wMinX * sx + ox; var x1 = wMaxX * sx + ox;
         var y0 = wMinY * sy + oy; var y1 = wMaxY * sy + oy;
@@ -107,7 +126,7 @@ public static class BgCalib
 
     public static (double SX, double SY, double OX, double OY) Get(string regionKey, string? assetName = null)
     {
-        var key = CalibKey(regionKey, assetName);
+        var key = ResolveCalibKey(regionKey, assetName);
         return Regions.GetValueOrDefault(key, Regions.GetValueOrDefault(regionKey, (1.600, 1.600, 0, 0)));
     }
 }
@@ -125,6 +144,7 @@ public static class BgMaps
         "drucker-county"   => "basalt_region_map_Background",
         "meagher-valley"   => "copper_region_map_Background",
         "providence-ridge" => "danburite_persistent_Background",
+        "daybreak"         => "slay_the_course_3_Background",
         _ => null,
     };
 
@@ -399,7 +419,7 @@ public static class BgMaps
         // distance to the nearest building pixel. Used as a smooth objective for offset refinement.
         var dist = new float[MW * MH];
         const float INF = 1e6f;
-        for (int i = 0; i < dist.Length; i++) dist[i] = mask[i % MW, i / MH] ? 0f : INF;
+        for (int i = 0; i < dist.Length; i++) dist[i] = mask[i % MW, i / MW] ? 0f : INF;
         // 2-pass Manhattan distance transform
         for (int y = 0; y < MH; y++)
             for (int x = 0; x < MW; x++)
