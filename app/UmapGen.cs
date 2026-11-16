@@ -1114,20 +1114,37 @@ public static class UmapGen
             BitConverter.GetBytes(so + headerDelta).CopyTo(ee, 28);
         }
 
-        byte[] MakeExport(int classIdx, int outerIdx, int objNameIdx, uint flags, int serialSize, int serialOffsetVal)
+        // find template exports of same class to preserve version-specific fields (deps, guid, flags tail etc.)
+        byte[]? actorTemplate = null, compTemplate = null;
+        for (int i = 0; i < exportRaw.Count; i++)
         {
-            using var ems = new MemoryStream(); using var w = new BinaryWriter(ems);
-            w.Write(classIdx); w.Write(0); w.Write(outerIdx);
-            w.Write(objNameIdx); w.Write(0);
-            w.Write(flags); w.Write(serialSize); w.Write(serialOffsetVal);
-            w.Write(new byte[32]); w.Write(1); w.Write(0);
-            return ems.ToArray();
+            int ci = BitConverter.ToInt32(exportRaw[i], 0);
+            if (actorTemplate == null && ci == impActorClass) actorTemplate = (byte[])exportRaw[i].Clone();
+            if (compTemplate == null && ci == impCompClass) compTemplate = (byte[])exportRaw[i].Clone();
+            if (actorTemplate != null && compTemplate != null) break;
+        }
+        if (actorTemplate == null || compTemplate == null)
+        { Console.Error.WriteLine("[insertplatform] real-map: could not find template exports for StaticMeshActor/StaticMeshComponent"); return 3; }
+
+        byte[] MakeExportFromTemplate(byte[] template, int classIdx, int outerIdx, int objNameIdx, uint flags, int serialSize, int serialOffsetVal)
+        {
+            var ee = (byte[])template.Clone();
+            BitConverter.GetBytes(classIdx).CopyTo(ee, 0);
+            // keep SuperIndex(4), TemplateIndex? at 4 in 72B GenMap layout was SuperIndex; real layout may differ but template preserves
+            BitConverter.GetBytes(outerIdx).CopyTo(ee, 8);
+            BitConverter.GetBytes(objNameIdx).CopyTo(ee, 12);
+            BitConverter.GetBytes(0).CopyTo(ee, 16); // name number
+            BitConverter.GetBytes(flags).CopyTo(ee, 20);
+            BitConverter.GetBytes(serialSize).CopyTo(ee, 24);
+            BitConverter.GetBytes(serialOffsetVal).CopyTo(ee, 28);
+            // keep rest (deps, guid, package flags, preload indices etc.) from template
+            return ee;
         }
         int serialCursor = newHeaderEnd + serials.Length;
         int actorSerialOff = serialCursor; serialCursor += actorSerial.Length;
         int compSerialOff = serialCursor; serialCursor += compSerial.Length;
-        exportRaw.Add(MakeExport(impActorClass, persistentLevel1Based, NPlat, 8, actorSerial.Length, actorSerialOff));
-        exportRaw.Add(MakeExport(impCompClass, newActor1, NStaticMeshComponent0, 0x00040008, compSerial.Length, compSerialOff));
+        exportRaw.Add(MakeExportFromTemplate(actorTemplate, impActorClass, persistentLevel1Based, NPlat, 8, actorSerial.Length, actorSerialOff));
+        exportRaw.Add(MakeExportFromTemplate(compTemplate, impCompClass, newActor1, NStaticMeshComponent0, 0x00040008, compSerial.Length, compSerialOff));
 
         // build output: copy+patch summary
         var summary = data.AsSpan(0, nameOff).ToArray();
@@ -1225,6 +1242,70 @@ public static class UmapGen
         }
     }
     private static int ReadFNameIndex(BinaryReader r) { int idx = r.ReadInt32(); r.ReadInt32(); return idx; }
+
+    /// <summary>
+    /// In-place patch of a StaticMeshComponent export's transform (RelativeLocation/Rotation/Scale3D) without changing
+    /// package structure, counts, offsets, or serial sizes. Only float values inside existing property tags are overwritten.
+    /// Robust fallback when full actor insertion is not yet safe for the target map layout.
+    /// </summary>
+    public static int PatchSmcTransform(string inFile, string outFile, int exportIndex1Based, float x, float y, float z, float pitchDeg = 0f, float yawDeg = 0f, float rollDeg = 0f, float? sx = null, float? sy = null, float? sz = null)
+    {
+        var data = File.ReadAllBytes(inFile);
+        var versions = new CUE4Parse.UE4.Versions.VersionContainer(CUE4Parse.UE4.Versions.EGame.GAME_StateOfDecay2);
+        var ar = new CUE4Parse.UE4.Assets.Readers.FAssetArchive(new FByteArchive(Path.GetFileName(inFile), data, versions), null);
+        var pkg = new CUE4Parse.UE4.Assets.Package(ar, null, null, null, null, useLazySerialization: true);
+        if (exportIndex1Based < 1 || exportIndex1Based > pkg.ExportMap.Length)
+        { Console.Error.WriteLine($"[patchsmc] export index {exportIndex1Based} out of range (1..{pkg.ExportMap.Length})"); return 2; }
+        var e = pkg.ExportMap[exportIndex1Based - 1];
+        int serOff = (int)e.SerialOffset;
+        int serSize = (int)e.SerialSize;
+        if (serOff < 0 || serOff + serSize > data.Length)
+        { Console.Error.WriteLine("[patchsmc] invalid serial range"); return 3; }
+
+        // build name->index lookup for this package
+        var nameIdx = new System.Collections.Generic.Dictionary<string, int>(StringComparer.Ordinal);
+        for (int i = 0; i < pkg.NameMap.Length; i++) nameIdx[pkg.NameMap[i].Name ?? string.Empty] = i;
+        int Idx(string n) => nameIdx.TryGetValue(n, out var v) ? v : -1;
+        int nLoc = Idx("RelativeLocation"), nRot = Idx("RelativeRotation"), nScale = Idx("RelativeScale3D");
+        int nStructProp = Idx("StructProperty");
+
+        int patched = 0;
+        bool TryPatchStructVec(int tagNameIdx, float v1, float v2, float v3, string label)
+        {
+            if (tagNameIdx < 0) { Console.WriteLine($"[patchsmc] name '{label}' not in name map, skip"); return false; }
+            var needle = BitConverter.GetBytes(tagNameIdx);
+            for (int i = serOff; i <= serOff + serSize - 75; i++)
+            {
+                if (data[i] != needle[0] || data[i+1] != needle[1] || data[i+2] != needle[2] || data[i+3] != needle[3]) continue;
+                if (BitConverter.ToInt32(data, i+4) != 0) continue; // FName number
+                // check type is StructProperty if known
+                if (nStructProp >= 0 && BitConverter.ToInt32(data, i+8) != nStructProp) continue;
+                int size = BitConverter.ToInt32(data, i+16);
+                if (size != 12) continue;
+                // value offset: 8(name)+8(type)+4(size)+4(arrayIdx)+8(structName)+16(guid)+1(hasGuid)=49
+                int valOff = i + 49;
+                if (valOff + 12 > serOff + serSize) continue;
+                Buffer.BlockCopy(BitConverter.GetBytes(v1), 0, data, valOff, 4);
+                Buffer.BlockCopy(BitConverter.GetBytes(v2), 0, data, valOff + 4, 4);
+                Buffer.BlockCopy(BitConverter.GetBytes(v3), 0, data, valOff + 8, 4);
+                Console.WriteLine($"[patchsmc] patched {label} at serial+{i - serOff} -> ({v1},{v2},{v3})");
+                patched++;
+                return true;
+            }
+            Console.WriteLine($"[patchsmc] tag '{label}' not found/patched in serial");
+            return false;
+        }
+
+        TryPatchStructVec(nLoc, x, y, z, "RelativeLocation");
+        TryPatchStructVec(nRot, pitchDeg, yawDeg, rollDeg, "RelativeRotation");
+        if (sx.HasValue || sy.HasValue || sz.HasValue)
+            TryPatchStructVec(nScale, sx ?? 1f, sy ?? 1f, sz ?? 1f, "RelativeScale3D");
+
+        if (patched == 0) { Console.Error.WriteLine("[patchsmc] nothing patched"); return 4; }
+        File.WriteAllBytes(outFile, data);
+        Console.WriteLine($"[patchsmc] {inFile} -> {outFile} export#{exportIndex1Based} ({e.ObjectName}) ser={serOff}+{serSize} patched={patched} size={data.Length}");
+        return 0;
+    }
 
     /// <summary>Baseline: structured 1:1 roundtrip of a .umap by splitting into contiguous raw sections
     /// [summary..NameOffset), [names), [imports), [exports), [depends..TotalHeaderSize), [serials..EOF).

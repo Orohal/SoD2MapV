@@ -438,10 +438,13 @@ internal static class Program
             try
             {
                 var ci = System.Globalization.CultureInfo.InvariantCulture;
-                // --insertplatformpak <in.umap> <out.pak> <x> <y> <z> <sizeM> [yawDeg]  (writes mod pak)
-                if (args.Length < 8) { Console.Error.WriteLine("usage: --insertplatformpak <in.umap> <out.pak> <x> <y> <z> <sizeM> [yawDeg]"); return 2; }
+                // --insertplatformpak <in.umap> <out.pak> <x> <y> <z> <sizeM> [yawDeg] [gamePath]  (writes mod pak)
+                //   gamePath: pak-entry path relative to mount point (e.g. maps/faustite/faustite/faustite_x3_y2.umap)
+                //   defaults to maps/{tileName}/{tileName}.umap
+                if (args.Length < 8) { Console.Error.WriteLine("usage: --insertplatformpak <in.umap> <out.pak> <x> <y> <z> <sizeM> [yawDeg] [gamePath]"); return 2; }
                 float x = float.Parse(args[3], ci), y = float.Parse(args[4], ci), z = float.Parse(args[5], ci), sizeM = float.Parse(args[6], ci);
                 float yaw = args.Length > 7 ? float.Parse(args[7], ci) : 0f;
+                string? gamePath = args.Length > 8 ? args[8] : null;
                 // temp umap
                 var tmpUmap = Path.Combine(Path.GetTempPath(), "sod2mapv_inserted.umap");
                 int rc = UmapGen.InsertPlatformIntoMap(args[1], tmpUmap, x, y, z, sizeM, yaw);
@@ -449,10 +452,15 @@ internal static class Program
                 var data = File.ReadAllBytes(tmpUmap);
                 var tileName = Path.GetFileNameWithoutExtension(args[1]);
                 var pakPath = args[2];
+                // derive region from tile name: everything before "_x" (e.g. faustite from faustite_x3_y2)
+                string region = tileName;
+                int xi = tileName.IndexOf("_x", StringComparison.Ordinal);
+                if (xi > 0) region = tileName.Substring(0, xi);
+                string entryPath = gamePath ?? $"maps/{region}/{region}/{tileName}.umap";
                 var wr = PakWriter.Write(pakPath, "../../../StateOfDecay2/Content/",
-                    new[] { new PakWriter.Entry { Path = $"maps/{tileName}/{tileName}.umap", Data = data } });
+                    new[] { new PakWriter.Entry { Path = entryPath, Data = data } });
                 try { File.Delete(tmpUmap); } catch { }
-                Console.WriteLine($"[insertplatformpak] pak={pakPath} size={wr.FileSize} indexOff={wr.IndexOffset}");
+                Console.WriteLine($"[insertplatformpak] pak={pakPath} size={wr.FileSize} indexOff={wr.IndexOffset} entry={entryPath}");
                 return 0;
             }
             catch (Exception e)
@@ -460,6 +468,44 @@ internal static class Program
                 Console.Error.WriteLine(e);
                 return 2;
             }
+        }
+        if (args.Length >= 1 && args[0] == "--packumap")
+        {
+            try
+            {
+                // --packumap <in.umap> <out.pak> [gamePath]
+                if (args.Length < 3) { Console.Error.WriteLine("usage: --packumap <in.umap> <out.pak> [gamePath]"); return 2; }
+                var data = File.ReadAllBytes(args[1]);
+                var tileName = Path.GetFileNameWithoutExtension(args[1]);
+                string region = tileName;
+                int xi = tileName.IndexOf("_x", StringComparison.Ordinal);
+                if (xi > 0) region = tileName.Substring(0, xi);
+                string entryPath = args.Length > 3 ? args[3] : $"maps/{region}/{region}/{tileName}.umap";
+                var wr = PakWriter.Write(args[2], "../../../StateOfDecay2/Content/",
+                    new[] { new PakWriter.Entry { Path = entryPath, Data = data } });
+                Console.WriteLine($"[packumap] pak={args[2]} size={wr.FileSize} indexOff={wr.IndexOffset} entry={entryPath}");
+                return 0;
+            }
+            catch (Exception e) { Console.Error.WriteLine(e); return 2; }
+        }
+        if (args.Length >= 1 && args[0] == "--patchsmc")
+        {
+            try
+            {
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                // --patchsmc <in.umap> <out.umap> <exportIndex1> <x> <y> <z> [pitch] [yaw] [roll] [sx] [sy] [sz]
+                if (args.Length < 7) { Console.Error.WriteLine("usage: --patchsmc <in.umap> <out.umap> <exportIndex1> <x> <y> <z> [pitch] [yaw] [roll] [sx sy sz]"); return 2; }
+                int idx = int.Parse(args[3], ci);
+                float x = float.Parse(args[4], ci), y = float.Parse(args[5], ci), z = float.Parse(args[6], ci);
+                float pitch = args.Length > 7 ? float.Parse(args[7], ci) : 0f;
+                float yaw = args.Length > 8 ? float.Parse(args[8], ci) : 0f;
+                float roll = args.Length > 9 ? float.Parse(args[9], ci) : 0f;
+                float? sx = args.Length > 10 ? float.Parse(args[10], ci) : null;
+                float? sy = args.Length > 11 ? float.Parse(args[11], ci) : null;
+                float? sz = args.Length > 12 ? float.Parse(args[12], ci) : null;
+                return UmapGen.PatchSmcTransform(args[1], args[2], idx, x, y, z, pitch, yaw, roll, sx, sy, sz);
+            }
+            catch (Exception e) { Console.Error.WriteLine(e); return 2; }
         }
         if (args.Length >= 1 && args[0] == "--umaproundtrip")
         {
