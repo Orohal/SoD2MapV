@@ -283,6 +283,7 @@ public sealed class MainForm : Form
             else
                 SetStatus("No player position known — click 'Show character' first.");
         });
+        injectMenu.Items.Add("Plattform an Spieler-Position...", null, (s, e) => OpenPlatformInjectDialog());
 
         var btnInjectMenu = new Button { Text = "Inject ▾", AutoSize = true, Height = 30 };
         btnInjectMenu.Click += (s, e) => injectMenu.Show(btnInjectMenu, new Point(0, btnInjectMenu.Height));
@@ -1026,6 +1027,18 @@ public sealed class MainForm : Form
 
     private void OpenItemInjectDialog() =>
         new ItemInjectDialog().ShowDialog(this);
+
+    private void OpenPlatformInjectDialog()
+    {
+        if (_loader.Provider == null || string.IsNullOrWhiteSpace(_loader.GameDirectory))
+        {
+            MessageBox.Show(this, "Spielverzeichnis/Paks noch nicht geladen. Bitte zuerst \"Choose game folder...\" verwenden.",
+                "Plattform an Spieler-Position", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        using var dlg = new PlatformInjectDialog(_loader.Provider, _loader.GameDirectory);
+        dlg.ShowDialog(this);
+    }
 
     private async void ShowCharacterPosition()
     {

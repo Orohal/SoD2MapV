@@ -176,8 +176,8 @@ namespace SoD2MapViewer;
     private static readonly Color[] Palette =
     {
         Color.FromArgb(120, 190, 255), Color.FromArgb(255, 160, 100), Color.FromArgb(150, 255, 160),
-        Color.FromArgb(255, 240, 120), Color.FromArgb(220, 160, 255), Color.FromArgb(120, 255, 255),
-        Color.FromArgb(255, 130, 170), Color.FromArgb(180, 220, 255), Color.FromArgb(230, 230, 230),
+        Color.FromArgb(255, 240, 120), Color.FromArgb(30, 100, 255), Color.FromArgb(120, 255, 255),
+        Color.FromArgb(30, 100, 255), Color.FromArgb(180, 220, 255), Color.FromArgb(230, 230, 230),
         Color.FromArgb(160, 255, 200), Color.FromArgb(255, 200, 150), Color.FromArgb(200, 200, 255),
     };
 

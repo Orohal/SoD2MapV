@@ -822,6 +822,42 @@ internal static class Program
                 return 2;
             }
         }
+        if (args.Length >= 1 && args[0] == "--injectplatformauto")
+        {
+            try
+            {
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                // --injectplatformauto <gameDir> [savePath] [sizeM] [yawDeg] [heightCm] [outPak]
+                if (args.Length < 2) { Console.Error.WriteLine("usage: --injectplatformauto <gameDir> [savePath] [sizeM] [yawDeg] [heightCm] [outPak]"); return 2; }
+                var gameDir = args[1];
+                string? save = args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]) && args[2] != "-" ? args[2] : null;
+                float sizeM = args.Length > 3 ? float.Parse(args[3], ci) : 30f;
+                float yaw = args.Length > 4 ? float.Parse(args[4], ci) : 0f;
+                float height = args.Length > 5 ? float.Parse(args[5], ci) : 50f;
+                string? outPak = args.Length > 6 ? args[6] : null;
+
+                var loader = new MapLoader();
+                var init = loader.InitializeAsync(gameDir, new Progress<string>(s => Console.WriteLine("[init] " + s))).GetAwaiter().GetResult();
+                if (init.Error != null) { Console.Error.WriteLine(init.Error); return 2; }
+                Console.WriteLine($"[init] mounted={init.MountedPaks} files={init.TotalFiles} maps={init.MapCount}");
+
+                var res = PlatformInjector.Run(loader.Provider, save, sizeM * 100f, sizeM * 100f, yaw, height, outPak);
+                if (!res.Ok)
+                {
+                    Console.Error.WriteLine("[injectplatformauto] FEHLER: " + res.Error);
+                    if (!string.IsNullOrEmpty(res.Warning)) Console.Error.WriteLine("[injectplatformauto] Warnung: " + res.Warning);
+                    return 3;
+                }
+                Console.WriteLine($"[injectplatformauto] OK tile={res.TileName} candidate={res.Chosen?.ActorName} comp#={res.Chosen?.ComponentExport1Based} mesh={res.Chosen?.MeshLabel} size={res.SizeM:0.##}m pak={res.PakPath} entry={res.PakEntryPath}");
+                if (!string.IsNullOrEmpty(res.Warning)) Console.WriteLine("[injectplatformauto] Warnung: " + res.Warning);
+                return 0;
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(e);
+                return 2;
+            }
+        }
         ApplicationConfiguration.Initialize();
         Application.Run(new MainForm());
         return 0;
