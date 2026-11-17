@@ -41,7 +41,7 @@ public sealed class ItemInjectDialog : Form
     private readonly NumericUpDown _numStack = new() { Minimum = 1, Maximum = 99, Value = 1, Width = 80 };
     private readonly ListBox _lstItems = new() { Width = 520, Height = 110, IntegralHeight = false };
     private readonly Label _lblInfo = new() { AutoSize = true, ForeColor = Color.Gray, MaximumSize = new Size(540, 0) };
-    private readonly Button _btnInject = new() { Text = "Inject", AutoSize = true };
+    private readonly Button _btnInject = new() { Text = "Einfügen", AutoSize = true };
     private readonly Button _btnAdd = new() { Text = "Hinzufügen", AutoSize = true };
     private readonly Button _btnRemove = new() { Text = "Entfernen", AutoSize = true };
     private readonly Button _btnLoadFromSave = new() { Text = "Items aus Save laden", AutoSize = true };
@@ -60,7 +60,7 @@ public sealed class ItemInjectDialog : Form
 
     public ItemInjectDialog()
     {
-        Text = "Inject item into survivor backpack";
+        Text = "Gegenstand in Survivor-Rucksack einfügen";
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = true;
@@ -117,6 +117,8 @@ public sealed class ItemInjectDialog : Form
         AddRow("", buttons);
 
         Controls.Add(root);
+        UiTheme.Apply(this);
+        UiTheme.ApplyTree(this);
         AcceptButton = _btnInject;
         CancelButton = _btnCancel;
         LoadSize();
@@ -226,6 +228,8 @@ public sealed class ItemInjectDialog : Form
         btns.Controls.AddRange(new[] { ok, cancel });
         panel.Controls.Add(btns);
         f.Controls.Add(panel);
+        UiTheme.Apply(f);
+        UiTheme.ApplyTree(f);
         f.AcceptButton = ok;
         f.CancelButton = cancel;
         return f.ShowDialog() == DialogResult.OK ? txt.Text : "";

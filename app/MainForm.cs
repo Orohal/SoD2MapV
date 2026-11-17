@@ -205,6 +205,11 @@ public sealed class MainForm : Form
             }
             if (_grid.Rows[e.RowIndex].DataBoundItem is MapObject o && IsFavoriteObject(o))
                 e.CellStyle.BackColor = Color.FromArgb(72, 62, 40);
+            else
+            {
+                e.CellStyle.BackColor = Color.FromArgb(30, 32, 38);
+                e.CellStyle.ForeColor = Color.Gainsboro;
+            }
         };
         _canvas = new MapCanvas { Dock = DockStyle.Fill };
         _canvas.SelectionChanged += CanvasSelection;
@@ -309,7 +314,7 @@ public sealed class MainForm : Form
         btnMeshViewer.Click += (s, e) => OpenMeshViewerDialog();
 
         _btnFavorites = UiTheme.Button("★ Favoriten ▾");
-        var favMenu = new ContextMenuStrip();
+        var favMenu = new ContextMenuStrip { Renderer = UiTheme.MenuRenderer, ForeColor = UiTheme.Text };
         favMenu.Items.Add("Als Favoriten markieren", null, (s, e) => SetObjectFavorites(true));
         favMenu.Items.Add("Favorit entfernen", null, (s, e) => SetObjectFavorites(false));
         _miFavObjectsOnly = new ToolStripMenuItem("Nur Favoriten anzeigen") { CheckOnClick = true };
@@ -335,7 +340,7 @@ public sealed class MainForm : Form
         var btnHelp = UiTheme.Button("? Hilfe");
         btnHelp.Click += (s, e) => { using var dlg = new ShortcutHelpDialog(); dlg.ShowDialog(this); };
 
-        var injectMenu = new ContextMenuStrip();
+        var injectMenu = new ContextMenuStrip { Renderer = UiTheme.MenuRenderer, ForeColor = UiTheme.Text };
         injectMenu.Items.Add("Fahrzeug einfügen...", null, (s, e) => OpenInjectDialog(null));
         injectMenu.Items.Add("Gegenstand einfügen...", null, (s, e) => OpenItemInjectDialog());
         injectMenu.Items.Add("Am Spieler einfügen", null, (s, e) =>
@@ -453,6 +458,7 @@ public sealed class MainForm : Form
             var omax = outerAvail - outer.Panel2MinSize;
             if (omax < omin) omax = omin;
             outer.SplitterDistance = Math.Clamp(360, omin, omax);
+            UiTheme.ApplyGrid(_grid);
         };
 
         // restore session (filters + game dir) before first init
@@ -1003,6 +1009,7 @@ public sealed class MainForm : Form
             _grid.DataSource = _source;
         }
         BalanceColumns();
+        UiTheme.ApplyGrid(_grid);
         _canvas.SetObjects(_visible);
         UpdateMapFilterInfo();
     }
@@ -1914,7 +1921,7 @@ internal sealed class KeyDialog : Form
     public string? KeyHex;
     public KeyDialog(string info)
     {
-        Text = "Encrypted pak — AES key needed";
+        Text = "Verschlüsseltes Pak — AES-Key erforderlich";
         Size = new Size(620, 280);
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -1922,9 +1929,11 @@ internal sealed class KeyDialog : Form
         var lbl = new Label { Left = 12, Top = 12, Width = 580, Height = 150, Text = info };
         var box = new TextBox { Left = 12, Top = 170, Width = 580, Font = new Font("Consolas", 11f) };
         var ok = new Button { Text = "OK", Left = 404, Top = 210, Width = 80, DialogResult = DialogResult.OK };
-        var cancel = new Button { Text = "Skip", Left = 494, Top = 210, Width = 80, DialogResult = DialogResult.Cancel };
+        var cancel = new Button { Text = "Überspringen", Left = 494, Top = 210, Width = 80, DialogResult = DialogResult.Cancel };
         ok.Click += (s, e) => KeyHex = box.Text.Trim();
         Controls.AddRange(new Control[] { lbl, box, ok, cancel });
+        UiTheme.Apply(this);
+        UiTheme.ApplyTree(this);
         AcceptButton = ok;
         CancelButton = cancel;
     }

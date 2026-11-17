@@ -133,6 +133,45 @@ public static class UiTheme
         Margin = new Padding(2, 2, 8, 2),
     };
 
+    private sealed class DarkMenuColors : ProfessionalColorTable
+    {
+        public override Color ToolStripDropDownBackground => Surface;
+        public override Color MenuStripGradientBegin => Surface;
+        public override Color MenuStripGradientEnd => Surface;
+        public override Color MenuItemBorder => Active;
+        public override Color MenuItemSelected => Active;
+        public override Color MenuItemSelectedGradientBegin => Active;
+        public override Color MenuItemSelectedGradientEnd => Active;
+        public override Color MenuItemPressedGradientBegin => Surface;
+        public override Color MenuItemPressedGradientEnd => Surface;
+        public override Color ImageMarginGradientBegin => Surface;
+        public override Color ImageMarginGradientMiddle => Surface;
+        public override Color ImageMarginGradientEnd => Surface;
+        public override Color SeparatorDark => Panel;
+        public override Color SeparatorLight => Color.FromArgb(60, 64, 74);
+        public override Color CheckBackground => Active;
+    }
+
+    /// <summary>Re-apply grid colors after DataGridView re-creates its columns.</summary>
+    public static void ApplyGrid(DataGridView dg)
+    {
+        dg.BackgroundColor = Panel;
+        dg.ForeColor = Text;
+        dg.Font = DataFont;
+        dg.EnableHeadersVisualStyles = false;
+        dg.ColumnHeadersDefaultCellStyle.BackColor = Surface;
+        dg.ColumnHeadersDefaultCellStyle.ForeColor = Accent;
+        dg.RowHeadersDefaultCellStyle.BackColor = Surface;
+        dg.DefaultCellStyle.BackColor = Panel;
+        dg.DefaultCellStyle.ForeColor = Text;
+        dg.DefaultCellStyle.SelectionBackColor = Accent;
+        dg.DefaultCellStyle.SelectionForeColor = Color.Black;
+    }
+
+    /// <summary>Shared renderer so all context menus use the same dark design.</summary>
+    public static ToolStripRenderer MenuRenderer { get; } =
+        new ToolStripProfessionalRenderer(new DarkMenuColors()) { RoundedEdges = false };
+
     public static ComboBox Combo(int width, params string[] items)
     {
         var cb = new ComboBox

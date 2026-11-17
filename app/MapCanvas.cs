@@ -950,23 +950,23 @@ namespace SoD2MapViewer;
         else if (e.Button == MouseButtons.Right && _hover >= 0)
         {
             var o = Objects[_hover];
-            var cm = new ContextMenuStrip();
-            cm.Items.Add("Copy location (cm)", null, (s, ev) => Clipboard.SetText($"{o.X:0},{o.Y:0},{o.Z:0}"));
-            cm.Items.Add("Copy location (m)", null, (s, ev) => Clipboard.SetText($"{o.X / 100:0.##},{o.Y / 100:0.##},{o.Z / 100:0.##}"));
+            var cm = new ContextMenuStrip { Renderer = UiTheme.MenuRenderer, ForeColor = UiTheme.Text };
+            cm.Items.Add("Position kopieren (cm)", null, (s, ev) => Clipboard.SetText($"{o.X:0},{o.Y:0},{o.Z:0}"));
+            cm.Items.Add("Position kopieren (m)", null, (s, ev) => Clipboard.SetText($"{o.X / 100:0.##},{o.Y / 100:0.##},{o.Z / 100:0.##}"));
             cm.Items.Add("-");
-            cm.Items.Add("Mode: Move (M)", null, (s, ev) => { Mode = EditMode.Move; Invalidate(); });
-            cm.Items.Add("Mode: Rotate (R)", null, (s, ev) => { Mode = EditMode.Rotate; Invalidate(); });
-            cm.Items.Add("Mode: Scale (S)", null, (s, ev) => { Mode = EditMode.Scale; Invalidate(); });
+            cm.Items.Add("Modus: Bewegen (M)", null, (s, ev) => { Mode = EditMode.Move; Invalidate(); });
+            cm.Items.Add("Modus: Drehen (R)", null, (s, ev) => { Mode = EditMode.Rotate; Invalidate(); });
+            cm.Items.Add("Modus: Skalieren (S)", null, (s, ev) => { Mode = EditMode.Scale; Invalidate(); });
             cm.Items.Add("-");
-            cm.Items.Add($"Select house group ({HouseSelectRadiusCm / 100:0} m around object)", null,
+            cm.Items.Add($"Hausgruppe auswählen ({HouseSelectRadiusCm / 100:0} m um Objekt)", null,
                 (s, ev) => SelectHouseGroup(_hover));
             if (_multi.Count > 0)
             {
-                cm.Items.Add("Zoom to selection", null, (s, ev) => ZoomToSelection());
-                cm.Items.Add("Clear selection (Esc)", null, (s, ev) => ClearSelection());
+                cm.Items.Add("Auf Auswahl zoomen", null, (s, ev) => ZoomToSelection());
+                cm.Items.Add("Auswahl aufheben (Esc)", null, (s, ev) => ClearSelection());
             }
             cm.Items.Add("-");
-            cm.Items.Add(Selection.Count > 1 ? $"Delete selection ({Selection.Count}, Del)" : "Delete object (Del)",
+            cm.Items.Add(Selection.Count > 1 ? $"Auswahl löschen ({Selection.Count}, Entf)" : "Objekt löschen (Entf)",
                 null, (s, ev) => DeleteSelection());
             cm.Show(this, e.Location);
         }
