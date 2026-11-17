@@ -75,8 +75,10 @@ public sealed class PlatformInjectDialog : Form
 
         var hint = new Label
         {
-            Text = "Erzeugt ein Mod-Pak, das eine flache Betonplattform an der Spieler-Position im Save platziert (In-Place-Patch, Originalkarte unverändert). " +
-                   "Hinweis: Zum Zurücksetzen das erzeugte/installierte Pak wieder aus dem Paks-Ordner entfernen.",
+            Text = L10n.T("platform.hint",
+                "Erzeugt ein Mod-Pak, das eine flache Betonplattform an der Spieler-Position im Save platziert (In-Place-Patch, Originalkarte unverändert). " +
+                "Bei Karten ohne Scale-Kandidaten wird ein Mesh-Override-Fallback verwendet (Plattformgröße dann fest ca. 14,87 x 14,88 m). " +
+                "Hinweis: Zum Zurücksetzen das erzeugte/installierte Pak wieder aus dem Paks-Ordner entfernen."),
             AutoSize = true,
             MaximumSize = new Size(740, 0),
             ForeColor = Color.DimGray,
@@ -162,10 +164,19 @@ public sealed class PlatformInjectDialog : Form
             _btnInstall.Enabled = true;
             _btnSavePak.Enabled = true;
 
+            var sizeInfo = res.MeshOverrideUsed
+                ? L10n.T("platform.summary.sizeOverride", "ca. 14,87 x 14,88 m (Mesh-Override-Fallback, fix)")
+                : $"{sx:0.##}x{sy:0.##} m";
+            var entriesInfo = (res.PakEntryPaths != null && res.PakEntryPaths.Count > 1)
+                ? string.Join("\n  - ", res.PakEntryPaths)
+                : res.PakEntryPath;
+            var entryLabel = (res.PakEntryPaths != null && res.PakEntryPaths.Count > 1)
+                ? L10n.T("platform.summary.entries", "Einträge")
+                : L10n.T("platform.summary.entry", "Eintrag");
             var summary = $"Kachel: {res.TileName}\nKandidat: {res.Chosen?.ActorName} (Comp#{res.Chosen?.ComponentExport1Based})\n" +
-                          $"Mesh: {res.Chosen?.MeshLabel}\nGröße: {sx:0.##}x{sy:0.##} m, Yaw {yaw:0.#}°, Höhenoffset {h:0.#} cm\n" +
+                          $"Mesh: {res.Chosen?.MeshLabel}\nGröße: {sizeInfo}, Yaw {yaw:0.#}°, Höhenoffset {h:0.#} cm\n" +
                           $"Position lokal: ({res.Chosen?.FinalX:0.##},{res.Chosen?.FinalY:0.##},{res.Chosen?.FinalZ:0.##}) cm\n" +
-                          $"Pak: {res.PakPath}\nEintrag: {res.PakEntryPath}" +
+                          $"Pak: {res.PakPath}\n{entryLabel}: {(res.PakEntryPaths != null && res.PakEntryPaths.Count > 1 ? "\n  - " + entriesInfo : entriesInfo)}" +
                           (res.Warning != null ? "\n\nWarnung: " + res.Warning : "") +
                           "\n\nHinweis: Zum Zurücksetzen das Pak aus dem Paks-Ordner entfernen.";
             MessageBox.Show(this, summary, "Plattform erzeugt", MessageBoxButtons.OK, MessageBoxIcon.Information);

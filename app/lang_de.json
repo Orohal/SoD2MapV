@@ -137,7 +137,7 @@
   "toolbar.rotate": "Drehen (R)",
   "toolbar.scale": "Skalieren (S)",
   "toolbar.selection": "Auswahl",
-  "toolbar.showCharacter": "Figur anzeigen",
+  "toolbar.showCharacter": "Figur anzeigen (P)",
   "toolbar.site": "Site:",
   "toolbar.sites": "Sites (tgc)",
   "toolbar.snap05": "Raster: 0,5 m",
@@ -149,5 +149,11 @@
   "canvas.bgAppliedBody": "Hintergrund übernommen:\nox = {0}\noy = {1} cm",
   "canvas.bgAppliedTip": "Hintergrund übernommen: ox={0} oy={1} cm",
   "canvas.bgNudgeTip": "Hintergrund-Verschiebung: X={0} Y={1} cm  (loslassen = übernehmen)",
-  "canvas.fineTune": "Feinjustierung"
+  "canvas.fineTune": "Feinjustierung",
+  "platform.hint": "Erzeugt ein Mod-Pak, das eine flache Betonplattform an der Spieler-Position im Save platziert (In-Place-Patch, Originalkarte unverändert). Bei Karten ohne Scale-Kandidaten wird ein Mesh-Override-Fallback verwendet (Plattformgröße dann fest ca. 14,87 x 14,88 m). Hinweis: Zum Zurücksetzen das erzeugte/installierte Pak wieder aus dem Paks-Ordner entfernen.",
+  "platform.summary.sizeOverride": "ca. 14,87 x 14,88 m (Mesh-Override-Fallback, fix)",
+  "platform.summary.entries": "Einträge",
+  "platform.summary.entry": "Eintrag",
+  "toolbar.hideCharacter": "Figur ausblenden (P)",
+  "help.showCharacter": "Figur/Spielerposition anzeigen"
 }

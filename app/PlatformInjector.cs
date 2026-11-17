@@ -57,6 +57,9 @@ public static class PlatformInjector
         public Candidate? Chosen;
         public string PakPath = "";
         public string PakEntryPath = "";
+        public List<string> PakEntryPaths = new();
+        public bool MeshOverrideUsed;
+        public string? OverrideMeshSourcePath;
         public float SizeM;
         public float YawDeg;
         public float HeightOffsetCm;
@@ -70,6 +73,10 @@ public static class PlatformInjector
     // Fallback bounds (BoxExtent half-extents cm, origin cm) — known concrete_slab_01
     // box 300 x 150.00009 x 21.402117 cm, origin (-0.48013306,-0.09902954,0.10703564)
     private static readonly MeshBounds ConcreteSlab01Fallback = new(150f, 75.000045f, 10.7010585f, -0.48013306f, -0.09902954f, 0.10703564f);
+
+    // Fallback bounds for mesh-override asphalt_slab_01 (BoxExtent half-extents cm, origin cm):
+    // lokale Z-Bounds ca. -6.696 .. +4.457 cm (Höhe 11,153 cm, Origin Z ≈ -1,12 cm)
+    private static readonly MeshBounds AsphaltSlab01Fallback = new(743.5f, 744f, 5.5765f, 0f, 0f, -1.1195f);
 
     private sealed record ChainTransform(FVector Pos, FQuat Rot, FVector Scale, int Links)
     {
@@ -890,9 +897,12 @@ public static class PlatformInjector
             Candidate? chosen = null;
             if (cands.Count == 0)
             {
+                // Mesh-Override-Fallback (kein RelativeScale3D nötig)
+                if (TryRunMeshOverrideFallback(provider, tileBytes, pakEntryPath, targetXcm, targetYcm, refZcm, heightOffsetCm, outPakPath, res))
+                    return res;
                 res.Warn("Keine Allowlist-Kandidaten gefunden, versuche dokumentierten Fallback (größter flacher Boden-Mesh mit Scale-Tag).");
                 chosen = FindFallbackCandidate(provider, tileBytes, targetXcm, targetYcm, res);
-                if (chosen == null) { res.Error = "Kein geeigneter Kandidat (weder Allowlist noch Fallback) in der Map gefunden."; return res; }
+                if (chosen == null) { if (string.IsNullOrEmpty(res.Error)) res.Error = "Kein geeigneter Kandidat (weder Allowlist noch Fallback) in der Map gefunden."; return res; }
             }
             else
             {
@@ -991,6 +1001,7 @@ public static class PlatformInjector
             res.Info($"[inject] Patch + Roundtrip-Verifikation OK (byte-identisch), Größe {patched.Length} B");
 
             res.PakEntryPath = pakEntryPath;
+            res.PakEntryPaths = new List<string> { pakEntryPath };
             res.Info($"[inject] Pak-Eintrag: {pakEntryPath}");
 
             var defaultPakName = MapChunk.GetChunkPakFileName(mapPakPath)
@@ -1000,7 +1011,7 @@ public static class PlatformInjector
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(finalPak)) ?? Path.GetTempPath());
             PakWriter.Write(finalPak, "../../../StateOfDecay2/Content/", new[] { new PakWriter.Entry { Path = pakEntryPath, Data = patched } });
             res.PakPath = finalPak;
-            res.Info($"[inject] Pak erzeugt: {finalPak} ({new FileInfo(finalPak).Length:N0} B)");
+            res.Info($"[inject] Pak erzeugt: {finalPak} ({new FileInfo(finalPak).Length:N0} B, {res.PakEntryPaths.Count} Eintrag)");
             res.Chosen = chosen;
             res.Ok = true;
             TryDel(tmpIn); TryDel(tmpOut);
@@ -1011,6 +1022,300 @@ public static class PlatformInjector
         }
         return res;
     }
+
+
+    private const string AsphaltSlabOverrideAsset = "StateOfDecay2/Content/Art/Environment/Props/Exterior/Parking/Asphalt_Slab_01/asphalt_slab_01.uasset";
+
+    private static bool TryReadProviderFileBytes(DefaultFileProvider provider, string providerPath, out byte[] data)
+    {
+        data = Array.Empty<byte>();
+        try
+        {
+            if (provider.Files.TryGetValue(providerPath, out var gf) && gf is CUE4Parse.UE4.Pak.Objects.FPakEntry pe && Lz4Linked.NeedsLinkedDecode(pe))
+            { data = Lz4Linked.Decode(provider, pe); return true; }
+            var f = provider[providerPath];
+            using var ar = f.CreateReader();
+            data = ar.ReadBytes((int)f.Size);
+            return true;
+        }
+        catch { return false; }
+    }
+
+    private static bool TryReadAnyProviderFile(DefaultFileProvider provider, IEnumerable<string> candidates, out string usedPath, out byte[] data)
+    {
+        foreach (var c in candidates)
+        {
+            if (string.IsNullOrWhiteSpace(c)) continue;
+            var k = c.Replace('\\', '/');
+            if (TryReadProviderFileBytes(provider, k, out data)) { usedPath = k; return true; }
+            // try case-insensitive lookup
+            var found = provider.Files.Keys.FirstOrDefault(x => string.Equals(x.Replace('\\','/'), k, StringComparison.OrdinalIgnoreCase));
+            if (found != null && TryReadProviderFileBytes(provider, found, out data)) { usedPath = found; return true; }
+        }
+        // suffix match
+        var candList = candidates.Where(c=>!string.IsNullOrWhiteSpace(c)).Select(c=>c.Replace('\\','/').ToLowerInvariant()).ToList();
+        foreach (var key in provider.Files.Keys)
+        {
+            var kn = key.Replace('\\','/').ToLowerInvariant();
+            foreach (var c in candList)
+                if (kn.EndsWith(c.TrimStart('/').ToLowerInvariant()) && TryReadProviderFileBytes(provider, key, out data)) { usedPath = key; return true; }
+        }
+        usedPath = ""; data = Array.Empty<byte>(); return false;
+    }
+
+    private static string MeshObjectPathToPakEntryPath(string meshPath)
+    {
+        var p = (meshPath ?? "").Replace('\\', '/');
+        // strip object suffix .ObjectName (last dot segment after last /)
+        int slash = p.LastIndexOf('/');
+        int dot = p.LastIndexOf('.');
+        if (dot > slash) p = p[..dot];
+        if (p.StartsWith("/Game/", StringComparison.OrdinalIgnoreCase)) p = p[("/Game/".Length)..];
+        else if (p.StartsWith("Game/", StringComparison.OrdinalIgnoreCase)) p = p["Game/".Length..];
+        if (p.StartsWith("StateOfDecay2/Content/", StringComparison.OrdinalIgnoreCase)) p = p["StateOfDecay2/Content/".Length..];
+        else if (p.StartsWith("Content/", StringComparison.OrdinalIgnoreCase)) p = p["Content/".Length..];
+        if (!p.EndsWith(".uasset", StringComparison.OrdinalIgnoreCase)) p += ".uasset";
+        return p.TrimStart('/');
+    }
+
+    private static bool IsPlausiblePakEntryPath(string entryPath)
+    {
+        if (string.IsNullOrWhiteSpace(entryPath)) return false;
+        var p = entryPath.Replace('\\', '/');
+        return p.Contains('/', StringComparison.Ordinal)
+            && p.EndsWith(".uasset", StringComparison.OrdinalIgnoreCase)
+            && (p.StartsWith("art/", StringComparison.OrdinalIgnoreCase)
+                || p.StartsWith("maps/", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string MeshObjectPathToProviderCandidates(string meshPath)
+    {
+        var rel = MeshObjectPathToPakEntryPath(meshPath); // e.g. Art/.../x.uasset
+        return rel;
+    }
+
+    private sealed class FallbackCandidate
+    {
+        public Candidate Cand = null!;
+        public int MeshUseCount;
+        public string MeshPakEntryPath = "";
+        public string MeshProviderPath = "";
+        public bool HasAttachParent;
+    }
+
+    private static List<FallbackCandidate> ScanMeshOverrideCandidates(byte[] tileBytes, float targetLocalX, float targetLocalY, Result res)
+    {
+        var info = BuildScanInfo(tileBytes);
+        var raw = new List<Candidate>();
+        var meshCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var hasAttachParent = new Dictionary<int, bool>();
+        var pakEntryByComp = new Dictionary<int, string>();
+        int skippedNoFullPath = 0;
+        int skippedBadEntry = 0;
+        for (int i = 0; i < info.Exports.Count; i++)
+        {
+            int serSize = BitConverter.ToInt32(info.Exports[i], 24);
+            int serOff = BitConverter.ToInt32(info.Exports[i], 28);
+            if (serOff < 0 || serSize < 0 || serOff + serSize > info.TileBytes.Length) continue;
+            var serial = info.TileBytes.AsSpan(serOff, serSize).ToArray();
+            if (!TryGetVector(serial, info.Names, "RelativeLocation", out var lx, out var ly, out var lz)) continue;
+            if (!TryGetObjectProp(serial, info.Names, "StaticMesh", out var meshIdx)) continue;
+            var meshObj = ResolveMeshLabel(meshIdx, info.Imports, info.Names, out var meshFull);
+            if (string.IsNullOrWhiteSpace(meshFull))
+            {
+                skippedNoFullPath++;
+                continue;
+            }
+            var pakEntry = MeshObjectPathToPakEntryPath(meshFull);
+            if (!IsPlausiblePakEntryPath(pakEntry))
+            {
+                skippedBadEntry++;
+                continue;
+            }
+            int comp1 = i + 1;
+            string actorName = ""; int actorIdx = -1;
+            foreach (var kv in info.ActorInfo)
+                if (kv.Value.rootComp1Based == comp1) { actorIdx = kv.Key; actorName = kv.Value.name; break; }
+            if (actorIdx < 0) continue;
+            if (info.ComponentClassNames.TryGetValue(i, out var className) && className.Length > 0 &&
+                !className.Contains("StaticMeshComponent", StringComparison.OrdinalIgnoreCase)) continue;
+            bool attached = TryGetObjectProp(serial, info.Names, "AttachParent", out var ap) && ap != 0;
+            var dx = lx - targetLocalX; var dy = ly - targetLocalY;
+            var c = new Candidate
+            {
+                ComponentExport1Based = comp1,
+                ActorExport1Based = actorIdx + 1,
+                ActorName = actorName,
+                MeshPath = meshFull,
+                MeshLabel = meshFull,
+                X = lx, Y = ly, Z = lz,
+                DistToTargetCm = MathF.Sqrt(dx * dx + dy * dy),
+                ScaleTagPresent = HasName(serial, info.Names, "RelativeScale3D"),
+            };
+            raw.Add(c);
+            pakEntryByComp[comp1] = pakEntry;
+            hasAttachParent[comp1] = attached;
+            if (!meshCounts.ContainsKey(pakEntry)) meshCounts[pakEntry] = 0;
+            meshCounts[pakEntry]++;
+        }
+        if (skippedNoFullPath > 0 || skippedBadEntry > 0)
+            res.Info($"[inject] Fallback-Scan: {skippedNoFullPath} Kandidat(en) ohne vollständigen Mesh-Pfad, {skippedBadEntry} mit unplausiblem Pak-Eintrag übersprungen.");
+        var list = new List<FallbackCandidate>(raw.Count);
+        foreach (var c in raw)
+        {
+            pakEntryByComp.TryGetValue(c.ComponentExport1Based, out var entry);
+            meshCounts.TryGetValue(entry ?? "", out var cnt);
+            hasAttachParent.TryGetValue(c.ComponentExport1Based, out var att);
+            list.Add(new FallbackCandidate { Cand = c, MeshUseCount = cnt, MeshPakEntryPath = entry ?? "", HasAttachParent = att });
+        }
+        return list;
+    }
+
+    private static FallbackCandidate? ChooseMeshOverrideCandidate(List<FallbackCandidate> cands, float excludeDistCm, Result res)
+    {
+        var unique = cands.Where(c => c.MeshUseCount == 1).ToList();
+        if (unique.Count == 0)
+        {
+            res.Error = "Kein eindeutiger Mesh-Pfad für Override gefunden. Kein Mesh wird nur einmal in der Kachel verwendet; ein Asset-Override würde alle Instanzen betreffen und wird daher nicht angewendet.";
+            return null;
+        }
+        var pool = unique;
+        var far = pool.Where(c => c.Cand.DistToTargetCm >= excludeDistCm).OrderByDescending(c => c.Cand.DistToTargetCm).FirstOrDefault();
+        var chosen = far ?? pool.OrderByDescending(c => c.Cand.DistToTargetCm).FirstOrDefault();
+        return chosen;
+    }
+
+    private static bool TryRunMeshOverrideFallback(DefaultFileProvider provider, byte[] tileBytes, string pakEntryPathForUmap,
+        float targetXcm, float targetYcm, float? refZcm, float heightOffsetCm, string? outPakPath, Result res)
+    {
+        res.Info("[inject] Fallback: keine Scale-Kandidaten gefunden, versuche Mesh-Override (Asphalt_Slab_01).");
+        var cands = ScanMeshOverrideCandidates(tileBytes, targetXcm, targetYcm, res);
+        res.Info($"[inject] Fallback-Kandidaten (SMC mit RelLoc+StaticMesh, ohne Scale-Voraussetzung): {cands.Count}");
+        if (cands.Count == 0)
+        {
+            if (string.IsNullOrEmpty(res.Error))
+                res.Error = "Kein eindeutiger Mesh-Pfad für Override gefunden";
+            return false;
+        }
+        var chosenFb = ChooseMeshOverrideCandidate(cands, 15000f, res);
+        if (chosenFb == null)
+        {
+            if (string.IsNullOrEmpty(res.Error))
+                res.Error = "Kein eindeutiger Mesh-Pfad für Override gefunden";
+            return false;
+        }
+        var chosen = chosenFb.Cand;
+        if (string.IsNullOrWhiteSpace(chosenFb.MeshPakEntryPath) || !IsPlausiblePakEntryPath(chosenFb.MeshPakEntryPath))
+        {
+            res.Error = "Kein eindeutiger Mesh-Pfad für Override gefunden";
+            return false;
+        }
+
+        var overrideCandidates = new[] {
+            AsphaltSlabOverrideAsset,
+            "StateOfDecay2/Content/Art/Environment/Props/Exterior/Parking/Asphalt_Slab_01/asphalt_slab_01.uasset",
+            "/Game/Art/Environment/Props/Exterior/Parking/Asphalt_Slab_01/asphalt_slab_01.uasset",
+            "Art/Environment/Props/Exterior/Parking/Asphalt_Slab_01/asphalt_slab_01.uasset"
+        };
+        if (!TryReadAnyProviderFile(provider, overrideCandidates, out var overrideProvPath, out var overrideBytes))
+        {
+            res.Error = "Fallback fehlgeschlagen: Override-Mesh-Asset nicht gefunden: " + AsphaltSlabOverrideAsset;
+            return false;
+        }
+
+        res.Info($"[inject] Fallback: Mesh-Override (Actor='{chosen.ActorName}', Comp#={chosen.ComponentExport1Based}, Mesh='{chosen.MeshLabel}', MeshEntry='{chosenFb.MeshPakEntryPath}', Uses={chosenFb.MeshUseCount}, Attached={chosenFb.HasAttachParent}, Dist={chosen.DistToTargetCm/100f:0.#}m)");
+        if (chosen.DistToTargetCm <= 15000f)
+            res.Warn($"Kandidat ist nur {chosen.DistToTargetCm/100f:0.#} m vom Ziel entfernt (<150m) - könnte sichtbares Loch hinterlassen.");
+
+        // Parent-Chain und Zielposition (Welt -> RelativeLocation), um naive Platzierung bei transformierten Parents zu vermeiden
+        ChainTransform parentChain = ChainTransform.Identity;
+        FVector origRelLoc = FVector.ZeroVector, origRelScale = FVector.OneVector;
+        FQuat origRelRot = FQuat.Identity;
+        IPackage? pkgForChain = null;
+        try { pkgForChain = provider.LoadPackage(res.TileUmapPath); }
+        catch (Exception e) { res.Warn($"Fallback: Paket für Kettenauflösung nicht ladbar ({e.Message}), verwende Identity."); }
+        if (pkgForChain != null)
+        {
+            int smcIdx0 = chosen.ComponentExport1Based - 1;
+            parentChain = ResolveParentChain(pkgForChain, smcIdx0, res);
+            try
+            {
+                var smcObj = pkgForChain.GetExport(smcIdx0);
+                if (smcObj != null) TryGetRelativeTransform(smcObj, out origRelLoc, out origRelRot, out origRelScale);
+            }
+            catch { }
+        }
+
+        // Override-Mesh-Bounds: Provider bevorzugt, sonst bekannte Asphalt-Slab-Konstanten
+        var ob = TryReadMeshBounds(provider, AsphaltSlabOverrideAsset) ?? TryReadMeshBounds(provider, overrideProvPath);
+        if (ob == null)
+        {
+            ob = AsphaltSlab01Fallback;
+            res.Warn($"Fallback: Override-Mesh-Bounds nicht lesbar, verwende bekannte Asphalt_Slab_01-Bounds (lokale Z-Bounds ca. -6.696..+4.457 cm, OriginZ≈-1,12 cm).");
+        }
+        else
+        {
+            res.Info($"[inject] Fallback: Override-Mesh-Bounds: Box {ob.BoxX:0.###}x{ob.BoxY:0.###}x{ob.ExtentZ*2:0.###} cm, Origin ({ob.OriginX:0.###},{ob.OriginY:0.###},{ob.OriginZ:0.###})");
+        }
+
+        float groundZ = EstimateGroundZ(tileBytes, targetXcm, targetYcm, refZcm, res);
+        float topZ = groundZ + heightOffsetCm;
+        float desiredWorldZ = topZ - (ob.OriginZ + ob.ExtentZ);
+        float locX, locY, locZ;
+        if (parentChain.IsIdentity)
+        {
+            locX = targetXcm; locY = targetYcm; locZ = desiredWorldZ;
+        }
+        else
+        {
+            var rel = InverseTransformPoint(parentChain, new FVector(targetXcm, targetYcm, desiredWorldZ));
+            locX = rel.X; locY = rel.Y; locZ = rel.Z;
+            res.Info("[inject] Fallback: Ziel-Weltkoordinate per Parent-Chain-Inverse in RelativeLocation umgerechnet.");
+        }
+        chosen.FinalX = locX; chosen.FinalY = locY; chosen.FinalZ = locZ;
+        chosen.Sx = chosen.Sy = chosen.Sz = 1f;
+
+        // ursprüngliche RelativeRotation beibehalten
+        var (pitch, yaw, roll) = RotatorDegFromQuat(origRelRot);
+
+        var tmpIn = Path.Combine(Path.GetTempPath(), "sod2_injplat_" + Guid.NewGuid().ToString("N") + ".umap");
+        var tmpOut = Path.Combine(Path.GetTempPath(), "sod2_injplat_" + Guid.NewGuid().ToString("N") + ".umap");
+        File.WriteAllBytes(tmpIn, tileBytes);
+        var rc = UmapGen.PatchSmcTransform(tmpIn, tmpOut, chosen.ComponentExport1Based, locX, locY, locZ, pitch, yaw, roll, null, null, null);
+        if (rc != 0) { res.Error = $"Fallback: PatchSmcTransform fehlgeschlagen (rc={rc})."; TryDel(tmpIn); TryDel(tmpOut); return false; }
+        var patched = File.ReadAllBytes(tmpOut);
+        var rtOut = tmpOut + ".rt";
+        var rtc = UmapGen.RoundtripMap(tmpOut, rtOut);
+        var rtBytes = File.Exists(rtOut) ? File.ReadAllBytes(rtOut) : Array.Empty<byte>();
+        bool rtIdent = rtc == 0 && rtBytes.Length == patched.Length && rtBytes.AsSpan().SequenceEqual(patched);
+        TryDel(rtOut);
+        if (!rtIdent) { res.Error = "Fallback: Roundtrip-Verifikation fehlgeschlagen (gepatchte Datei nicht byte-identisch). Abbruch."; TryDel(tmpIn); TryDel(tmpOut); return false; }
+        res.Info($"[inject] Fallback: Patch + Roundtrip-Verifikation OK (RelativeLocation, Rotation beibehalten, kein Scale-Tag), Größe {patched.Length} B");
+
+        res.PakEntryPath = pakEntryPathForUmap;
+        res.PakEntryPaths.Clear();
+        res.PakEntryPaths.Add(pakEntryPathForUmap);
+        res.PakEntryPaths.Add(chosenFb.MeshPakEntryPath);
+        res.MeshOverrideUsed = true;
+        res.OverrideMeshSourcePath = overrideProvPath;
+        res.Info($"[inject] Fallback: Pak-Einträge: 1) {pakEntryPathForUmap} ({patched.Length} B, umap)  2) {chosenFb.MeshPakEntryPath} ({overrideBytes.Length} B, Mesh-Override aus {overrideProvPath})");
+        res.Info("[inject] Fallback: Plattformgröße entspricht dem Override-Mesh (Asphalt_Slab_01, ca. 14,87 x 14,88 x 0,11 m), nicht der Dialog-Größe.");
+
+        var defaultPakName = $"pakchunk998-Platform_{res.RegionFolder}_{res.TileName}_P.pak";
+        var finalPak = outPakPath ?? Path.Combine(Path.GetTempPath(), defaultPakName);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(finalPak)) ?? Path.GetTempPath());
+        PakWriter.Write(finalPak, "../../../StateOfDecay2/Content/", new[] {
+            new PakWriter.Entry { Path = pakEntryPathForUmap, Data = patched },
+            new PakWriter.Entry { Path = chosenFb.MeshPakEntryPath, Data = overrideBytes },
+        });
+        res.PakPath = finalPak;
+        res.Info($"[inject] Pak erzeugt: {finalPak} ({new FileInfo(finalPak).Length:N0} B, {res.PakEntryPaths.Count} Einträge)");
+        res.Chosen = chosen;
+        res.Ok = true;
+        TryDel(tmpIn); TryDel(tmpOut);
+        return true;
+    }
+
 
     public static Result Run(DefaultFileProvider provider, string? explicitSave,
         float sizeXcm, float sizeYcm, float yawDeg, float heightOffsetCm, string? outPakPath = null)
@@ -1046,7 +1351,14 @@ public static class PlatformInjector
             var tileBytes = ReadMapBytes(provider, tilePath);
             var cands = ScanCandidates(tileBytes, lx, ly);
             res.Info($"[inject] Kandidaten (Scale-Tag + erlaubtes Mesh): {cands.Count}");
-            if (cands.Count == 0) { res.Error = "Kein geeigneter Kandidat (Scale-fähiger SMC mit erlaubtem Mesh) in der Kachel gefunden."; return res; }
+            if (cands.Count == 0)
+            {
+                var relPathFb = DerivePakEntryPath(tilePath, regionFolder);
+                if (TryRunMeshOverrideFallback(provider, tileBytes, relPathFb, lx, ly, (float?)res.SaveZ, heightOffsetCm, outPakPath, res))
+                    return res;
+                if (string.IsNullOrEmpty(res.Error)) res.Error = "Kein geeigneter Kandidat (Scale-fähiger SMC mit erlaubtem Mesh) in der Kachel gefunden.";
+                return res;
+            }
             var chosen = ChooseBest(cands, 15000f);
             if (chosen == null) { res.Error = "Kein Kandidat wählbar."; return res; }
             res.Info($"[inject] Gewählter Kandidat: Actor='{chosen.ActorName}' Comp#={chosen.ComponentExport1Based} Mesh='{chosen.MeshLabel}' Pos=({chosen.X:0.#},{chosen.Y:0.#},{chosen.Z:0.#}) Dist={chosen.DistToTargetCm/100:0.#}m");
@@ -1084,13 +1396,14 @@ public static class PlatformInjector
 
             var relPath = DerivePakEntryPath(tilePath, regionFolder);
             res.PakEntryPath = relPath;
+            res.PakEntryPaths = new List<string> { relPath };
             res.Info($"[inject] Pak-Eintrag: {relPath}");
 
             var finalPak = outPakPath ?? Path.Combine(Path.GetTempPath(), $"pakchunk998-Platform_{regionFolder}_{res.TileName}_P.pak");
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(finalPak)) ?? Path.GetTempPath());
             PakWriter.Write(finalPak, "../../../StateOfDecay2/Content/", new[] { new PakWriter.Entry { Path = relPath, Data = patched } });
             res.PakPath = finalPak;
-            res.Info($"[inject] Pak erzeugt: {finalPak} ({new FileInfo(finalPak).Length:N0} B)");
+            res.Info($"[inject] Pak erzeugt: {finalPak} ({new FileInfo(finalPak).Length:N0} B, {res.PakEntryPaths.Count} Eintrag)");
             res.Chosen = chosen;
             res.Ok = true;
             TryDel(tmpIn); TryDel(tmpOut);

@@ -137,7 +137,7 @@
   "toolbar.rotate": "Rotate (R)",
   "toolbar.scale": "Scale (S)",
   "toolbar.selection": "Selection",
-  "toolbar.showCharacter": "Show character",
+  "toolbar.showCharacter": "Show character (P)",
   "toolbar.site": "Site:",
   "toolbar.sites": "Sites (tgc)",
   "toolbar.snap05": "Grid: 0.5 m",
@@ -149,5 +149,11 @@
   "canvas.bgAppliedBody": "Background applied:\nox = {0}\noy = {1} cm",
   "canvas.bgAppliedTip": "Background applied: ox={0} oy={1} cm",
   "canvas.bgNudgeTip": "Background drag: X={0} Y={1} cm  (release to apply)",
-  "canvas.fineTune": "Fine-tuning"
+  "canvas.fineTune": "Fine-tuning",
+  "platform.hint": "Creates a mod pak that places a flat concrete platform at the player position from the save (in-place patch, original map unchanged). On maps without scale-tag candidates, a mesh-override fallback is used (platform size then fixed at approx. 14.87 x 14.88 m). Note: to revert, remove the created/installed pak from the Paks folder.",
+  "platform.summary.sizeOverride": "approx. 14.87 x 14.88 m (mesh-override fallback, fixed)",
+  "platform.summary.entries": "Entries",
+  "platform.summary.entry": "Entry",
+  "toolbar.hideCharacter": "Hide character (P)",
+  "help.showCharacter": "Show character/player position"
 }

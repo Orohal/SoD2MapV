@@ -108,6 +108,7 @@ public sealed class MainForm : Form
                 if (e.KeyCode == Keys.M) { SetMode(MapCanvas.EditMode.Move); e.Handled = true; }
                 else if (e.KeyCode == Keys.R) { SetMode(MapCanvas.EditMode.Rotate); e.Handled = true; }
                 else if (e.KeyCode == Keys.S) { SetMode(MapCanvas.EditMode.Scale); e.Handled = true; }
+                else if (e.KeyCode == Keys.P) { ShowCharacterPosition(); e.Handled = true; }
                 else if (e.KeyCode == Keys.Delete) { _canvas.DeleteSelection(); e.Handled = true; }
                 else if (e.KeyCode == Keys.Escape) { _canvas.ClearSelection(); e.Handled = true; }
             }
@@ -309,7 +310,10 @@ public sealed class MainForm : Form
         btnExport.Click += (s, e) => ExportModPak();
         var btnAdjustZ = UiTheme.Button(L10n.T("toolbar.height", "Höhe anpassen (Z)…"));
         btnAdjustZ.Click += (s, e) => AdjustSelectionHeight();
-        var btnChar = UiTheme.Button(L10n.T("toolbar.showCharacter", "Figur anzeigen"));
+        var btnChar = UiTheme.Button("📍 " + L10n.T("toolbar.showCharacter", "Figur anzeigen (P)"));
+        btnChar.BackColor = UiTheme.Accent;
+        btnChar.ForeColor = Color.Black;
+        btnChar.FlatAppearance.BorderColor = UiTheme.Accent;
         btnChar.Click += (s, e) => ShowCharacterPosition();
         _btnChar = btnChar;
         var btnUndo = UiTheme.Button(L10n.T("toolbar.undo", "Rückgängig"));
@@ -380,12 +384,10 @@ public sealed class MainForm : Form
         btnLang.Click += (s, e) =>
         {
             L10n.Language = L10n.Language == "en" ? "de" : "en";
+            btnLang.Text = L10n.Language == "en" ? "🌐 EN" : "🌐 DE";
             L10n.Save(_session);
             SessionState.Save(_session);
-            MessageBox.Show(this,
-                L10n.T("msg.restartRequired", "Die Sprache wurde gespeichert. Bitte starten Sie den Viewer neu, damit alle Texte aktualisiert werden."),
-                L10n.T("msg.languageTitle", "Sprache"),
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            Application.Restart();
         };
 
         rowMain.Controls.AddRange(new Control[]
@@ -396,7 +398,7 @@ public sealed class MainForm : Form
         rowActions.Controls.AddRange(new Control[]
         {
             UiTheme.Label(L10n.T("toolbar.selection", "Auswahl"), bold: true), labelHouse, _cmbHouses, labelSite, _cmbSites,
-            UiTheme.Label(L10n.T("toolbar.actions", "Aktionen"), bold: true), btnExport, btnAdjustZ, btnInjectMenu, btnChar, btnUndo, btnMeshViewer, _btnFavorites,
+            UiTheme.Label(L10n.T("toolbar.actions", "Aktionen"), bold: true), btnChar, btnExport, btnAdjustZ, btnInjectMenu, btnUndo, btnMeshViewer, _btnFavorites,
         });
         rowTools.Controls.AddRange(new Control[]
         {
@@ -1217,7 +1219,7 @@ public sealed class MainForm : Form
                 _canvas.PlayerWorldPos = null;
                 _canvas.PlayerLabel = "Player";
                 _canvas.Invalidate();
-                if (_btnChar != null) _btnChar.Text = "Show character";
+                if (_btnChar != null) _btnChar.Text = "📍 " + L10n.T("toolbar.showCharacter", "Figur anzeigen (P)");
                 SetStatus("Character marker hidden.");
                 return;
             }
@@ -1267,7 +1269,7 @@ public sealed class MainForm : Form
             _canvas.PlayerWorldPos = new System.Drawing.PointF(wx, wy);
             _canvas.PlayerWorldZCm = wz;
             _canvas.PlayerLabel = "Player";
-            if (_btnChar != null) _btnChar.Text = "Hide character";
+            if (_btnChar != null) _btnChar.Text = "📍 " + L10n.T("toolbar.hideCharacter", "Figur ausblenden (P)");
             // canvas centers/edits in tile-local coords for tiled maps (world = local + offset)
             _canvas.CenterOn(wx - _canvas.MapWorldOffsetX, wy - _canvas.MapWorldOffsetY);
             _canvas.Invalidate();
