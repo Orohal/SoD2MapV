@@ -25,9 +25,38 @@ namespace SoD2MapViewer;
         /// <summary>Current edit mode: Move (position), Rotate (yaw), Scale (uniform).</summary>
         public enum EditMode { Move, Rotate, Scale }
 
+        private EditMode _mode = EditMode.Move;
+
         /// <summary>Current edit mode.</summary>
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public EditMode Mode { get; set; } = EditMode.Move;
+        public EditMode Mode
+        {
+            get => _mode;
+            set
+            {
+                if (_mode == value) return;
+                _mode = value;
+                ModeChanged?.Invoke(_mode);
+                Invalidate();
+            }
+        }
+
+        /// <summary>Fired whenever the edit mode changes (toolbar buttons stay in sync).</summary>
+        public event Action<EditMode>? ModeChanged;
+
+        /// <summary>Snap grid for moving objects in cm. 0 = off, 50/100/500 = 0.5/1/5 m.</summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int SnapCm { get; set; }
+
+        /// <summary>Current zoom (pixels per cm), exposed for the status info row.</summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public float Zoom => _zoom;
+
+        /// <summary>Fired when the world position under the mouse changes (UE cm, tile-local + map offset).</summary>
+        public event Action<PointF?>? CursorWorldChanged;
+        private PointF? _lastCursorWorld;
+
+        private float Snap(float v) => SnapCm > 0 ? MathF.Round(v / SnapCm) * SnapCm : v;
 
         /// <summary>Shift (cm) applied to the background basemaps: the basemaps live in true world
         /// coordinates, but tiled maps store their objects with tile-local transforms.
@@ -785,11 +814,14 @@ namespace SoD2MapViewer;
             g.DrawString(label, lf, Brushes.White, lx, ly);
         }
 
-        using var hudFont = new Font("Segoe UI", 8.5f);
-        using var hudBrush = new SolidBrush(Color.FromArgb(150, 200, 210));
-        g.DrawString(
-            $"zoom {_zoom:0.000} px/cm   center [{_center.X / 100:0.#} m / {_center.Y / 100:0.#} m]   mode={Mode}   sel={Selection.Count}   hover: {(_hover >= 0 ? Objects[_hover].Name : "-")}   (wheel/dbl-click: zoom, drag: pan, F: fit, Ctrl+click: multi-select, Shift+drag: box, right-click: select house group, Esc: clear)",
-            hudFont, hudBrush, new PointF(8, Height - 24));
+        // Compact HUD: the full shortcut list lives in the '? Hilfe' dialog now.
+        using var hudFont = new Font("Segoe UI", 10f);
+        using var hudBrush = new SolidBrush(Color.FromArgb(205, 215, 230));
+        var hud = $"Zoom {_zoom:0.000}   Zentrum [{_center.X / 100:0.#} / {_center.Y / 100:0.#}] m   Modus {Mode}   Auswahl {Selection.Count}   hover: {(_hover >= 0 ? Objects[_hover].Name : "–")}";
+        var hudSize = g.MeasureString(hud, hudFont);
+        using var hudBg = new SolidBrush(Color.FromArgb(170, 20, 24, 30));
+        g.FillRectangle(hudBg, 4, Height - hudSize.Height - 8, hudSize.Width + 12, hudSize.Height + 4);
+        g.DrawString(hud, hudFont, hudBrush, new PointF(10, Height - hudSize.Height - 6));
     }
 
     protected override void OnDoubleClick(EventArgs e)
@@ -1111,6 +1143,16 @@ namespace SoD2MapViewer;
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+
+        // live cursor position for the status info row (world/save coordinates)
+        var cw = ScreenToWorld(e.X, e.Y);
+        float cwx = cw.X + MapWorldOffsetX, cwy = cw.Y + MapWorldOffsetY;
+        if (_lastCursorWorld is not { } last || MathF.Abs(last.X - cwx) > 1f || MathF.Abs(last.Y - cwy) > 1f)
+        {
+            _lastCursorWorld = new PointF(cwx, cwy);
+            CursorWorldChanged?.Invoke(_lastCursorWorld);
+        }
+
         if (_dragging)
         {
             var w = ScreenToWorld(e.X, e.Y);
@@ -1118,27 +1160,27 @@ namespace SoD2MapViewer;
 
             if (Mode == EditMode.Move)
             {
-                var nx = w.X + _dragGrabOffset.X;
-                var ny = w.Y + _dragGrabOffset.Y;
+                var nx = Snap(w.X + _dragGrabOffset.X);
+                var ny = Snap(w.Y + _dragGrabOffset.Y);
                 if (MathF.Abs(nx - o.X) > 0.01f || MathF.Abs(ny - o.Y) > 0.01f)
                 {
+                    float ddx = nx - _dragOldX, ddy = ny - _dragOldY;
                     o.X = nx;
                     o.Y = ny;
                     _dragMoved = true;
-                    // move the whole group by the same delta
+                    // move the whole group by the same (snapped) delta
                     if (_dragMembers.Count > 1)
                     {
                         for (var k = 1; k < _dragMembers.Count; k++)
                         {
                             var mo = Objects[_dragMembers[k]];
-                            mo.X = w.X + _dragMemberSnap[k].Grab.X;
-                            mo.Y = w.Y + _dragMemberSnap[k].Grab.Y;
+                            mo.X = _dragMemberSnap[k].OldX + ddx;
+                            mo.Y = _dragMemberSnap[k].OldY + ddy;
                         }
                     }
                     // owner-linked function actors (outpost/homesite interactables) follow the same delta
                     if (_dragLinks.Count > 0)
                     {
-                        float ddx = nx - _dragOldX, ddy = ny - _dragOldY;
                         for (var k = 0; k < _dragLinks.Count; k++)
                         {
                             var lo = Objects[_dragLinks[k]];
@@ -1218,6 +1260,16 @@ namespace SoD2MapViewer;
             _tip.SetToolTip(this, hover >= 0 ? Describe(Objects[hover]) : "");
         }
         Invalidate();
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        if (_lastCursorWorld != null)
+        {
+            _lastCursorWorld = null;
+            CursorWorldChanged?.Invoke(null);
+        }
     }
 
     private static string Describe(MapObject o) =>

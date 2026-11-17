@@ -13,6 +13,8 @@ internal sealed class SessionStateData
     public string? LastMapFilter { get; set; }
     public List<string> SelectedNames { get; set; } = new();
     public string? PrimarySelectedName { get; set; }
+    public List<string> FavoriteMaps { get; set; } = new();
+    public List<string> FavoriteObjects { get; set; } = new();
 }
 
 internal static class SessionState

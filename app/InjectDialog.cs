@@ -30,10 +30,10 @@ public sealed class InjectDialog : Form
     private readonly Button _btnBrowseSave = new() { Text = "📁…", AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
     private readonly Button _btnCopySave = new() { Text = "Kopie erstellen", AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
     private readonly Button _btnNewGroup = new() { Text = "Neue Gruppe…", AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
-    private readonly Button _btnInject = new() { Text = "Inject", AutoSize = true };
-    private readonly Button _btnCalibrate = new() { Text = "Calibrate...", AutoSize = true };
-    private readonly Button _btnDeleteProbe = new() { Text = "Delete probe vehicle", AutoSize = true, Visible = false };
-    private readonly Button _btnCancel = new() { Text = "Close", AutoSize = true };
+    private readonly Button _btnInject = new() { Text = "Einfügen", AutoSize = true };
+    private readonly Button _btnCalibrate = new() { Text = "Kalibrieren...", AutoSize = true };
+    private readonly Button _btnDeleteProbe = new() { Text = "Testfahrzeug löschen", AutoSize = true, Visible = false };
+    private readonly Button _btnCancel = new() { Text = "Schließen", AutoSize = true };
 
     private FileInfo[] _saves = Array.Empty<FileInfo>();
     private FileInfo? _customSave;
@@ -41,7 +41,7 @@ public sealed class InjectDialog : Form
 
     public InjectDialog(PointF? worldCm, float? zCm = null, float defaultYawDeg = 0f, string? hint = null)
     {
-        Text = "Inject vehicle into savegame";
+        Text = "Fahrzeug in Savegame einfügen";
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = true;
         MinimizeBox = true;
@@ -69,11 +69,11 @@ public sealed class InjectDialog : Form
 
         var saveRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty };
         saveRow.Controls.AddRange(new Control[] { _cboSave, _btnBrowseSave, _btnCopySave, _btnNewGroup });
-        AddRow(0, "Save slot:", saveRow);
-        AddRow(1, "Vehicle class:", _cboClass);
-        AddRow(2, "World X/Y/Z (m):", _txtX, _txtY, _txtZ);
-        AddRow(3, "Yaw (deg):", _txtYaw);
-        AddRow(4, "Calibration shift (m):", _txtDx, _txtDy, _txtDz);
+        AddRow(0, "Savegame:", saveRow);
+        AddRow(1, "Fahrzeugklasse:", _cboClass);
+        AddRow(2, "Welt X/Y/Z (m):", _txtX, _txtY, _txtZ);
+        AddRow(3, "Yaw (Grad):", _txtYaw);
+        AddRow(4, "Kalibrier-Offset (m):", _txtDx, _txtDy, _txtDz);
         layout.SetColumnSpan(_lblInfo, 4);
         layout.Controls.Add(_lblInfo, 0, 5);
         var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, Margin = new Padding(0) };
@@ -82,6 +82,7 @@ public sealed class InjectDialog : Form
         layout.Controls.Add(buttons, 0, 6);
 
         Controls.Add(layout);
+        UiTheme.ApplyTree(this);
         AcceptButton = _btnInject;
         CancelButton = _btnCancel;
 
@@ -140,7 +141,7 @@ public sealed class InjectDialog : Form
         }
         else if (_cboSave.Items.Count > 0)
         {
-            _lblInfo.Text = "Tip: right-click the map to pick the injection position.";
+            _lblInfo.Text = "Tipp: Rechtsklick auf die Karte wählt die Einfügeposition.";
         }
         if (zCm.HasValue) _txtZ.Text = (zCm.Value / 100).ToString("0.##");
         _txtYaw.Text = defaultYawDeg.ToString("0.##");
@@ -162,7 +163,7 @@ public sealed class InjectDialog : Form
 
         if (_cboSave.Items.Count == 0)
         {
-            _lblInfo.Text = "No savegame found under %LOCALAPPDATA%\\StateOfDecay2\\Saved\\Steam. Use \"📁…\" to pick a .sav file.";
+            _lblInfo.Text = "Kein Savegame unter %LOCALAPPDATA%\\StateOfDecay2\\Saved\\Steam gefunden. Mit \"📁…\" eine .sav-Datei wählen.";
             _btnInject.Enabled = _btnCalibrate.Enabled = false;
             return;
         }

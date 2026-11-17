@@ -19,6 +19,19 @@ public sealed class MainForm : Form
     private readonly MapCanvas _canvas = null!;
     private readonly TextBox _search = null!;
     private readonly TextBox _status = null!;
+    private readonly Label _infoMode = null!;
+    private readonly Label _infoCoords = null!;
+    private readonly Label _infoZoom = null!;
+    private readonly Label _infoSelection = null!;
+    private readonly Button _btnModeMove = null!;
+    private readonly Button _btnModeRotate = null!;
+    private readonly Button _btnModeScale = null!;
+    private readonly ComboBox _cmbSnap = null!;
+    private readonly CheckBox _chkFavMaps = null!;
+    private readonly Button _btnFavorites = null!;
+    private readonly ToolStripMenuItem _miFavObjectsOnly = null!;
+    private bool _favoriteUpdating;
+    private PointF? _lastCursorWorld;
     private readonly Panel _legendHost = null!;
 
     private MapModel? _map;
@@ -88,9 +101,9 @@ public sealed class MainForm : Form
             }
             else if (ActiveControl is not TextBox)
             {
-                if (e.KeyCode == Keys.M) { _canvas.Mode = MapCanvas.EditMode.Move; e.Handled = true; }
-                else if (e.KeyCode == Keys.R) { _canvas.Mode = MapCanvas.EditMode.Rotate; e.Handled = true; }
-                else if (e.KeyCode == Keys.S) { _canvas.Mode = MapCanvas.EditMode.Scale; e.Handled = true; }
+                if (e.KeyCode == Keys.M) { SetMode(MapCanvas.EditMode.Move); e.Handled = true; }
+                else if (e.KeyCode == Keys.R) { SetMode(MapCanvas.EditMode.Rotate); e.Handled = true; }
+                else if (e.KeyCode == Keys.S) { SetMode(MapCanvas.EditMode.Scale); e.Handled = true; }
                 else if (e.KeyCode == Keys.Delete) { _canvas.DeleteSelection(); e.Handled = true; }
                 else if (e.KeyCode == Keys.Escape) { _canvas.ClearSelection(); e.Handled = true; }
             }
@@ -107,11 +120,37 @@ public sealed class MainForm : Form
             LineColor = Color.FromArgb(90, 95, 110),
             BorderStyle = BorderStyle.None,
             HideSelection = false,
+            CheckBoxes = true,
             ShowPlusMinus = true,
             ShowRootLines = true,
             FullRowSelect = true,
         };
         _mapTree.AfterSelect += MapTreeSelected;
+        _mapTree.AfterCheck += (s, e) =>
+        {
+            if (_favoriteUpdating || e.Node is not { } node) return;
+            _favoriteUpdating = true;
+            try
+            {
+                if (node.Tag is string tag && tag.StartsWith("region:", StringComparison.Ordinal))
+                {
+                    foreach (TreeNode child in node.Nodes) child.Checked = node.Checked;
+                    SyncFavoriteMaps(node.Nodes, node.Checked);
+                }
+                else if (node.Tag is string path && path.Length > 0)
+                {
+                    SetFavoriteMap(path, node.Checked);
+                    if (node.Parent is { } parent)
+                    {
+                        bool all = parent.Nodes.Cast<TreeNode>().All(n => n.Checked);
+                        if (parent.Checked != all) parent.Checked = all;
+                    }
+                }
+            }
+            finally { _favoriteUpdating = false; }
+            SaveSessionState();
+            UpdateMapFilterInfo();
+        };
         _legendHost = new Panel { Dock = DockStyle.Bottom, Height = 180, BackColor = Color.FromArgb(32, 34, 40) };
         _mapFilter = new TextBox
         {
@@ -119,10 +158,16 @@ public sealed class MainForm : Form
             PlaceholderText = "filter maps (name contains...)",
         };
         _mapFilter.TextChanged += (s, e) => ApplyMapFilter();
+        _chkFavMaps = UiTheme.Check("★ Nur Favoriten");
+        _chkFavMaps.Dock = DockStyle.Top;
+        _chkFavMaps.BackColor = UiTheme.Surface;
+        _chkFavMaps.Padding = new Padding(6, 4, 4, 2);
+        _chkFavMaps.CheckedChanged += (s, e) => ApplyMapFilter();
 
         left.Controls.Add(_mapTree);
         left.Controls.Add(_legendHost);
         left.Controls.Add(_mapFilter);
+        left.Controls.Add(_chkFavMaps);
 
         // right: grid (top) + canvas (bottom)
         var right = new SplitContainer
@@ -140,7 +185,7 @@ public sealed class MainForm : Form
             AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells,
             RowHeadersVisible = false,
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-            MultiSelect = false,
+            MultiSelect = true,
             Font = new Font("Consolas", 9f),
             BorderStyle = BorderStyle.None,
             BackgroundColor = Color.FromArgb(30, 32, 38),
@@ -158,6 +203,8 @@ public sealed class MainForm : Form
             {
                 try { e.Value = Convert.ToSingle(e.Value) / 100f; } catch { }
             }
+            if (_grid.Rows[e.RowIndex].DataBoundItem is MapObject o && IsFavoriteObject(o))
+                e.CellStyle.BackColor = Color.FromArgb(72, 62, 40);
         };
         _canvas = new MapCanvas { Dock = DockStyle.Fill };
         _canvas.SelectionChanged += CanvasSelection;
@@ -181,57 +228,53 @@ public sealed class MainForm : Form
         outer.Panel2.Controls.Add(right);
 
         // top toolbar (responsive flow layout, no absolute positioning -> no overlaps)
-        var top = new Panel { Dock = DockStyle.Top, Height = 96, BackColor = Color.FromArgb(38, 40, 48) };
-        var flow = new FlowLayoutPanel
+        // Top toolbar: two grouped, auto-sizing rows (no fixed height -> nothing gets clipped)
+        var top = new Panel { Dock = DockStyle.Top, AutoSize = true, BackColor = UiTheme.Surface };
+        var rowActions = new FlowLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top, AutoSize = true, WrapContents = true,
             FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = true,
-            AutoSize = false,
-            Padding = new Padding(8, 8, 8, 8),
-            BackColor = Color.Transparent,
+            Padding = new Padding(8, 2, 8, 2), BackColor = Color.Transparent,
         };
-        var btnOpen = new Button { Text = "Choose game folder...", AutoSize = true, Height = 30, Margin = new Padding(0, 0, 12, 0) };
-        btnOpen.Click += (s, e) => PickGameDir();
-        var labelMap = new Label { AutoSize = true, Text = "Object filter:", ForeColor = Color.Gainsboro, Margin = new Padding(0, 8, 4, 0) };
-        _search = new TextBox { Width = 320, PlaceholderText = "name/class/mesh contains...", Height = 30, Margin = new Padding(0, 0, 12, 0) };
-        _search.TextChanged += (s, e) => ApplyFilter();
-        var labelHouse = new Label { AutoSize = true, Text = "House:", ForeColor = Color.Gainsboro, Margin = new Padding(0, 8, 4, 0) };
-        _cmbHouses = new ComboBox
+        var rowTools = new FlowLayoutPanel
         {
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            DropDownWidth = 420,
-            Width = 300,
-            Height = 30,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(30, 32, 38),
-            ForeColor = Color.Gainsboro,
-            Margin = new Padding(0, 4, 12, 0),
+            Dock = DockStyle.Top, AutoSize = true, WrapContents = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Padding = new Padding(8, 2, 8, 6), BackColor = Color.Transparent,
         };
+        var rowMain = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top, AutoSize = true, WrapContents = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Padding = new Padding(8, 6, 8, 2), BackColor = Color.Transparent,
+        };
+
+        // --- row 1: game + filters ---
+        var btnOpen = UiTheme.Button("Spielordner wählen...");
+        btnOpen.Click += (s, e) => PickGameDir();
+        var labelMap = UiTheme.Label("Objektfilter:");
+        _search = UiTheme.Field(320, "Name / Klasse / Mesh enthält...");
+        _search.TextChanged += (s, e) => ApplyFilter();
+
+        // --- row 2: selection + actions ---
+        var labelHouse = UiTheme.Label("Haus:");
+        _cmbHouses = UiTheme.Combo(300);
+        _cmbHouses.DropDownWidth = 420;
         _cmbHouses.SelectedIndexChanged += (s, e) =>
         {
             if (_houseComboUpdating) return;
             if (_cmbHouses.SelectedItem is HouseItem { Obj: { } h })
             {
                 var idx = _visible.IndexOf(h);
-                if (idx < 0) { SetStatus("house not in current view — clear the object filter"); return; }
+                if (idx < 0) { SetStatus("Haus nicht in der aktuellen Ansicht — Objektfilter leeren."); return; }
                 _canvas.SelectHouseGroup(idx);
-                SetStatus($"house group selected: {h.Name} — {_canvas.Selection.Count} objects within {_canvas.HouseSelectRadiusCm / 100:0} m. " +
-                          "Drag in Move mode to relocate, then 'Export mod .pak' to let the house appear in-game at the new spot.");
+                SetStatus($"Hausgruppe ausgewählt: {h.Name} — {_canvas.Selection.Count} Objekte innerhalb von {_canvas.HouseSelectRadiusCm / 100:0} m. " +
+                          "Im Modus 'Bewegen' ziehen, dann 'Mod-.pak exportieren', damit das Haus im Spiel am neuen Ort erscheint.");
             }
         };
-        var labelSite = new Label { AutoSize = true, Text = "Site:", ForeColor = Color.Gainsboro, Margin = new Padding(0, 8, 4, 0) };
-        _cmbSites = new ComboBox
-        {
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            DropDownWidth = 460,
-            Width = 340,
-            Height = 30,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(30, 32, 38),
-            ForeColor = Color.Gainsboro,
-            Margin = new Padding(0, 4, 12, 0),
-        };
+        var labelSite = UiTheme.Label("Site:");
+        _cmbSites = UiTheme.Combo(340);
+        _cmbSites.DropDownWidth = 460;
         _cmbSites.SelectionChangeCommitted += async (s, e) =>
         {
             if (_siteComboUpdating) return;
@@ -242,38 +285,60 @@ public sealed class MainForm : Form
             if (entry.Tile.Length > 0 && (_map == null || !string.Equals(_map.Path, entry.Tile, StringComparison.OrdinalIgnoreCase)))
             {
                 _pendingSiteIndex = entry.Index;
-                SetStatus($"loading tile for site: {Path.GetFileName(entry.Tile)} ...");
+                SetStatus($"Lade Tile für Site: {Path.GetFileName(entry.Tile)} ...");
                 var model = await _loader.LoadMapAsync(entry.Tile);
                 SetMap(model); // applies _pendingSiteIndex after the site list is rebuilt
                 return;
             }
             SelectSiteByIndex(entry.Index);
         };
-        _chkEdit = new CheckBox
-        {
-            Text = "Enable editing (drag objects)",
-            ForeColor = Color.Red,
-            Height = 30,
-            Margin = new Padding(0, 0, 12, 0),
-            Padding = new Padding(0, 12, 0, 0),
-        };
-        _chkEdit.CheckedChanged += (s, e) => _canvas.EditingEnabled = _chkEdit.Checked;
-        var btnExport = new Button { Text = "Export mod .pak...", AutoSize = true, Height = 30 };
+        _chkEdit = UiTheme.Check("Bearbeiten (Objekte ziehen)");
+        _chkEdit.ForeColor = UiTheme.Danger;
+        _chkEdit.CheckedChanged += (s, e) => { _canvas.EditingEnabled = _chkEdit.Checked; UpdateInfo(); };
+
+        var btnExport = UiTheme.Button("Mod-.pak exportieren...");
         btnExport.Click += (s, e) => ExportModPak();
-        var btnAdjustZ = new Button { Text = "Adjust height (Z)…", AutoSize = true, Height = 30 };
+        var btnAdjustZ = UiTheme.Button("Höhe anpassen (Z)…");
         btnAdjustZ.Click += (s, e) => AdjustSelectionHeight();
-        var btnChar = new Button { Text = "Show character", AutoSize = true, Height = 30 };
+        var btnChar = UiTheme.Button("Figur anzeigen");
         btnChar.Click += (s, e) => ShowCharacterPosition();
         _btnChar = btnChar;
-        var btnUndo = new Button { Text = "Undo", AutoSize = true, Height = 30 };
+        var btnUndo = UiTheme.Button("Rückgängig");
         btnUndo.Click += (s, e) => UndoLastMove();
-        var btnMeshViewer = new Button { Text = "Mesh-Viewer", AutoSize = true, Height = 30 };
+        var btnMeshViewer = UiTheme.Button("Mesh-Viewer");
         btnMeshViewer.Click += (s, e) => OpenMeshViewerDialog();
 
+        _btnFavorites = UiTheme.Button("★ Favoriten ▾");
+        var favMenu = new ContextMenuStrip();
+        favMenu.Items.Add("Als Favoriten markieren", null, (s, e) => SetObjectFavorites(true));
+        favMenu.Items.Add("Favorit entfernen", null, (s, e) => SetObjectFavorites(false));
+        _miFavObjectsOnly = new ToolStripMenuItem("Nur Favoriten anzeigen") { CheckOnClick = true };
+        _miFavObjectsOnly.CheckedChanged += (s, e) => ApplyFilter();
+        favMenu.Items.Add(_miFavObjectsOnly);
+        favMenu.Items.Add("Namen kopieren", null, (s, e) => CopySelectedNames());
+        _btnFavorites.Click += (s, e) => favMenu.Show(_btnFavorites, new Point(0, _btnFavorites.Height));
+
+        _btnModeMove = UiTheme.Button("Bewegen (M)");
+        _btnModeRotate = UiTheme.Button("Drehen (R)");
+        _btnModeScale = UiTheme.Button("Skalieren (S)");
+        _btnModeMove.Click += (s, e) => SetMode(MapCanvas.EditMode.Move);
+        _btnModeRotate.Click += (s, e) => SetMode(MapCanvas.EditMode.Rotate);
+        _btnModeScale.Click += (s, e) => SetMode(MapCanvas.EditMode.Scale);
+
+        _cmbSnap = UiTheme.Combo(118, "Raster: Aus", "Raster: 0,5 m", "Raster: 1 m", "Raster: 5 m");
+        _cmbSnap.SelectedIndex = 0;
+        _cmbSnap.SelectedIndexChanged += (s, e) =>
+        {
+            _canvas.SnapCm = _cmbSnap.SelectedIndex switch { 1 => 50, 2 => 100, 3 => 500, _ => 0 };
+            SetStatus(_canvas.SnapCm == 0 ? "Raster aus." : $"Raster aktiv: {_canvas.SnapCm / 100:0.#} m.");
+        };
+        var btnHelp = UiTheme.Button("? Hilfe");
+        btnHelp.Click += (s, e) => { using var dlg = new ShortcutHelpDialog(); dlg.ShowDialog(this); };
+
         var injectMenu = new ContextMenuStrip();
-        injectMenu.Items.Add("Inject vehicle...", null, (s, e) => OpenInjectDialog(null));
-        injectMenu.Items.Add("Inject item...", null, (s, e) => OpenItemInjectDialog());
-        injectMenu.Items.Add("Inject at player", null, (s, e) =>
+        injectMenu.Items.Add("Fahrzeug einfügen...", null, (s, e) => OpenInjectDialog(null));
+        injectMenu.Items.Add("Gegenstand einfügen...", null, (s, e) => OpenItemInjectDialog());
+        injectMenu.Items.Add("Am Spieler einfügen", null, (s, e) =>
         {
             if (_canvas.PlayerWorldPos is { } p)
             {
@@ -281,47 +346,92 @@ public sealed class MainForm : Form
                 var ahead = new System.Drawing.PointF(p.X + 1000f, p.Y);
                 OpenInjectDialog(ahead, _canvas.PlayerWorldZCm, 0f,
                     "Hinweis: Beim Injizieren am Spieler am besten auf freier Fläche stehen (sonst spawnt das Fahrzeug evtl. in einem Objekt). Position/Yaw/Höhe ggf. anpassen.");
-                SetStatus("Inject: Spieler-Pos + 10m (X). Tipp: auf freier Fläche stehen. Position/Yaw/Höhe ggf. anpassen.");
+                SetStatus("Einfügen: Spieler-Pos + 10 m (X). Tipp: auf freier Fläche stehen. Position/Yaw/Höhe ggf. anpassen.");
             }
             else
-                SetStatus("No player position known — click 'Show character' first.");
+                SetStatus("Keine Spielerposition bekannt — zuerst 'Figur anzeigen' klicken.");
         });
         injectMenu.Items.Add("Plattform an Spieler-Position...", null, (s, e) => OpenPlatformInjectDialog());
 
-        var btnInjectMenu = new Button { Text = "Inject ▾", AutoSize = true, Height = 30 };
+        var btnInjectMenu = UiTheme.Button("Einfügen ▾");
         btnInjectMenu.Click += (s, e) => injectMenu.Show(btnInjectMenu, new Point(0, btnInjectMenu.Height));
-        _chkBg = new CheckBox { Text = "Hintergrundkarte (Spiel-Asset)", AutoSize = true, Checked = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
+        _chkBg = UiTheme.Check("Hintergrundkarte (Spiel-Asset)", true);
         _chkBg.CheckedChanged += (s, e) => { _canvas.ShowBgBase = _chkBg.Checked; _canvas.Invalidate(); };
         _canvas.ShowBgBase = true;
-        _chkSites = new CheckBox { Text = "Sites (tgc)", AutoSize = true, Checked = false, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
+        _chkSites = UiTheme.Check("Sites (tgc)");
         _chkSites.CheckedChanged += (s, e) => { _canvas.ShowSites = _chkSites.Checked; _canvas.Invalidate(); };
-        _chkEditBg = new CheckBox { Text = "Feinjustierung (Drag)", AutoSize = true, ForeColor = Color.Gainsboro, Padding = new Padding(0, 8, 0, 0) };
+        _chkEditBg = UiTheme.Check("Feinjustierung (Drag)");
         _chkEditBg.CheckedChanged += (s, e) => { _canvas.EditBgOffset = _chkEditBg.Checked; _canvas.Invalidate(); };
-        var lblGame = new Label { Text = "Game", AutoSize = true, ForeColor = Color.Gray, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(0, 8, 6, 0), Margin = new Padding(0, 0, 0, 0) };
-        var lblFilter = new Label { Text = "Filter", AutoSize = true, ForeColor = Color.Gray, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(8, 8, 6, 0), Margin = new Padding(0, 0, 0, 0) };
-        var lblSelection = new Label { Text = "Selection", AutoSize = true, ForeColor = Color.Gray, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(8, 8, 6, 0), Margin = new Padding(0, 0, 0, 0) };
-        var lblActions = new Label { Text = "Actions", AutoSize = true, ForeColor = Color.Gray, Font = new Font(Font, FontStyle.Bold), Padding = new Padding(8, 8, 6, 0), Margin = new Padding(0, 0, 0, 0) };
 
-        flow.Controls.AddRange(new Control[] { lblGame, btnOpen, lblFilter, labelMap, _search, lblSelection, labelHouse, _cmbHouses, labelSite, _cmbSites, lblActions, btnExport, btnAdjustZ, btnInjectMenu, btnChar, btnUndo, btnMeshViewer, _chkBg, _chkSites, _chkEditBg, _chkEdit });
-        top.Controls.Add(flow);
+        rowMain.Controls.AddRange(new Control[]
+        {
+            UiTheme.Label("Spiel", bold: true), btnOpen,
+            UiTheme.Label("Filter", bold: true), labelMap, _search,
+        });
+        rowActions.Controls.AddRange(new Control[]
+        {
+            UiTheme.Label("Auswahl", bold: true), labelHouse, _cmbHouses, labelSite, _cmbSites,
+            UiTheme.Label("Aktionen", bold: true), btnExport, btnAdjustZ, btnInjectMenu, btnChar, btnUndo, btnMeshViewer, _btnFavorites,
+        });
+        rowTools.Controls.AddRange(new Control[]
+        {
+            UiTheme.Label("Modus", bold: true), _btnModeMove, _btnModeRotate, _btnModeScale, _cmbSnap,
+            UiTheme.Label("Ansicht", bold: true), _chkBg, _chkSites, _chkEditBg, _chkEdit, btnHelp,
+        });
+        // WinForms docks the last-added control first: main / actions / tools from top to bottom.
+        top.Controls.Add(rowTools);
+        top.Controls.Add(rowActions);
+        top.Controls.Add(rowMain);
         _canvas.WorldRightClicked += w => OpenInjectDialog(w);
         _canvas.SelectionChanged += _ => SaveSessionStateLight();
         FormClosing += (s, e) => SaveSessionState();
 
+        // Bottom: ONE area that collects all status messages, plus a compact live info row
+        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 150, BackColor = UiTheme.SurfaceAlt };
         _status = new TextBox
         {
-            Dock = DockStyle.Bottom,
-            Height = 28,
+            Dock = DockStyle.Fill,
+            Multiline = true,
             ReadOnly = true,
+            ScrollBars = ScrollBars.Vertical,
             BorderStyle = BorderStyle.None,
-            BackColor = Color.FromArgb(38, 40, 48),
-            ForeColor = Color.LightGray,
-            Font = new Font("Consolas", 9f),
+            BackColor = UiTheme.SurfaceAlt,
+            ForeColor = Color.FromArgb(195, 200, 210),
+            Font = UiTheme.DataFont,
+            WordWrap = false,
         };
+        var infoRow = new Panel { Dock = DockStyle.Bottom, Height = 26, BackColor = Color.FromArgb(26, 28, 33) };
+        _infoSelection = UiTheme.InfoLabel("Auswahl: –", 130);
+        _infoZoom = UiTheme.InfoLabel("Zoom: –", 120);
+        _infoCoords = UiTheme.InfoLabel("Maus: –", 340);
+        _infoMode = UiTheme.InfoLabel("Modus: –", 190);
+        // Add right-to-left so the visual order is Modus | Maus | Zoom | Auswahl.
+        infoRow.Controls.Add(_infoSelection);
+        infoRow.Controls.Add(_infoZoom);
+        infoRow.Controls.Add(_infoCoords);
+        infoRow.Controls.Add(_infoMode);
+
+        var logHeader = new Panel { Dock = DockStyle.Top, Height = 26, BackColor = Color.FromArgb(26, 28, 33) };
+        var btnClearLog = UiTheme.Button("Leeren");
+        btnClearLog.Dock = DockStyle.Right;
+        btnClearLog.Click += (s, e) => _status.Clear();
+        logHeader.Controls.Add(UiTheme.Label("Ereignisse", bold: true));
+        logHeader.Controls.Add(btnClearLog);
+
+        bottom.Controls.Add(_status);
+        bottom.Controls.Add(infoRow);
+        bottom.Controls.Add(logHeader);
 
         Controls.Add(outer);
-        Controls.Add(_status);
+        Controls.Add(bottom);
         Controls.Add(top);
+
+        _canvas.ModeChanged += _ => { UpdateModeButtons(); UpdateInfo(); };
+        _canvas.CursorWorldChanged += p => { _lastCursorWorld = p; UpdateInfo(); };
+        _canvas.SelectionChanged += _ => UpdateInfo();
+        UpdateModeButtons();
+        UpdateInfo();
+        UpdateMapFilterInfo();
 
         // Set splitter distances once the form's actual size is known
         Load += (s, e) =>
@@ -408,8 +518,10 @@ public sealed class MainForm : Form
         {
             _mapTree.Nodes.Clear();
 
+            bool favOnly = _chkFavMaps.Checked;
             var filtered = _loader.MapPaths
-                .Where(m => f.Length == 0 || m.Contains(f, StringComparison.OrdinalIgnoreCase))
+                .Where(m => (f.Length == 0 || m.Contains(f, StringComparison.OrdinalIgnoreCase))
+                            && (!favOnly || _session.FavoriteMaps.Contains(m)))
                 .ToList();
 
             // Group by region (known regions first, in MapRegions.All order, then "Other")
@@ -439,11 +551,14 @@ public sealed class MainForm : Form
                     NodeFont = new Font(_mapTree.Font, FontStyle.Bold),
                     Tag = $"region:{r.Key}", // region-wide Site dropdown on click
                 };
+                _favoriteUpdating = true;
                 foreach (var m in g.maps)
                 {
-                    node.Nodes.Add(new TreeNode(m) { Tag = m });
+                    node.Nodes.Add(new TreeNode(m) { Tag = m, Checked = _session.FavoriteMaps.Contains(m) });
                     shown++;
                 }
+                node.Checked = g.maps.Count > 0 && g.maps.All(_session.FavoriteMaps.Contains);
+                _favoriteUpdating = false;
                 _mapTree.Nodes.Add(node);
                 if (f.Length > 0) node.Expand();
             }
@@ -454,11 +569,14 @@ public sealed class MainForm : Form
                     ForeColor = Color.FromArgb(180, 180, 180),
                     NodeFont = new Font(_mapTree.Font, FontStyle.Bold),
                 };
+                _favoriteUpdating = true;
                 foreach (var m in other.maps)
                 {
-                    node.Nodes.Add(new TreeNode(m) { Tag = m });
+                    node.Nodes.Add(new TreeNode(m) { Tag = m, Checked = _session.FavoriteMaps.Contains(m) });
                     shown++;
                 }
+                node.Checked = other.maps.Count > 0 && other.maps.All(_session.FavoriteMaps.Contains);
+                _favoriteUpdating = false;
                 _mapTree.Nodes.Add(node);
                 if (f.Length > 0) node.Expand();
             }
@@ -838,6 +956,8 @@ public sealed class MainForm : Form
         if (_map == null) return;
         var filter = _search.Text?.Trim() ?? "";
         IEnumerable<MapObject> q = _map.Objects;
+        if (_miFavObjectsOnly != null && _miFavObjectsOnly.Checked)
+            q = q.Where(IsFavoriteObject);
         if (filter.Length > 0)
         {
             q = q.Where(o =>
@@ -884,6 +1004,7 @@ public sealed class MainForm : Form
         }
         BalanceColumns();
         _canvas.SetObjects(_visible);
+        UpdateMapFilterInfo();
     }
 
     private void BalanceColumns()
@@ -1662,7 +1783,130 @@ public sealed class MainForm : Form
         }
     }
 
-    private void SetStatus(string text) => _status.Text = text;
+    private const int LogMaxLines = 200;
+
+    private void SetStatus(string text)
+    {
+        if (IsDisposed || _status.IsDisposed) return;
+        var line = $"[{DateTime.Now:HH:mm:ss}] {text}";
+        var lines = _status.Lines;
+        if (lines.Length >= LogMaxLines)
+        {
+            var keep = lines.Skip(lines.Length - LogMaxLines + 1).ToList();
+            keep.Add(line);
+            _status.Lines = keep.ToArray();
+        }
+        else
+        {
+            _status.AppendText((_status.TextLength > 0 ? Environment.NewLine : "") + line);
+        }
+        _status.SelectionStart = _status.TextLength;
+        _status.ScrollToCaret();
+    }
+
+    private static readonly string[] CompassNames =
+    {
+        "N", "NNO", "NO", "ONO", "O", "OSO", "SO", "SSO",
+        "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+    };
+
+    // +X = Norden, +Y = Osten (im Spiel verifiziert); 16-teilige Windrose.
+    private static string CompassDirection(PointF p)
+    {
+        if (MathF.Abs(p.X) < 1f && MathF.Abs(p.Y) < 1f) return "–";
+        double deg = Math.Atan2(p.Y, p.X) * 180.0 / Math.PI;
+        if (deg < 0) deg += 360.0;
+        return CompassNames[(int)Math.Round(deg / 22.5) % 16];
+    }
+
+    private string ObjectFavKey(MapObject o) => $"{_map?.Path}|{o.Name}";
+
+    private bool IsFavoriteObject(MapObject o) => _session.FavoriteObjects.Contains(ObjectFavKey(o));
+
+    private void SetFavoriteMap(string path, bool fav)
+    {
+        if (fav) { if (!_session.FavoriteMaps.Contains(path)) _session.FavoriteMaps.Add(path); }
+        else _session.FavoriteMaps.Remove(path);
+    }
+
+    private void SyncFavoriteMaps(TreeNodeCollection nodes, bool fav)
+    {
+        foreach (TreeNode n in nodes)
+            if (n.Tag is string p && p.Length > 0 && !p.StartsWith("region:", StringComparison.Ordinal))
+                SetFavoriteMap(p, fav);
+    }
+
+    private void SetObjectFavorites(bool fav)
+    {
+        int count = 0;
+        foreach (DataGridViewRow row in _grid.SelectedRows)
+        {
+            if (row.DataBoundItem is not MapObject o) continue;
+            var key = ObjectFavKey(o);
+            if (fav) { if (!_session.FavoriteObjects.Contains(key)) _session.FavoriteObjects.Add(key); }
+            else _session.FavoriteObjects.Remove(key);
+            count++;
+        }
+        SaveSessionState();
+        _grid.Refresh();
+        if (_miFavObjectsOnly.Checked) ApplyFilter();
+        SetStatus(count == 0 ? "Keine Objekte ausgewählt." : $"{count} Objekt(e) {(fav ? "als Favorit markiert" : "aus Favoriten entfernt")}.");
+    }
+
+    private void CopySelectedNames()
+    {
+        var names = new List<string>();
+        foreach (DataGridViewRow row in _grid.SelectedRows)
+            if (row.DataBoundItem is MapObject o) names.Add(o.Name);
+        foreach (var parent in _mapTree.Nodes.Cast<TreeNode>())
+            foreach (TreeNode n in parent.Nodes.Cast<TreeNode>())
+                if (n.Checked && n.Tag is string p && p.Length > 0) names.Add(Path.GetFileName(p));
+        names = names.Distinct().ToList();
+        if (names.Count == 0) { SetStatus("Nichts ausgewählt — bitte Zeilen oder Karten markieren."); return; }
+        Clipboard.SetText(string.Join(Environment.NewLine, names));
+        SetStatus($"{names.Count} Name(n) in die Zwischenablage kopiert.");
+    }
+
+    private void UpdateMapFilterInfo()
+    {
+        if (_chkFavMaps == null || _chkFavMaps.IsDisposed) return;
+        _chkFavMaps.Text = $"★ Nur Favoriten ({_session.FavoriteMaps.Count})";
+    }
+
+    private void SetMode(MapCanvas.EditMode mode) => _canvas.Mode = mode;
+
+    private void UpdateModeButtons()
+    {
+        MarkModeButton(_btnModeMove, _canvas.Mode == MapCanvas.EditMode.Move);
+        MarkModeButton(_btnModeRotate, _canvas.Mode == MapCanvas.EditMode.Rotate);
+        MarkModeButton(_btnModeScale, _canvas.Mode == MapCanvas.EditMode.Scale);
+    }
+
+    private static void MarkModeButton(Button button, bool active)
+    {
+        button.BackColor = active ? UiTheme.Active : UiTheme.Surface;
+        button.ForeColor = active ? Color.White : UiTheme.Text;
+        button.FlatAppearance.BorderColor = active ? UiTheme.Accent : UiTheme.Surface;
+        button.FlatAppearance.BorderSize = active ? 2 : 1;
+    }
+
+    private void UpdateInfo()
+    {
+        if (_infoMode == null || _infoMode.IsDisposed) return;
+        string mode = _canvas.Mode switch
+        {
+            MapCanvas.EditMode.Move => "Bewegen",
+            MapCanvas.EditMode.Rotate => "Drehen",
+            MapCanvas.EditMode.Scale => "Skalieren",
+            _ => "?",
+        };
+        _infoMode.Text = _canvas.EditingEnabled ? $"Modus: {mode}" : "Modus: Nur Ansicht";
+        _infoCoords.Text = _lastCursorWorld is { } p
+            ? $"Maus: {p.X / 100:0.#} m N / {p.Y / 100:0.#} m O ({CompassDirection(p)})"
+            : "Maus: –";
+        _infoZoom.Text = $"Zoom: {_canvas.Zoom:0.000}";
+        _infoSelection.Text = $"Auswahl: {_canvas.Selection.Count}";
+    }
 }
 
 internal sealed class KeyDialog : Form
