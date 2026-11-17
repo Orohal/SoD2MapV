@@ -33,6 +33,10 @@ public sealed class MainForm : Form
     private bool _favoriteUpdating;
     private PointF? _lastCursorWorld;
     private readonly Panel _legendHost = null!;
+    private readonly Panel _favPanel = null!;
+    private readonly ListBox _favList = null!;
+    private readonly Label _favEmpty = null!;
+    private readonly List<string> _favEntryKeys = new();
 
     private MapModel? _map;
     private readonly BindingSource _source = new();
@@ -109,6 +113,7 @@ public sealed class MainForm : Form
                 else if (e.KeyCode == Keys.R) { SetMode(MapCanvas.EditMode.Rotate); e.Handled = true; }
                 else if (e.KeyCode == Keys.S) { SetMode(MapCanvas.EditMode.Scale); e.Handled = true; }
                 else if (e.KeyCode == Keys.P) { ShowCharacterPosition(); e.Handled = true; }
+                else if (e.KeyCode == Keys.V) { OpenMeshViewerDialog(); e.Handled = true; }
                 else if (e.KeyCode == Keys.Delete) { _canvas.DeleteSelection(); e.Handled = true; }
                 else if (e.KeyCode == Keys.Escape) { _canvas.ClearSelection(); e.Handled = true; }
             }
@@ -155,6 +160,7 @@ public sealed class MainForm : Form
             finally { _favoriteUpdating = false; }
             SaveSessionState();
             UpdateMapFilterInfo();
+            RefreshFavoritesPanel();
         };
         _legendHost = new Panel { Dock = DockStyle.Bottom, Height = 180, BackColor = Color.FromArgb(32, 34, 40) };
         _mapFilter = new TextBox
@@ -450,7 +456,37 @@ public sealed class MainForm : Form
         bottom.Controls.Add(infoRow);
         bottom.Controls.Add(logHeader);
 
+        // favorites panel (above the event log)
+        _favPanel = new Panel { Dock = DockStyle.Bottom, Height = 130, BackColor = UiTheme.SurfaceAlt };
+        var favHeader = new Panel { Dock = DockStyle.Top, Height = 26, BackColor = Color.FromArgb(26, 28, 33) };
+        favHeader.Controls.Add(UiTheme.Label(L10n.T("favorites.title", "★ Favoriten"), bold: true));
+        _favList = new ListBox
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyle.None,
+            BackColor = UiTheme.SurfaceAlt,
+            ForeColor = Color.FromArgb(195, 200, 210),
+            Font = UiTheme.DataFont,
+            IntegralHeight = false,
+        };
+        _favList.DoubleClick += async (s, e) => await ActivateFavoriteEntry();
+        _favEmpty = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = L10n.T("favorites.empty", "(keine Favoriten)"),
+            ForeColor = Color.FromArgb(140, 145, 155),
+            BackColor = UiTheme.SurfaceAlt,
+            Font = UiTheme.DataFont,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(8, 0, 0, 0),
+            Visible = false,
+        };
+        _favPanel.Controls.Add(_favEmpty);
+        _favPanel.Controls.Add(_favList);
+        _favPanel.Controls.Add(favHeader);
+
         Controls.Add(outer);
+        Controls.Add(_favPanel);
         Controls.Add(bottom);
         Controls.Add(top);
 
@@ -460,6 +496,7 @@ public sealed class MainForm : Form
         UpdateModeButtons();
         UpdateInfo();
         UpdateMapFilterInfo();
+        RefreshFavoritesPanel();
 
         // Set splitter distances once the form's actual size is known
         Load += (s, e) =>
@@ -648,6 +685,7 @@ public sealed class MainForm : Form
     private void RestoreLastMapSelection()
     {
         var path = _session.LastMapPath;
+        RefreshFavoritesPanel();
         if (string.IsNullOrWhiteSpace(path)) return;
         var node = FindNodeByTag(_mapTree.Nodes, path);
         if (node == null) return;
@@ -943,6 +981,7 @@ public sealed class MainForm : Form
         ApplyFilter();
         RenderLegend();
         RestorePendingSelection();
+        RefreshFavoritesPanel();
         SaveSessionStateLight();
     }
 
@@ -1880,6 +1919,7 @@ public sealed class MainForm : Form
         SaveSessionState();
         _grid.Refresh();
         if (_miFavObjectsOnly.Checked) ApplyFilter();
+        RefreshFavoritesPanel();
         SetStatus(count == 0 ? "Keine Objekte ausgewählt." : $"{count} Objekt(e) {(fav ? "als Favorit markiert" : "aus Favoriten entfernt")}.");
     }
 
@@ -1903,7 +1943,98 @@ public sealed class MainForm : Form
         _chkFavMaps.Text = string.Format(L10n.T("toolbar.favMapsCount", "★ Nur Favoriten ({0})"), _session.FavoriteMaps.Count);
     }
 
-    private void SetMode(MapCanvas.EditMode mode) => _canvas.Mode = mode;
+    private void RefreshFavoritesPanel()
+    {
+        if (_favList == null || _favList.IsDisposed) return;
+        _favEntryKeys.Clear();
+        _favList.BeginUpdate();
+        try
+        {
+            _favList.Items.Clear();
+            var entries = new List<(string Display, string Key, int Kind)>();
+            foreach (var path in _session.FavoriteMaps.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(path)) continue;
+                entries.Add(("🗺 " + Path.GetFileName(path), path, 0));
+            }
+            foreach (var key in _session.FavoriteObjects.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(key)) continue;
+                var sep = key.IndexOf('|');
+                if (sep <= 0 || sep >= key.Length - 1) continue;
+                var mapPath = key[..sep];
+                var objName = key[(sep + 1)..];
+                entries.Add(("📍 " + objName + " (" + Path.GetFileName(mapPath) + ")", key, 1));
+            }
+            entries.Sort((a, b) =>
+            {
+                var c = string.Compare(a.Display, b.Display, StringComparison.CurrentCultureIgnoreCase);
+                return c != 0 ? c : string.Compare(a.Key, b.Key, StringComparison.OrdinalIgnoreCase);
+            });
+            foreach (var e in entries)
+            {
+                _favList.Items.Add(e.Display);
+                _favEntryKeys.Add(e.Key);
+            }
+            var empty = _favList.Items.Count == 0;
+            _favList.Visible = !empty;
+            _favEmpty.Visible = empty;
+        }
+        finally { _favList.EndUpdate(); }
+    }
+
+    private async Task ActivateFavoriteEntry()
+    {
+        if (_favList == null) return;
+        var i = _favList.SelectedIndex;
+        if (i < 0 || i >= _favEntryKeys.Count) return;
+        var key = _favEntryKeys[i];
+        var sep = key.IndexOf('|');
+        if (sep > 0 && sep < key.Length - 1)
+        {
+            var mapPath = key[..sep];
+            var objName = key[(sep + 1)..];
+            if (_map == null || !string.Equals(_map.Path, mapPath, StringComparison.OrdinalIgnoreCase))
+            {
+                SetStatus(L10n.T("favorites.objectNotVisible", "Favoriten-Objekt ist in der aktuellen Ansicht nicht sichtbar (ggf. Karte laden oder Filter leeren)."));
+                return;
+            }
+            var idx = _visible.FindIndex(o => string.Equals(o.Name, objName, StringComparison.OrdinalIgnoreCase));
+            if (idx < 0)
+            {
+                SetStatus(L10n.T("favorites.objectNotVisible", "Favoriten-Objekt ist in der aktuellen Ansicht nicht sichtbar (ggf. Karte laden oder Filter leeren)."));
+                return;
+            }
+            _canvas.SelectIndex(idx, centerOnSelection: true);
+            if (_grid.Rows.Count == _visible.Count && idx < _grid.Rows.Count)
+            {
+                _grid.ClearSelection();
+                _grid.Rows[idx].Selected = true;
+                _grid.CurrentCell = _grid.Rows[idx].Cells.Cast<DataGridViewCell>().FirstOrDefault(c => c.Visible) ?? _grid.Rows[idx].Cells[0];
+            }
+            SetStatus(L10n.T("favorites.objectSelected", "Favoriten-Objekt ausgewählt: ") + objName);
+            return;
+        }
+
+        if (_map != null && string.Equals(_map.Path, key, StringComparison.OrdinalIgnoreCase))
+        {
+            SetStatus(L10n.T("favorites.mapAlready", "Favoriten-Karte ist bereits geladen: ") + Path.GetFileName(key));
+            return;
+        }
+        var node = FindNodeByTag(_mapTree.Nodes, key);
+        if (node != null)
+        {
+            node.Parent?.Expand();
+            _mapTree.SelectedNode = node;
+            node.EnsureVisible();
+            return;
+        }
+        await LoadMapPathAsync(key);
+    }
+
+    // Clicking the active mode again (or pressing its key twice) switches it off.
+    private void SetMode(MapCanvas.EditMode mode) =>
+        _canvas.Mode = _canvas.Mode == mode ? MapCanvas.EditMode.None : mode;
 
     private void UpdateModeButtons()
     {
@@ -1928,6 +2059,7 @@ public sealed class MainForm : Form
             MapCanvas.EditMode.Move => "Bewegen",
             MapCanvas.EditMode.Rotate => "Drehen",
             MapCanvas.EditMode.Scale => "Skalieren",
+            MapCanvas.EditMode.None => L10n.T("info.modeNone", "Aus"),
             _ => "?",
         };
         _infoMode.Text = _canvas.EditingEnabled ? $"Modus: {mode}" : "Modus: Nur Ansicht";

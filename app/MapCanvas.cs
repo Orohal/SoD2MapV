@@ -23,7 +23,7 @@ namespace SoD2MapViewer;
         private PointF _panStartCenter;
 
         /// <summary>Current edit mode: Move (position), Rotate (yaw), Scale (uniform).</summary>
-        public enum EditMode { Move, Rotate, Scale }
+        public enum EditMode { None, Move, Rotate, Scale }
 
         private EditMode _mode = EditMode.Move;
 
@@ -818,7 +818,9 @@ namespace SoD2MapViewer;
         using var hudFont = new Font("Segoe UI", 10f);
         using var hudBrush = new SolidBrush(Color.FromArgb(205, 215, 230));
         var hud = string.Format(L10n.T("canvas.hud", "Zoom {0:0.000}   Zentrum [{1:0.#} / {2:0.#}] m   Modus {3}   Auswahl {4}   hover: {5}"),
-            _zoom, _center.X / 100, _center.Y / 100, Mode, Selection.Count, (_hover >= 0 ? Objects[_hover].Name : "–"));
+            _zoom, _center.X / 100, _center.Y / 100,
+            Mode == EditMode.None ? L10n.T("info.modeNone", "Aus") : Mode.ToString(),
+            Selection.Count, (_hover >= 0 ? Objects[_hover].Name : "–"));
         var hudSize = g.MeasureString(hud, hudFont);
         using var hudBg = new SolidBrush(Color.FromArgb(170, 20, 24, 30));
         g.FillRectangle(hudBg, 4, Height - hudSize.Height - 8, hudSize.Width + 12, hudSize.Height + 4);
@@ -865,7 +867,7 @@ namespace SoD2MapViewer;
         {
             bool ctrl = (ModifierKeys & Keys.Control) != 0;
             bool shift = (ModifierKeys & Keys.Shift) != 0;
-            int hit = EditingEnabled ? PickObject(e.Location) : -1;
+            int hit = EditingEnabled && Mode != EditMode.None ? PickObject(e.Location) : -1;
             // clicked inside the selected site's box (not on an object dot): drag the whole site group
             if (hit < 0 && EditingEnabled && Mode == EditMode.Move && _selectedSite >= 0 && InSiteBoxScreen(_selectedSite, e.Location))
                 hit = FirstSelectedIndex();

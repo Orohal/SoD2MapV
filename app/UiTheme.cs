@@ -201,6 +201,7 @@ public sealed class ShortcutHelpDialog : Form
         ("R", L10n.T("help.rotate", "Modus: Objekte drehen")),
         ("S", L10n.T("help.scale", "Modus: Objekte skalieren")),
         ("P", L10n.T("help.showCharacter", "Figur/Spielerposition anzeigen")),
+        ("V", L10n.T("help.meshViewer", "Mesh-Viewer öffnen")),
         ("F", L10n.T("help.fit", "Ansicht einpassen (Fit)")),
         (L10n.T("keys.ctrlZ", "Strg+Z"), L10n.T("help.undo", "Letzte Änderung rückgängig machen")),
         (L10n.T("keys.del", "Entf"), L10n.T("help.delete", "Auswahl löschen")),
