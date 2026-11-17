@@ -15,6 +15,8 @@ internal sealed class SessionStateData
     public string? PrimarySelectedName { get; set; }
     public List<string> FavoriteMaps { get; set; } = new();
     public List<string> FavoriteObjects { get; set; } = new();
+    public int BottomSplitHeight { get; set; } = 200;
+    public int FavSplitDistance { get; set; } = 80;
     public string? Language { get; set; } = "de";
 }
 

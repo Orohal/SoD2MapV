@@ -27,12 +27,12 @@ public sealed class MainForm : Form
     private readonly Button _btnModeRotate = null!;
     private readonly Button _btnModeScale = null!;
     private readonly ComboBox _cmbSnap = null!;
-    private readonly CheckBox _chkFavMaps = null!;
     private readonly Button _btnFavorites = null!;
     private readonly ToolStripMenuItem _miFavObjectsOnly = null!;
     private bool _favoriteUpdating;
     private PointF? _lastCursorWorld;
     private readonly Panel _legendHost = null!;
+    private readonly SplitContainer _bottomSplit = null!;
     private readonly Panel _favPanel = null!;
     private readonly ListBox _favList = null!;
     private readonly Label _favEmpty = null!;
@@ -159,7 +159,6 @@ public sealed class MainForm : Form
             }
             finally { _favoriteUpdating = false; }
             SaveSessionState();
-            UpdateMapFilterInfo();
             RefreshFavoritesPanel();
         };
         _legendHost = new Panel { Dock = DockStyle.Bottom, Height = 180, BackColor = Color.FromArgb(32, 34, 40) };
@@ -169,16 +168,10 @@ public sealed class MainForm : Form
             PlaceholderText = L10n.T("toolbar.mapFilterPlaceholder", "Karten filtern (Name enthält...)"),
         };
         _mapFilter.TextChanged += (s, e) => ApplyMapFilter();
-        _chkFavMaps = UiTheme.Check(L10n.T("toolbar.favMaps", "★ Nur Favoriten"));
-        _chkFavMaps.Dock = DockStyle.Top;
-        _chkFavMaps.BackColor = UiTheme.Surface;
-        _chkFavMaps.Padding = new Padding(6, 4, 4, 2);
-        _chkFavMaps.CheckedChanged += (s, e) => ApplyMapFilter();
 
         left.Controls.Add(_mapTree);
         left.Controls.Add(_legendHost);
         left.Controls.Add(_mapFilter);
-        left.Controls.Add(_chkFavMaps);
 
         // right: grid (top) + canvas (bottom)
         var right = new SplitContainer
@@ -421,7 +414,7 @@ public sealed class MainForm : Form
         FormClosing += (s, e) => SaveSessionState();
 
         // Bottom: ONE area that collects all status messages, plus a compact live info row
-        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 150, BackColor = UiTheme.SurfaceAlt };
+        var bottom = new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.SurfaceAlt };
         _status = new TextBox
         {
             Dock = DockStyle.Fill,
@@ -456,8 +449,8 @@ public sealed class MainForm : Form
         bottom.Controls.Add(infoRow);
         bottom.Controls.Add(logHeader);
 
-        // favorites panel (above the event log)
-        _favPanel = new Panel { Dock = DockStyle.Bottom, Height = 130, BackColor = UiTheme.SurfaceAlt };
+        // favorites panel (above the event log), both inside a resizable splitter
+        _favPanel = new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.SurfaceAlt };
         var favHeader = new Panel { Dock = DockStyle.Top, Height = 26, BackColor = Color.FromArgb(26, 28, 33) };
         favHeader.Controls.Add(UiTheme.Label(L10n.T("favorites.title", "★ Favoriten"), bold: true));
         _favList = new ListBox
@@ -485,9 +478,21 @@ public sealed class MainForm : Form
         _favPanel.Controls.Add(_favList);
         _favPanel.Controls.Add(favHeader);
 
+        _bottomSplit = new SplitContainer
+        {
+            Dock = DockStyle.Bottom,
+            Orientation = Orientation.Horizontal,
+            Height = Math.Clamp(_session.BottomSplitHeight, 120, 700),
+            Panel1MinSize = 40,
+            Panel2MinSize = 60,
+            BackColor = UiTheme.SurfaceAlt,
+        };
+        _bottomSplit.SplitterDistance = Math.Clamp(_session.FavSplitDistance, 40, _bottomSplit.Height - 60);
+        _bottomSplit.Panel1.Controls.Add(_favPanel);
+        _bottomSplit.Panel2.Controls.Add(bottom);
+
         Controls.Add(outer);
-        Controls.Add(_favPanel);
-        Controls.Add(bottom);
+        Controls.Add(_bottomSplit);
         Controls.Add(top);
 
         _canvas.ModeChanged += _ => { UpdateModeButtons(); UpdateInfo(); };
@@ -495,7 +500,6 @@ public sealed class MainForm : Form
         _canvas.SelectionChanged += _ => UpdateInfo();
         UpdateModeButtons();
         UpdateInfo();
-        UpdateMapFilterInfo();
         RefreshFavoritesPanel();
 
         // Set splitter distances once the form's actual size is known
@@ -584,10 +588,8 @@ public sealed class MainForm : Form
         {
             _mapTree.Nodes.Clear();
 
-            bool favOnly = _chkFavMaps.Checked;
             var filtered = _loader.MapPaths
-                .Where(m => (f.Length == 0 || m.Contains(f, StringComparison.OrdinalIgnoreCase))
-                            && (!favOnly || _session.FavoriteMaps.Contains(m)))
+                .Where(m => f.Length == 0 || m.Contains(f, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             // Group by region (known regions first, in MapRegions.All order, then "Other")
@@ -662,6 +664,11 @@ public sealed class MainForm : Form
             _session.LastGameDir = _loader.GameDirectory;
             _session.LastObjectFilter = _search?.Text;
             _session.LastMapFilter = _mapFilter?.Text;
+            if (_bottomSplit != null && !_bottomSplit.IsDisposed)
+            {
+                _session.BottomSplitHeight = _bottomSplit.Height;
+                _session.FavSplitDistance = _bottomSplit.SplitterDistance;
+            }
             if (_map != null) _session.LastMapPath = _map.Path;
             var sel = _canvas?.Selection;
             if (sel != null)
@@ -1073,7 +1080,6 @@ public sealed class MainForm : Form
         BalanceColumns();
         UiTheme.ApplyGrid(_grid);
         _canvas.SetObjects(_visible);
-        UpdateMapFilterInfo();
     }
 
     private void BalanceColumns()
@@ -1935,12 +1941,6 @@ public sealed class MainForm : Form
         if (names.Count == 0) { SetStatus("Nichts ausgewählt — bitte Zeilen oder Karten markieren."); return; }
         Clipboard.SetText(string.Join(Environment.NewLine, names));
         SetStatus($"{names.Count} Name(n) in die Zwischenablage kopiert.");
-    }
-
-    private void UpdateMapFilterInfo()
-    {
-        if (_chkFavMaps == null || _chkFavMaps.IsDisposed) return;
-        _chkFavMaps.Text = string.Format(L10n.T("toolbar.favMapsCount", "★ Nur Favoriten ({0})"), _session.FavoriteMaps.Count);
     }
 
     private void RefreshFavoritesPanel()
