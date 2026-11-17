@@ -12,7 +12,7 @@ namespace LiveCoords;
 internal static class Program
 {
     [STAThread]
-    private static void Main(string[] args)
+    private static int Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
 
@@ -29,10 +29,57 @@ internal static class Program
             {
                 Console.WriteLine($"[scan] 0x{hit.Address:X} Nachbarn: {string.Join(" | ", Array.ConvertAll(hit.Neighbours, v => v.ToString("0.##", CultureInfo.InvariantCulture)))}");
             }
-            return;
+            return 0;
         }
 
-        Application.Run(new OverlayForm());
+        // Tolerant scan: LiveCoords.exe --scannear <pid> <x> <y> <z> <tolCm> [maxHits]
+        if (args.Length >= 6 && args[0] == "--scannear")
+        {
+            int pid = int.Parse(args[1], CultureInfo.InvariantCulture);
+            float x = float.Parse(args[2], CultureInfo.InvariantCulture);
+            float y = float.Parse(args[3], CultureInfo.InvariantCulture);
+            float z = float.Parse(args[4], CultureInfo.InvariantCulture);
+            float tol = float.Parse(args[5], CultureInfo.InvariantCulture);
+            int maxHits = args.Length > 6 ? int.Parse(args[6], CultureInfo.InvariantCulture) : 5000;
+            var hits = MemoryScanner.FindNearTriple(pid, x, y, z, tol, maxHits);
+            Console.WriteLine($"[scannear] {hits.Count} Treffer (±{tol:0.#} cm) für ({x:0.##}, {y:0.##}, {z:0.##})");
+            foreach (var hit in hits)
+            {
+                Console.WriteLine($"[scannear] 0x{hit.Address:X}  Nachbarn: {string.Join(" | ", Array.ConvertAll(hit.Neighbours, v => v.ToString("0.##", CultureInfo.InvariantCulture)))}");
+            }
+            return 0;
+        }
+
+        // Auto-rescan: LiveCoords.exe --auto <pid> <x> <y> <z> <tolCm>
+        if (args.Length >= 6 && args[0] == "--auto")
+        {
+            int pid = int.Parse(args[1], CultureInfo.InvariantCulture);
+            float x = float.Parse(args[2], CultureInfo.InvariantCulture);
+            float y = float.Parse(args[3], CultureInfo.InvariantCulture);
+            float z = float.Parse(args[4], CultureInfo.InvariantCulture);
+            float tol = float.Parse(args[5], CultureInfo.InvariantCulture);
+            var found = MemoryScanner.FindPlayerCluster(pid, x, y, z, tol);
+            if (found == null)
+            {
+                Console.Error.WriteLine("[auto] kein Player-Cluster gefunden");
+                return 3;
+            }
+            Console.WriteLine($"[auto] Player-Cluster bei 0x{found.Value:X}");
+            Application.Run(new OverlayForm(pid, found.Value));
+            return 0;
+        }
+
+        // Live overlay: LiveCoords.exe --addr <hexAddress> [pid]
+        if (args.Length >= 2 && args[0] == "--addr")
+        {
+            long address = Convert.ToInt64(args[1].Replace("0x", ""), 16);
+            int pid = args.Length > 2 ? int.Parse(args[2], CultureInfo.InvariantCulture) : 9640;
+            Application.Run(new OverlayForm(pid, address));
+            return 0;
+        }
+
+        Application.Run(new OverlayForm(0, 0));
+        return 0;
     }
 }
 
@@ -41,9 +88,13 @@ internal sealed class OverlayForm : Form
     private readonly Label _coords;
     private readonly Label _hint;
     private readonly System.Windows.Forms.Timer _timer;
+    private readonly int _pid;
+    private readonly long _address;
 
-    public OverlayForm()
+    public OverlayForm(int pid, long address)
     {
+        _pid = pid;
+        _address = address;
         Text = "LiveCoords";
         FormBorderStyle = FormBorderStyle.None;
         BackColor = Color.Magenta;
@@ -68,7 +119,7 @@ internal sealed class OverlayForm : Form
         };
         _hint = new Label
         {
-            Text = "LiveCoords 0.1 — Position quasi REA",
+            Text = $"LiveCoords 0.1 — PID {pid} @ 0x{address:X}",
             ForeColor = Color.FromArgb(180, 200, 210),
             BackColor = Color.FromArgb(200, 20, 24, 30),
             Dock = DockStyle.Fill,
@@ -88,10 +139,32 @@ internal sealed class OverlayForm : Form
         _timer.Start();
     }
 
+    private static readonly string[] Compass =
+    {
+        "N", "NNO", "NO", "ONO", "O", "OSO", "SO", "SSO",
+        "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+    };
+
+    private static string Direction(float x, float y)
+    {
+        if (MathF.Abs(x) < 1f && MathF.Abs(y) < 1f) return "–";
+        double deg = Math.Atan2(y, x) * 180.0 / Math.PI;
+        if (deg < 0) deg += 360.0;
+        return Compass[(int)Math.Round(deg / 22.5) % 16];
+    }
+
     private void UpdateCoords()
     {
-        // Placeholder until the REA-discovered memory reader is wired in.
-        _coords.Text = "--,-- m  (N/O)";
+        try
+        {
+            var v = MemoryScanner.ReadTriple(_pid, _address);
+            float xm = v[0] / 100f, ym = v[1] / 100f, zm = v[2] / 100f;
+            _coords.Text = $"N {xm,9:0.#} m   O {ym,9:0.#} m   H {zm,7:0.#} m  ({Direction(v[0], v[1])})";
+        }
+        catch (Exception e)
+        {
+            _coords.Text = "Fehler: " + e.Message;
+        }
     }
 
     protected override void Dispose(bool disposing)

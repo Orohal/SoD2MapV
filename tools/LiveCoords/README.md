@@ -4,10 +4,27 @@ Ziel: **live Spielerkoordinaten im Spiel** anzeigen (für Mapper/Modder), als ei
 
 ## Status
 - [x] Projektgerüst (WinForms, net10.0-windows, transparentes Always-on-Top-Overlay)
-- [ ] REA: Spielerposition im Prozess `StateOfDecay2-Win64-Shipping.exe` finden
-- [ ] Memory-Reader (stabiler Offset/Pattern, Schedule alle ~250 ms)
-- [ ] Anzeige X/Y/Z in Metern + Himmelsrichtung (+X = Nord, +Y = Osten)
+- [x] Memory-Reader (read-only `ReadProcessMemory`, 250 ms Polling)
+- [x] Anzeige X/Y/Z in Metern + 16-teilige Himmelsrichtung (+X = Nord, +Y = Osten)
+- [x] Headless-Scanner: exakt (`--scan`), toleranzbasiert (`--scannear`), Auto-Cluster (`--auto`)
+- [x] Direkter Adress-Modus (`--addr`) für eine laufende Sitzung
+- [ ] Pointer-Pfad statt absoluter Adresse (überlebt Spiel-Neustart ohne Rescan)
 - [ ] Optional: Kopieren der Koordinaten per Klick
+
+## Bedienung
+
+```sh
+# Auto: Player-Cluster anhand der Save-Koordinaten finden und Overlay starten
+LiveCoords.exe --auto <pid> <saveX> <saveY> <saveZ> <tolCm>
+
+# Direkt: bekannte Adresse dieser Sitzung anzeigen
+LiveCoords.exe --addr 0x... <pid>
+
+# Nur scannen (kein Fenster)
+LiveCoords.exe --scannear <pid> <x> <y> <z> <tolCm> [maxHits]
+```
+
+Rechtsklick auf das Overlay → **Beenden**. Das Overlay ist `TopMost`; in echtem exklusivem Fullscreen wird es vom Spiel verdeckt (Borderless/„Fullscreen optimiert" funktioniert).
 
 ## Build
 ```sh
