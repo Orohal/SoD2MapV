@@ -1418,10 +1418,12 @@ public static class PlatformInjector
     public static string DerivePakEntryPath(string providerTilePath, string regionFolder)
     {
         var k = providerTilePath.Replace('\\', '/');
+        // Pak mount point is ../../../StateOfDecay2/Content/, so the entry must keep "maps/".
+        // Provider path is e.g. StateOfDecay2/Content/maps/faustite/faustite/tile.umap.
         var idx = k.IndexOf("maps/", StringComparison.OrdinalIgnoreCase);
-        if (idx >= 0) return k[(idx + "maps/".Length)..];
+        if (idx >= 0) return k[idx..];
         var mount = RegionToMountFolder(regionFolder);
-        return $"{mount}/{regionFolder}/{Path.GetFileName(k)}";
+        return $"maps/{mount}/{regionFolder}/{Path.GetFileName(k)}";
     }
 
     public static string DefaultInstallPakName(Result res)
