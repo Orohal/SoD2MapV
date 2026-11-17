@@ -205,6 +205,10 @@ internal static class MemoryScanner
             if (hit.Neighbours.Length < 5) continue;
             var v = new[] { hit.Neighbours[2], hit.Neighbours[3], hit.Neighbours[4] };
             if (!float.IsFinite(v[0]) || !float.IsFinite(v[1]) || !float.IsFinite(v[2])) continue;
+            // Reject zeros and values far outside the plausible world band around the seed.
+            if (MathF.Abs(v[0]) < 1f && MathF.Abs(v[1]) < 1f && MathF.Abs(v[2]) < 1f) continue;
+            if (MathF.Abs(v[0] - x) > tolerance || MathF.Abs(v[1] - y) > tolerance || MathF.Abs(v[2] - z) > tolerance) continue;
+
             var key = $"{v[0]:0.0}|{v[1]:0.0}|{v[2]:0.0}";
             if (groups.TryGetValue(key, out var g))
             {
@@ -224,11 +228,23 @@ internal static class MemoryScanner
             return p;
         }
 
+        // The player's coordinate is referenced by a handful of components (capsule, mesh,
+        // controller). Nav/grid points are referenced by dozens of actors and are static.
+        // Prefer small clusters (2..8 references) in the dynamic heap and penalise round values.
         var best = groups
-            .OrderByDescending(kv => kv.Value.Count - roundnessPenalty(kv.Value.V))
-            .ThenByDescending(kv => kv.Value.Count)
+            .Where(kv => kv.Value.Count >= 2 && kv.Value.Count <= 8)
+            .OrderBy(kv => kv.Value.Count)
+            .ThenBy(kv => roundnessPenalty(kv.Value.V))
             .FirstOrDefault();
-        return best.Value.Count == 0 ? null : best.Value.Address;
+        if (best.Value.Count != 0) return best.Value.Address;
+
+        // Fallback: any dynamic-heap address with the fewest references.
+        var fallback = groups
+            .Where(kv => kv.Value.Address >= 0x18000000000L)
+            .OrderBy(kv => kv.Value.Count)
+            .ThenBy(kv => roundnessPenalty(kv.Value.V))
+            .FirstOrDefault();
+        return fallback.Value.Count == 0 ? null : fallback.Value.Address;
     }
 
     private static bool Matches(ref byte[] b, int i, byte[] p)

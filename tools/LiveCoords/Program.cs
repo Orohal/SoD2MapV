@@ -91,6 +91,7 @@ internal sealed class OverlayForm : Form
     private readonly System.Windows.Forms.Timer _timer;
     private readonly int _pid;
     private readonly long _address;
+    private bool _keepTopMost;
 
     public OverlayForm(int pid, long address)
     {
@@ -129,6 +130,16 @@ internal sealed class OverlayForm : Form
         };
 
         var menu = new ContextMenuStrip();
+        var topItem = new ToolStripMenuItem("Immer oben: AUS") { CheckOnClick = true };
+        topItem.CheckedChanged += (_, _) =>
+        {
+            _keepTopMost = topItem.Checked;
+            topItem.Text = _keepTopMost ? "Immer oben: AN" : "Immer oben: AUS";
+            TopMost = _keepTopMost;
+            if (!_keepTopMost)
+                SetWindowPos(Handle, new IntPtr(-2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040); // HWND_NOTOPMOST
+        };
+        menu.Items.Add(topItem);
         menu.Items.Add("Beenden", null, (_, _) => Close());
 
         ContextMenuStrip = menu;
@@ -165,7 +176,8 @@ internal sealed class OverlayForm : Form
 
     private void UpdateCoords()
     {
-        ReassertTopMost();
+        // TopMost re-assert is opt-in so the overlay can be sent behind windows / closed.
+        if (_keepTopMost) ReassertTopMost();
         try
         {
             var v = MemoryScanner.ReadTriple(_pid, _address);
