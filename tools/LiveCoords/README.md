@@ -24,7 +24,7 @@ LiveCoords.exe --addr 0x... <pid>
 LiveCoords.exe --scannear <pid> <x> <y> <z> <tolCm> [maxHits]
 ```
 
-Rechtsklick auf das Overlay → **Beenden**. Das Overlay ist `TopMost`; in echtem exklusivem Fullscreen wird es vom Spiel verdeckt (Borderless/„Fullscreen optimiert" funktioniert).
+Rechtsklick auf das Overlay → **Beenden**. Das Overlay ist `TopMost` und behauptet seinen Status alle 250 ms erneut (`SetWindowPos(HWND_TOPMOST)`) — so bleibt es auch beim Fokuswechsel zum Spiel über dem Nvidia-Overlay-Container sichtbar. In echtem exklusivem Fullscreen wird es vom Spiel verdeckt (Fenster-/Borderless-Modus funktioniert).
 
 ## Build
 ```sh

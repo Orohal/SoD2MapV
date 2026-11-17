@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace LiveCoords;
@@ -139,6 +140,15 @@ internal sealed class OverlayForm : Form
         _timer.Start();
     }
 
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
+
+    private void ReassertTopMost()
+    {
+        // HWND_TOPMOST = -1; SWP_NOSIZE | SWP_NOMOVE | SWP_SHOWWINDOW
+        SetWindowPos(Handle, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040);
+    }
+
     private static readonly string[] Compass =
     {
         "N", "NNO", "NO", "ONO", "O", "OSO", "SO", "SSO",
@@ -155,6 +165,7 @@ internal sealed class OverlayForm : Form
 
     private void UpdateCoords()
     {
+        ReassertTopMost();
         try
         {
             var v = MemoryScanner.ReadTriple(_pid, _address);
