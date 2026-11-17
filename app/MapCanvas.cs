@@ -817,7 +817,8 @@ namespace SoD2MapViewer;
         // Compact HUD: the full shortcut list lives in the '? Hilfe' dialog now.
         using var hudFont = new Font("Segoe UI", 10f);
         using var hudBrush = new SolidBrush(Color.FromArgb(205, 215, 230));
-        var hud = $"Zoom {_zoom:0.000}   Zentrum [{_center.X / 100:0.#} / {_center.Y / 100:0.#}] m   Modus {Mode}   Auswahl {Selection.Count}   hover: {(_hover >= 0 ? Objects[_hover].Name : "–")}";
+        var hud = string.Format(L10n.T("canvas.hud", "Zoom {0:0.000}   Zentrum [{1:0.#} / {2:0.#}] m   Modus {3}   Auswahl {4}   hover: {5}"),
+            _zoom, _center.X / 100, _center.Y / 100, Mode, Selection.Count, (_hover >= 0 ? Objects[_hover].Name : "–"));
         var hudSize = g.MeasureString(hud, hudFont);
         using var hudBg = new SolidBrush(Color.FromArgb(170, 20, 24, 30));
         g.FillRectangle(hudBg, 4, Height - hudSize.Height - 8, hudSize.Width + 12, hudSize.Height + 4);
@@ -951,22 +952,24 @@ namespace SoD2MapViewer;
         {
             var o = Objects[_hover];
             var cm = new ContextMenuStrip { Renderer = UiTheme.MenuRenderer, ForeColor = UiTheme.Text };
-            cm.Items.Add("Position kopieren (cm)", null, (s, ev) => Clipboard.SetText($"{o.X:0},{o.Y:0},{o.Z:0}"));
-            cm.Items.Add("Position kopieren (m)", null, (s, ev) => Clipboard.SetText($"{o.X / 100:0.##},{o.Y / 100:0.##},{o.Z / 100:0.##}"));
+            cm.Items.Add(L10n.T("canvas.copyCm", "Position kopieren (cm)"), null, (s, ev) => Clipboard.SetText($"{o.X:0},{o.Y:0},{o.Z:0}"));
+            cm.Items.Add(L10n.T("canvas.copyM", "Position kopieren (m)"), null, (s, ev) => Clipboard.SetText($"{o.X / 100:0.##},{o.Y / 100:0.##},{o.Z / 100:0.##}"));
             cm.Items.Add("-");
-            cm.Items.Add("Modus: Bewegen (M)", null, (s, ev) => { Mode = EditMode.Move; Invalidate(); });
-            cm.Items.Add("Modus: Drehen (R)", null, (s, ev) => { Mode = EditMode.Rotate; Invalidate(); });
-            cm.Items.Add("Modus: Skalieren (S)", null, (s, ev) => { Mode = EditMode.Scale; Invalidate(); });
+            cm.Items.Add(L10n.T("canvas.modeMove", "Modus: Bewegen (M)"), null, (s, ev) => { Mode = EditMode.Move; Invalidate(); });
+            cm.Items.Add(L10n.T("canvas.modeRotate", "Modus: Drehen (R)"), null, (s, ev) => { Mode = EditMode.Rotate; Invalidate(); });
+            cm.Items.Add(L10n.T("canvas.modeScale", "Modus: Skalieren (S)"), null, (s, ev) => { Mode = EditMode.Scale; Invalidate(); });
             cm.Items.Add("-");
-            cm.Items.Add($"Hausgruppe auswählen ({HouseSelectRadiusCm / 100:0} m um Objekt)", null,
-                (s, ev) => SelectHouseGroup(_hover));
+            cm.Items.Add(string.Format(L10n.T("canvas.selectHouse", "Hausgruppe auswählen ({0:0} m um Objekt)"), HouseSelectRadiusCm / 100),
+                null, (s, ev) => SelectHouseGroup(_hover));
             if (_multi.Count > 0)
             {
-                cm.Items.Add("Auf Auswahl zoomen", null, (s, ev) => ZoomToSelection());
-                cm.Items.Add("Auswahl aufheben (Esc)", null, (s, ev) => ClearSelection());
+                cm.Items.Add(L10n.T("canvas.zoomSelection", "Auf Auswahl zoomen"), null, (s, ev) => ZoomToSelection());
+                cm.Items.Add(L10n.T("canvas.clearSelection", "Auswahl aufheben (Esc)"), null, (s, ev) => ClearSelection());
             }
             cm.Items.Add("-");
-            cm.Items.Add(Selection.Count > 1 ? $"Auswahl löschen ({Selection.Count}, Entf)" : "Objekt löschen (Entf)",
+            cm.Items.Add(Selection.Count > 1
+                ? string.Format(L10n.T("canvas.deleteSelection", "Auswahl löschen ({0}, Entf)"), Selection.Count)
+                : L10n.T("canvas.deleteObject", "Objekt löschen (Entf)"),
                 null, (s, ev) => DeleteSelection());
             cm.Show(this, e.Location);
         }
@@ -1082,8 +1085,11 @@ namespace SoD2MapViewer;
                 BgCalib.SetOverride(region.Key, cur.SX, cur.SY, newOx, newOy, asset);
                 BgMaps.ClearCache();
                 BgNudgeX = 0; BgNudgeY = 0;
-                _tip.SetToolTip(this, $"Hintergrund übernommen: ox={newOx:0} oy={newOy:0} cm");
-                System.Windows.Forms.MessageBox.Show($"Hintergrund übernommen:\nox = {newOx:0}\noy = {newOy:0} cm", "Feinjustierung", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
+                _tip.SetToolTip(this, string.Format(L10n.T("canvas.bgAppliedTip", "Hintergrund übernommen: ox={0} oy={1} cm"), newOx, newOy));
+                System.Windows.Forms.MessageBox.Show(
+                    string.Format(L10n.T("canvas.bgAppliedBody", "Hintergrund übernommen:\nox = {0}\noy = {1} cm"), newOx, newOy),
+                    L10n.T("canvas.fineTune", "Feinjustierung"),
+                    System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
                 Invalidate();
                 return;
             }
@@ -1230,7 +1236,7 @@ namespace SoD2MapViewer;
         {
             BgNudgeX = _bgNudgeStartX + (e.X - _panStart.X) / _zoom;
             BgNudgeY = _bgNudgeStartY + (e.Y - _panStart.Y) / _zoom;
-            _tip.SetToolTip(this, $"Hintergrund-Verschiebung: X={BgNudgeX:0} Y={BgNudgeY:0} cm  (loslassen = übernehmen)");
+            _tip.SetToolTip(this, string.Format(L10n.T("canvas.bgNudgeTip", "Hintergrund-Verschiebung: X={0} Y={1} cm  (loslassen = übernehmen)"), BgNudgeX, BgNudgeY));
             Invalidate();
             return;
         }

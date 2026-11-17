@@ -28,12 +28,12 @@ public sealed class InjectDialog : Form
         Height = 40,
     };
     private readonly Button _btnBrowseSave = new() { Text = "📁…", AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
-    private readonly Button _btnCopySave = new() { Text = "Kopie erstellen", AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
-    private readonly Button _btnNewGroup = new() { Text = "Neue Gruppe…", AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
-    private readonly Button _btnInject = new() { Text = "Einfügen", AutoSize = true };
-    private readonly Button _btnCalibrate = new() { Text = "Kalibrieren...", AutoSize = true };
-    private readonly Button _btnDeleteProbe = new() { Text = "Testfahrzeug löschen", AutoSize = true, Visible = false };
-    private readonly Button _btnCancel = new() { Text = "Schließen", AutoSize = true };
+    private readonly Button _btnCopySave = new() { Text = L10n.T("inject.copySave", "Kopie erstellen"), AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
+    private readonly Button _btnNewGroup = new() { Text = L10n.T("inject.newGroup", "Neue Gruppe…"), AutoSize = true, Margin = new Padding(4, 0, 0, 0) };
+    private readonly Button _btnInject = new() { Text = L10n.T("inject.inject", "Einfügen"), AutoSize = true };
+    private readonly Button _btnCalibrate = new() { Text = L10n.T("inject.calibrate", "Kalibrieren..."), AutoSize = true };
+    private readonly Button _btnDeleteProbe = new() { Text = L10n.T("inject.deleteProbe", "Testfahrzeug löschen"), AutoSize = true, Visible = false };
+    private readonly Button _btnCancel = new() { Text = L10n.T("dialog.close", "Schließen"), AutoSize = true };
 
     private FileInfo[] _saves = Array.Empty<FileInfo>();
     private FileInfo? _customSave;
@@ -41,7 +41,7 @@ public sealed class InjectDialog : Form
 
     public InjectDialog(PointF? worldCm, float? zCm = null, float defaultYawDeg = 0f, string? hint = null)
     {
-        Text = "Fahrzeug in Savegame einfügen";
+        Text = L10n.T("inject.title", "Fahrzeug in Savegame einfügen");
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = true;
         MinimizeBox = true;
@@ -69,11 +69,11 @@ public sealed class InjectDialog : Form
 
         var saveRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty };
         saveRow.Controls.AddRange(new Control[] { _cboSave, _btnBrowseSave, _btnCopySave, _btnNewGroup });
-        AddRow(0, "Savegame:", saveRow);
-        AddRow(1, "Fahrzeugklasse:", _cboClass);
-        AddRow(2, "Welt X/Y/Z (m):", _txtX, _txtY, _txtZ);
-        AddRow(3, "Yaw (Grad):", _txtYaw);
-        AddRow(4, "Kalibrier-Offset (m):", _txtDx, _txtDy, _txtDz);
+        AddRow(0, L10n.T("inject.savegame", "Savegame:"), saveRow);
+        AddRow(1, L10n.T("inject.vehicleClass", "Fahrzeugklasse:"), _cboClass);
+        AddRow(2, L10n.T("inject.worldXYZ", "Welt X/Y/Z (m):"), _txtX, _txtY, _txtZ);
+        AddRow(3, L10n.T("inject.yaw", "Yaw (Grad):"), _txtYaw);
+        AddRow(4, L10n.T("inject.calibOffset", "Kalibrier-Offset (m):"), _txtDx, _txtDy, _txtDz);
         layout.SetColumnSpan(_lblInfo, 4);
         layout.Controls.Add(_lblInfo, 0, 5);
         var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, Margin = new Padding(0) };

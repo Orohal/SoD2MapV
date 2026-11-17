@@ -23,4 +23,9 @@
     <EmbeddedResource Include="Assets\fandom_*.webp" LogicalName="%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="lang_de.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="lang_en.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

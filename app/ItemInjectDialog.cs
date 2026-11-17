@@ -41,16 +41,16 @@ public sealed class ItemInjectDialog : Form
     private readonly NumericUpDown _numStack = new() { Minimum = 1, Maximum = 99, Value = 1, Width = 80 };
     private readonly ListBox _lstItems = new() { Width = 520, Height = 110, IntegralHeight = false };
     private readonly Label _lblInfo = new() { AutoSize = true, ForeColor = Color.Gray, MaximumSize = new Size(540, 0) };
-    private readonly Button _btnInject = new() { Text = "Einfügen", AutoSize = true };
-    private readonly Button _btnAdd = new() { Text = "Hinzufügen", AutoSize = true };
-    private readonly Button _btnRemove = new() { Text = "Entfernen", AutoSize = true };
-    private readonly Button _btnLoadFromSave = new() { Text = "Items aus Save laden", AutoSize = true };
-    private readonly Button _btnLoadFromAllSaves = new() { Text = "Presets aus allen Saves", AutoSize = true };
-    private readonly Button _btnSavePreset = new() { Text = "Preset speichern", AutoSize = true };
-    private readonly Button _btnDeletePreset = new() { Text = "Preset löschen", AutoSize = true };
-    private readonly Button _btnCopySave = new() { Text = "Kopie erstellen", AutoSize = true };
-    private readonly Button _btnNewGroup = new() { Text = "Neue Gruppe…", AutoSize = true };
-    private readonly Button _btnCancel = new() { Text = "Schließen", AutoSize = true, DialogResult = DialogResult.Cancel };
+    private readonly Button _btnInject = new() { Text = L10n.T("inject.inject", "Einfügen"), AutoSize = true };
+    private readonly Button _btnAdd = new() { Text = L10n.T("item.add", "Hinzufügen"), AutoSize = true };
+    private readonly Button _btnRemove = new() { Text = L10n.T("item.remove", "Entfernen"), AutoSize = true };
+    private readonly Button _btnLoadFromSave = new() { Text = L10n.T("item.loadFromSave", "Items aus Save laden"), AutoSize = true };
+    private readonly Button _btnLoadFromAllSaves = new() { Text = L10n.T("item.presetsFromAllSaves", "Presets aus allen Saves"), AutoSize = true };
+    private readonly Button _btnSavePreset = new() { Text = L10n.T("item.savePreset", "Preset speichern"), AutoSize = true };
+    private readonly Button _btnDeletePreset = new() { Text = L10n.T("item.deletePreset", "Preset löschen"), AutoSize = true };
+    private readonly Button _btnCopySave = new() { Text = L10n.T("inject.copySave", "Kopie erstellen"), AutoSize = true };
+    private readonly Button _btnNewGroup = new() { Text = L10n.T("inject.newGroup", "Neue Gruppe…"), AutoSize = true };
+    private readonly Button _btnCancel = new() { Text = L10n.T("dialog.close", "Schließen"), AutoSize = true, DialogResult = DialogResult.Cancel };
 
     private FileInfo[] _saves = Array.Empty<FileInfo>();
     private FileInfo? _customSave;
@@ -60,7 +60,7 @@ public sealed class ItemInjectDialog : Form
 
     public ItemInjectDialog()
     {
-        Text = "Gegenstand in Survivor-Rucksack einfügen";
+        Text = L10n.T("item.title", "Gegenstand in Survivor-Rucksack einfügen");
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.Sizable;
         MaximizeBox = true;
@@ -90,26 +90,26 @@ public sealed class ItemInjectDialog : Form
         btnRefresh.Click += (s, e) => LoadSaves();
         btnBrowse.Click += (s, e) => BrowseSave();
         saveRow.Controls.AddRange(new Control[] { _cboSave, btnRefresh, btnBrowse, _btnCopySave, _btnNewGroup });
-        AddRow("Savegame:", saveRow);
+        AddRow(L10n.T("inject.savegame","Savegame:"), saveRow);
 
         _cboSave.SelectedIndexChanged += (s, e) => { UpdateInfo(); LoadItemsFromSelectedSave(auto: true); };
-        AddRow("Survivor-ID:", _txtSurvivor);
-        AddRow("", new Label { Text = "(-1 = LastPlayedSurvivorID)", AutoSize = true, ForeColor = Color.Gray, Margin = new Padding(0, 0, 0, 4) });
+        AddRow(L10n.T("item.survivorId","Survivor-ID:"), _txtSurvivor);
+        AddRow("", new Label { Text = L10n.T("item.survivorHint","(-1 = LastPlayedSurvivorID)"), AutoSize = true, ForeColor = Color.Gray, Margin = new Padding(0, 0, 0, 4) });
 
         LoadPersistentPresets();
         ResetPresets();
         _cboPreset.SelectedIndexChanged += (s, e) => ApplyPreset();
         var presetRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty };
         presetRow.Controls.AddRange(new Control[] { _cboPreset, _btnLoadFromSave, _btnLoadFromAllSaves, _btnSavePreset, _btnDeletePreset });
-        AddRow("Preset:", presetRow);
-        AddRow("Item-Typ:", _txtItemType);
-        AddRow("Class-Path:", _txtClass);
-        AddRow("Stack:", _numStack);
+        AddRow(L10n.T("item.preset","Preset:"), presetRow);
+        AddRow(L10n.T("item.itemType","Item-Typ:"), _txtItemType);
+        AddRow(L10n.T("item.classPath","Class-Path:"), _txtClass);
+        AddRow(L10n.T("item.stack","Stack:"), _numStack);
 
         var addRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty };
         addRow.Controls.AddRange(new Control[] { _btnAdd, _btnRemove });
         AddRow("", addRow);
-        AddRow("Items:", _lstItems);
+        AddRow(L10n.T("item.items","Items:"), _lstItems);
         AddRow("", _lblInfo);
 
         var buttons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0, 8, 0, 0) };
@@ -259,7 +259,7 @@ public sealed class ItemInjectDialog : Form
                 _cboPreset.Items.Add(p);
                 _seenPresetKeys.Add(p.ItemType + "\n" + p.ClassPath);
             }
-            _cboPreset.Items.Add("(Manuell)");
+            _cboPreset.Items.Add(L10n.T("item.manual","(Manuell)"));
             if (_cboPreset.Items.Count > 0) _cboPreset.SelectedIndex = 0;
         }
         finally { _cboPreset.EndUpdate(); }
@@ -378,7 +378,7 @@ public sealed class ItemInjectDialog : Form
         try
         {
             var items = Savegame.ReadItemClasses(sav);
-            var manual = _cboPreset.Items.OfType<string>().FirstOrDefault(s => s == "(Manuell)");
+            var manualLabel = L10n.T("item.manual","(Manuell)"); var manual = _cboPreset.Items.OfType<string>().FirstOrDefault(s => s == manualLabel);
             var selType = _txtItemType.Text.Trim();
             var selClass = _txtClass.Text.Trim();
             _cboPreset.BeginUpdate();
@@ -405,7 +405,7 @@ public sealed class ItemInjectDialog : Form
                 }
                 keptPresets.Sort((a, b) => string.Compare(a.Label, b.Label, StringComparison.OrdinalIgnoreCase));
                 foreach (var p in keptPresets) _cboPreset.Items.Add(p);
-                if (manual != null) _cboPreset.Items.Add(manual); else _cboPreset.Items.Add("(Manuell)");
+                if (manual != null) _cboPreset.Items.Add(manual); else _cboPreset.Items.Add(L10n.T("item.manual","(Manuell)"));
                 // restore selection if possible
                 int sel = -1;
                 for (int i = 0; i < _cboPreset.Items.Count; i++)

@@ -15,6 +15,7 @@ internal sealed class SessionStateData
     public string? PrimarySelectedName { get; set; }
     public List<string> FavoriteMaps { get; set; } = new();
     public List<string> FavoriteObjects { get; set; } = new();
+    public string? Language { get; set; } = "de";
 }
 
 internal static class SessionState

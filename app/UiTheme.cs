@@ -190,53 +190,54 @@ public static class UiTheme
     }
 }
 
-/// <summary>Small German cheat sheet for the viewer/editor shortcuts.</summary>
+/// <summary>Small cheat sheet for the viewer/editor shortcuts.</summary>
 public sealed class ShortcutHelpDialog : Form
 {
-    private static readonly (string Key, string Meaning)[] Entries =
+    private static (string Key, string Meaning)[] GetEntries() => new[]
     {
-        ("M", "Modus: Objekte bewegen"),
-        ("R", "Modus: Objekte drehen"),
-        ("S", "Modus: Objekte skalieren"),
-        ("F", "Ansicht einpassen (Fit)"),
-        ("Strg+Z", "Letzte Änderung rückgängig machen"),
-        ("Entf", "Auswahl löschen"),
-        ("Esc", "Auswahl aufheben"),
-        ("Mausrad / Doppelklick", "Zoomen"),
-        ("Ziehen", "Ansicht verschieben (bzw. Objekt im Bearbeitungsmodus)"),
-        ("Strg+Klick", "Mehrfachauswahl umschalten"),
-        ("Shift+Ziehen", "Auswahlrechteck"),
-        ("Rechtsklick", "Hausgruppe auswählen / Objektmenü / Position einfügen"),
-        ("Bearbeiten-Checkbox", "Objekte ziehen erst aktivieren"),
+        ("M", L10n.T("help.move", "Modus: Objekte bewegen")),
+        ("R", L10n.T("help.rotate", "Modus: Objekte drehen")),
+        ("S", L10n.T("help.scale", "Modus: Objekte skalieren")),
+        ("F", L10n.T("help.fit", "Ansicht einpassen (Fit)")),
+        (L10n.T("keys.ctrlZ", "Strg+Z"), L10n.T("help.undo", "Letzte Änderung rückgängig machen")),
+        (L10n.T("keys.del", "Entf"), L10n.T("help.delete", "Auswahl löschen")),
+        (L10n.T("keys.esc", "Esc"), L10n.T("help.clearSelection", "Auswahl aufheben")),
+        (L10n.T("keys.wheel", "Mausrad / Doppelklick"), L10n.T("help.zoom", "Zoomen")),
+        (L10n.T("keys.drag", "Ziehen"), L10n.T("help.pan", "Ansicht verschieben (bzw. Objekt im Bearbeitungsmodus)")),
+        (L10n.T("keys.ctrlClick", "Strg+Klick"), L10n.T("help.multiSelect", "Mehrfachauswahl umschalten")),
+        (L10n.T("keys.shiftDrag", "Shift+Ziehen"), L10n.T("help.boxSelect", "Auswahlrechteck")),
+        (L10n.T("keys.rightClick", "Rechtsklick"), L10n.T("help.rightClick", "Hausgruppe auswählen / Objektmenü / Position einfügen")),
+        (L10n.T("keys.editCheck", "Bearbeiten-Checkbox"), L10n.T("help.editEnable", "Objekte ziehen erst aktivieren")),
     };
 
     public ShortcutHelpDialog()
     {
         UiTheme.Apply(this);
-        Text = "Bedienung & Tastenkürzel";
+        Text = L10n.T("dialog.helpTitle", "Bedienung & Tastenkürzel");
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(470, 440);
         ClientSize = new Size(520, 470);
 
+        var entries = GetEntries();
         var table = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = Entries.Length + 1,
+            RowCount = entries.Length + 1,
             Padding = new Padding(12),
             AutoScroll = true,
         };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         table.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-        table.Controls.Add(UiTheme.Label("Taste", bold: true), 0, 0);
-        table.Controls.Add(UiTheme.Label("Funktion", bold: true), 1, 0);
-        for (int i = 0; i < Entries.Length; i++)
+        table.Controls.Add(UiTheme.Label(L10n.T("help.key", "Taste"), bold: true), 0, 0);
+        table.Controls.Add(UiTheme.Label(L10n.T("help.function", "Funktion"), bold: true), 1, 0);
+        for (int i = 0; i < entries.Length; i++)
         {
             table.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
             var key = new Label
             {
-                Text = Entries[i].Key,
+                Text = entries[i].Key,
                 AutoSize = true,
                 Font = UiTheme.DataFont,
                 ForeColor = UiTheme.Accent,
@@ -244,7 +245,7 @@ public sealed class ShortcutHelpDialog : Form
             };
             var desc = new Label
             {
-                Text = Entries[i].Meaning,
+                Text = entries[i].Meaning,
                 AutoSize = true,
                 Font = UiTheme.UiFont,
                 ForeColor = UiTheme.Text,
@@ -253,7 +254,7 @@ public sealed class ShortcutHelpDialog : Form
             table.Controls.Add(key, 0, i + 1);
             table.Controls.Add(desc, 1, i + 1);
         }
-        var close = UiTheme.Button("Schließen");
+        var close = UiTheme.Button(L10n.T("dialog.close", "Schließen"));
         close.DialogResult = DialogResult.OK;
         close.Dock = DockStyle.Bottom;
         close.Height = 34;

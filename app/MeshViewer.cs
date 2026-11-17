@@ -1181,8 +1181,8 @@ public static class MeshViewer
     {
         private readonly DefaultFileProvider _provider;
         private readonly ComboBox _cmb = new() { DropDownStyle = ComboBoxStyle.DropDown, Width = 520 };
-        private readonly Button _btnLoad = new() { Text = "Laden", AutoSize = true, Height = 28 };
-        private readonly Button _btnSearch = new() { Text = "Suche...", AutoSize = true, Height = 28 };
+        private readonly Button _btnLoad = new() { Text = L10n.T("mesh.load","Laden"), AutoSize = true, Height = 28 };
+        private readonly Button _btnSearch = new() { Text = L10n.T("mesh.search","Suche..."), AutoSize = true, Height = 28 };
         private readonly MeshPanel _panel = new();
         private readonly Label _lblInfo = new() { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Gainsboro, Padding = new Padding(6, 4, 6, 4) };
         private readonly Label _lblStatus = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 22, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.LightGray, BackColor = Color.FromArgb(30, 32, 38), Padding = new Padding(6, 2, 6, 2) };
@@ -1190,7 +1190,7 @@ public static class MeshViewer
         public MeshViewDialog(DefaultFileProvider provider)
         {
             _provider = provider;
-            Text = "Mesh-Viewer";
+            Text = L10n.T("mesh.title","Mesh-Viewer");
             Size = new Size(1000, 720);
             StartPosition = FormStartPosition.CenterParent;
             BackColor = Color.FromArgb(38, 40, 48);
@@ -1199,7 +1199,7 @@ public static class MeshViewer
             KeyPreview = true;
 
             var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 40, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(8, 6, 8, 6), BackColor = Color.FromArgb(38, 40, 48) };
-            top.Controls.Add(new Label { Text = "Asset:", AutoSize = true, ForeColor = Color.Gainsboro, Margin = new Padding(0, 6, 4, 0) });
+            top.Controls.Add(new Label { Text = L10n.T("mesh.asset","Asset:"), AutoSize = true, ForeColor = Color.Gainsboro, Margin = new Padding(0, 6, 4, 0) });
             foreach (var p in Presets) _cmb.Items.Add(p.Query);
             _cmb.Text = Presets[0].Query;
             top.Controls.Add(_cmb);
@@ -1239,14 +1239,14 @@ public static class MeshViewer
             if (q.Length == 0) return;
             try
             {
-                _lblStatus.Text = "Lade...";
+                _lblStatus.Text = L10n.T("mesh.loading","Lade...");
                 Cursor = Cursors.WaitCursor;
                 var (mesh, err) = LoadMesh(_provider, q);
                 if (mesh == null)
                 {
                     _panel.SetMesh(null);
                     _lblInfo.Text = "";
-                    _lblStatus.Text = "Fehler: " + (err ?? "unbekannt");
+                    _lblStatus.Text = L10n.T("mesh.error","Fehler: ") + (err ?? L10n.T("mesh.unknown","unbekannt"));
                     return;
                 }
                 _panel.SetMesh(mesh);
@@ -1259,7 +1259,7 @@ public static class MeshViewer
             }
             catch (Exception e)
             {
-                _lblStatus.Text = "Fehler: " + e.Message;
+                _lblStatus.Text = L10n.T("mesh.error","Fehler: ") + e.Message;
             }
             finally { Cursor = Cursors.Default; }
         }
@@ -1272,16 +1272,16 @@ public static class MeshViewer
         private readonly DefaultFileProvider _provider;
         private readonly Action<string> _onAccept;
         private readonly TextBox _txtFilter = new() { Width = 420 };
-        private readonly Button _btnSearch = new() { Text = "Suchen", AutoSize = true, Height = 28 };
+        private readonly Button _btnSearch = new() { Text = L10n.T("mesh.searchBtn","Suchen"), AutoSize = true, Height = 28 };
         private readonly ListBox _lst = new() { IntegralHeight = false };
-        private readonly Button _btnAccept = new() { Text = "Übernehmen", AutoSize = true, Height = 28 };
+        private readonly Button _btnAccept = new() { Text = L10n.T("mesh.accept","Übernehmen"), AutoSize = true, Height = 28 };
         private readonly Label _lblCount = new() { AutoSize = true, ForeColor = Color.LightGray, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(0, 6, 0, 0) };
 
         public MeshSearchDialog(DefaultFileProvider provider, Action<string> onAccept)
         {
             _provider = provider;
             _onAccept = onAccept;
-            Text = "Mesh-Suche";
+            Text = L10n.T("mesh.searchTitle","Mesh-Suche");
             Size = new Size(900, 520);
             MinimumSize = new Size(700, 420);
             StartPosition = FormStartPosition.CenterParent;
@@ -1291,7 +1291,7 @@ public static class MeshViewer
             KeyPreview = true;
 
             var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 40, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(8, 6, 8, 6), BackColor = Color.FromArgb(38, 40, 48) };
-            top.Controls.Add(new Label { Text = "Filter:", AutoSize = true, ForeColor = Color.Gainsboro, Margin = new Padding(0, 6, 4, 0) });
+            top.Controls.Add(new Label { Text = L10n.T("mesh.filter","Filter:"), AutoSize = true, ForeColor = Color.Gainsboro, Margin = new Padding(0, 6, 4, 0) });
             top.Controls.Add(_txtFilter);
             top.Controls.Add(_btnSearch);
 
@@ -1315,7 +1315,7 @@ public static class MeshViewer
             _lst.DoubleClick += (_, _) => AcceptSelected();
             _lst.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { AcceptSelected(); e.Handled = true; e.SuppressKeyPress = true; } };
 
-            _lblCount.Text = "0 Treffer (max 200)";
+            _lblCount.Text = string.Format(L10n.T("mesh.hits","{0} Treffer (max 200)"), 0);
         }
 
         private void DoSearch()
@@ -1328,7 +1328,7 @@ public static class MeshViewer
                 _lst.Items.Clear();
                 var results = SearchAssets(_provider, filter, 200);
                 foreach (var r in results) _lst.Items.Add(r);
-                _lblCount.Text = $"{results.Count} Treffer (max 200)";
+                _lblCount.Text = string.Format(L10n.T("mesh.hits","{0} Treffer (max 200)"), results.Count);
                 if (_lst.Items.Count > 0) _lst.SelectedIndex = 0;
             }
             finally
@@ -1366,7 +1366,7 @@ public static class MeshViewer
             base.OnPaint(e);
             if (_mesh == null)
             {
-                TextRenderer.DrawText(e.Graphics, "Kein Mesh geladen.", Font, ClientRectangle, Color.Gray, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                TextRenderer.DrawText(e.Graphics, L10n.T("mesh.noMesh","Kein Mesh geladen."), Font, ClientRectangle, Color.Gray, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 return;
             }
             // draw into bitmap-less path: render onto graphics copy

@@ -19,10 +19,10 @@ public sealed class PlatformInjectDialog : Form
     private readonly TextBox _txtHeight = new() { Width = 70, Text = "50" };
     private readonly TextBox _txtSave = new() { Width = 420, ReadOnly = true };
     private readonly Button _btnBrowseSave = new() { Text = "…", AutoSize = true };
-    private readonly Button _btnRun = new() { Text = "Plattform erzeugen", AutoSize = true };
-    private readonly Button _btnInstall = new() { Text = "In Spiel installieren", AutoSize = true, Enabled = false };
-    private readonly Button _btnSavePak = new() { Text = "Pak nur erzeugen…", AutoSize = true, Enabled = false };
-    private readonly Button _btnClose = new() { Text = "Schließen", AutoSize = true };
+    private readonly Button _btnRun = new() { Text = L10n.T("platform.create","Plattform erzeugen"), AutoSize = true };
+    private readonly Button _btnInstall = new() { Text = L10n.T("platform.install","In Spiel installieren"), AutoSize = true, Enabled = false };
+    private readonly Button _btnSavePak = new() { Text = L10n.T("platform.savePak","Pak nur erzeugen…"), AutoSize = true, Enabled = false };
+    private readonly Button _btnClose = new() { Text = L10n.T("dialog.close","Schließen"), AutoSize = true };
     private readonly TextBox _txtLog = new()
     {
         Multiline = true,
@@ -43,7 +43,7 @@ public sealed class PlatformInjectDialog : Form
         _provider = provider;
         _gameDir = gameDir;
 
-        Text = "Plattform an Spieler-Position";
+        Text = L10n.T("platform.title","Plattform an Spieler-Position");
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(720, 520);
         ClientSize = new Size(780, 560);
@@ -54,7 +54,7 @@ public sealed class PlatformInjectDialog : Form
         int row = 0;
         void L(string t, int c, int r) => top.Controls.Add(new Label { Text = t, AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(0, 6, 6, 0) }, c, r);
 
-        L("Savegame:", 0, row);
+        L(L10n.T("inject.savegame","Savegame:"), 0, row);
         var savePanel = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty };
         savePanel.Controls.Add(_txtSave);
         savePanel.Controls.Add(_btnBrowseSave);
@@ -62,15 +62,15 @@ public sealed class PlatformInjectDialog : Form
         top.SetColumnSpan(savePanel, 5);
         row++;
 
-        L("Größe (m):", 0, row);
+        L(L10n.T("platform.size","Größe (m):"), 0, row);
         var sizePanel = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty };
         sizePanel.Controls.Add(_txtSizeX);
         sizePanel.Controls.Add(new Label { Text = "x", AutoSize = true, Margin = new Padding(4, 6, 4, 0) });
         sizePanel.Controls.Add(_txtSizeY);
-        sizePanel.Controls.Add(new Label { Text = "(Standard 30x30)", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(8, 6, 0, 0) });
+        sizePanel.Controls.Add(new Label { Text = L10n.T("platform.defaultSize","(Standard 30x30)"), AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(8, 6, 0, 0) });
         top.Controls.Add(sizePanel, 1, row);
-        L("Yaw (°, + dreht nach West):", 2, row); top.Controls.Add(_txtYaw, 3, row);
-        L("Höhenoffset (cm):", 4, row); top.Controls.Add(_txtHeight, 5, row);
+        L(L10n.T("platform.yaw","Yaw (°, + dreht nach West):"), 2, row); top.Controls.Add(_txtYaw, 3, row);
+        L(L10n.T("platform.heightOffset","Höhenoffset (cm):"), 4, row); top.Controls.Add(_txtHeight, 5, row);
         row++;
 
         var hint = new Label
