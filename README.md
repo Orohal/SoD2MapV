@@ -4,12 +4,12 @@ Nativer Windows-Map-Viewer/-Editor für **State of Decay 2** (UE4) — C# / WinF
 
 <a href="https://www.buymeacoffee.com/Orohal" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-**Aktueller Stand: [v0.6.6](https://github.com/Orohal/SoD2MapV/releases/latest)** - Viewer + Voll-Editor + Fahrzeug- & **Item-Injektion** (GUI/CLI, Presets aus Save, persistent) + **Häuser/Objekte & Sites verschieben** (Gruppen-Auswahl, Undo, **Chunk-Patch-Export** für spielwirksame Tile-Mods, **Auto-Multi-Map**: Tile + `<region>_sites.umap` automatisch in einem Patch) + **Höhenanpassung (Z)** + **versetzte Sites vollständig claimbar im Spiel** (Tag-DB-Patch + Kind-Actor-Frame-Fix, ingame verifiziert) + **Plattform an Spieler-Position injizieren** (30×30-m-Betonplattform per Klick an die Save-Position, dichte-basierte Kachelwahl, ingame verifiziert; `--injectplatformauto`/`--patchsmc`) + **regionweite Site-Auswahl** (Klick auf den Regions-Knoten in der Map-Liste listet alle Sites aller Tiles; Auswahl lädt die Tile automatisch) + **Neue Gruppe** (Kopie einer Community mit neuer Identität als eigenen Spielstand anlegen — ingame verifiziert; „Neue Gruppe…"-Button in beiden Inject-Dialogen, CLI `--saveclone`) + **Session-Wiederherstellung** + **Koordinaten-Fix** (Welt vs. Kachel-lokal für Spieler-Marker, Ansicht, Injektion) + **Funktion-Actoren** (Outpost-/Homesite-Interactables wandern mit dem Gebäude) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen, automatisch verankert) + **tgc-Site/Outpostable-Overlay** (claimbare Gebäude an ihren echten Positionen, klickbar in Box **und** Name). Details: [Repo-Status](#repo-status--versionshistorie) (eingeklappt).
+**Aktueller Stand: [v0.6.9](https://github.com/Orohal/SoD2MapV/releases/latest)** - Viewer + Voll-Editor + Fahrzeug- & **Item-Injektion** (GUI/CLI, Presets aus Save, persistent) + **Häuser/Objekte & Sites verschieben** (Gruppen-Auswahl, Undo, **Chunk-Patch-Export** für spielwirksame Tile-Mods, **Auto-Multi-Map**: Tile + `<region>_sites.umap` automatisch in einem Patch) + **Höhenanpassung (Z)** + **versetzte Sites vollständig claimbar im Spiel** (Tag-DB-Patch + Kind-Actor-Frame-Fix, ingame verifiziert) + **Plattform an Spieler-Position injizieren** (30×30-m-Betonplattform per Klick an die Save-Position, dichte-basierte Kachelwahl, ingame verifiziert; `--injectplatformauto`/`--patchsmc`) + **regionweite Site-Auswahl** (Klick auf den Regions-Knoten in der Map-Liste listet alle Sites aller Tiles; Auswahl lädt die Tile automatisch) + **Neue Gruppe** (Kopie einer Community mit neuer Identität als eigenen Spielstand anlegen — ingame verifiziert; „Neue Gruppe…"-Button in beiden Inject-Dialogen, CLI `--saveclone`) + **Session-Wiederherstellung** + **Koordinaten-Fix** (Welt vs. Kachel-lokal für Spieler-Marker, Ansicht, Injektion) + **Funktion-Actoren** (Outpost-/Homesite-Interactables wandern mit dem Gebäude) + **eigene Vektor-Basemap** (offline, aus den Ingame-`MapBackgroundData`-Assets, alle 5 Regionen, automatisch verankert) + **tgc-Site/Outpostable-Overlay** (claimbare Gebäude an ihren echten Positionen, klickbar in Box **und** Name). + **Mesh-Viewer mit Asset-Suche** (GUI-Button, `--meshview`/`--meshsearch`: Meshes drehen/zoomen, Bounds in cm, Batterie an Karten-Assets) + **umschaltbare Sprache DE/EN** (JSON-Wörterbücher neben der EXE, Umschalter startet den Viewer neu) + **Favoriten-Panel** unten (Karten/Objekte markieren, Doppelklick lädt/selectet; Größen des Bereichs ziehbar) + **Plattform-Mesh-Override-Fallback** (wenn keine scale-fähigen Slab-Actoren existieren: eindeutig verwendetes Mesh im Mod-Pak überschreiben) + **Modus-Abwahl** (M/R/S nochmal = aus) + **P** (Figur anzeigen) / **V** (Mesh-Viewer). Details: [Repo-Status](#repo-status--versionshistorie) (eingeklappt).
 
 ![Beschreibung des Bildes](https://github.com/Orohal/SoD2MapV/blob/main/nexus/sod2MY.jpg)
 ## Features
 
-- **888 Karten** aus allen 35 PAKs, fehlerfrei lesbar (eigener LZ4-Linked-Blocks-Decoder)
+- **890 Karten** aus allen 35 PAKs, fehlerfrei lesbar (eigener LZ4-Linked-Blocks-Decoder)
 - **2D-Top-Down-Viewer**: Objekte mit Positionen; Grid, Suchfilter, Legende
 - **Voller Editor**: verschieben / rotieren / skalieren / löschen per Drag & Drop, Undo, Export als Mod-`.pak`
 - **Haus-Gruppen verschieben**: Rechtsklick auf ein Haus (oder Auswahl im **„House:"**-Dropdown) wählt Haus-Prefab + alle Objekte im 40-m-Umkreis als Gruppe, gemeinsamer Drag, Undo, Export als Mod-`.pak` (Autofit auf die Auswahl)
@@ -46,6 +46,11 @@ Was beim Injizieren passiert (pro Item):
 
 </details>
 
+- **Mini-Mesh-Viewer**: softwaregerendertes 3D-Preview (Orbit/Zoom, Bounds in cm, Vertex/Triangle-Count) für `UStaticMesh`/`USkeletalMesh` inkl. Blueprint-Fallback; **„Suche..."** durchsucht alle gemounteten Assets (GUI) — headless: `--meshview <gameDir> <asset> <out.png>` und `--meshsearch <gameDir> <filter> [limit]`
+- **Sprache DE/EN**: Button „🌐 DE/EN" in der Toolbar; die Wörterbücher `lang_de.json`/`lang_en.json` liegen neben der EXE und sind ohne Rebuild editierbar. Der Viewer startet beim Wechsel automatisch neu.
+- **Favoriten**: Checkboxen in der Kartenliste + „★ Favoriten"-Menü in der Objekt-Tabelle (markieren/entfernen/nur Favoriten/Namen kopieren); das **Favoriten-Panel** unten listet alles zentral (Doppelklick lädt die Karte bzw. selektiert das Objekt). Panelhöhe per Splitter ziehbar.
+- **Bedienung**: Modus-Buttons und `M`/`R`/`S` sind abwählbar („Aus"), `P` zeigt die Spielerposition, `V` öffnet den Mesh-Viewer; „? Hilfe" listet alle Kürzel.
+- **Plattform-Fallback**: Fehlen scale-fähige Boden-Actoren, wird ein eindeutig verwendetes Mesh (`asphalt_slab_01`, ~14,8 × 14,8 m) im Mod-Pak überschrieben und nur der Actor verschoben — inklusive Pfad-/Parent-Chain- und Bounds-Prüfung.
 - Headless-CLI für alle Funktionen (siehe unten)
 
 ## To do
@@ -62,6 +67,7 @@ Ausführliche Anleitung (Viewer, Editor, Modding-Workflow, CLI, Fehlerbehebung) 
 - [GUI & Bedienung](https://github.com/Orohal/SoD2MapV/wiki/GUI)
 - [Modding-Workflow (Objekte/Sites verschieben, PAK-Export)](https://github.com/Orohal/SoD2MapV/wiki/Modding-Workflow)
 - [CLI (Headless-Modi)](https://github.com/Orohal/SoD2MapV/wiki/CLI)
+- [Mesh-Viewer, Favoriten & Sprache](https://github.com/Orohal/SoD2MapV/wiki/Mesh-Viewer-und-Favoriten) (Quelle: [`docs/Mesh-Viewer-und-Favoriten.md`](docs/Mesh-Viewer-und-Favoriten.md))
 - [Fehlerbehebung](https://github.com/Orohal/SoD2MapV/wiki/Troubleshooting)
 
 Quelltext der Doku liegt zusätzlich in [`docs/`](docs/) im Repo.
@@ -85,7 +91,9 @@ dotnet app/bin/Release/net10.0-windows/SoD2MapViewer.dll
 | Taste | Aktion |
 |-------|--------|
 | Drag | Objekt bearbeiten (je nach Modus) |
-| `M` / `R` / `S` | Modus: Move / Rotate / Scale |
+| `M` / `R` / `S` | Modus: Move / Rotate / Scale (nochmal drücken = Modus aus) |
+| `P` | Figur/Spielerposition anzeigen |
+| `V` | Mesh-Viewer öffnen |
 | `Entf` | Objekt als gelöscht markieren |
 | `Ctrl+Z` | Undo |
 | `F` | Fit auf alle Objekte |
@@ -133,7 +141,7 @@ Toolbar **„Hintergrundkarte (Spiel-Asset)"** — blendet die eigene Vektor-Kar
 <summary><b>Headless-Modi (CLI)</b></summary>
 
 ```sh
-# Alle 888 Karten parsen und Erfolg/Fehler zusammenfassen
+# Alle 890 Karten parsen und Erfolg/Fehler zusammenfassen
 SoD2MapViewer.exe --smoke-all "D:\Games\State of Decay 2\StateOfDecay2"
 
 # Die ersten Karten parsen und Objekte mit Positionen ausgeben
@@ -187,11 +195,18 @@ SoD2MapViewer.exe --saves
 # Spielerposition aus dem Save lesen (cm + Archetyp)
 SoD2MapViewer.exe --playerpos <save.sav>
 
+# Mesh-Viewer headless: MeshesRepository-Pfad oder Kurzname, shaded PNG + Bounds (cm) auf stdout
+SoD2MapViewer.exe --meshview "<gameDir>" asphalt_slab_01 out.png [yawDeg] [pitchDeg]
+
+# Asset-Suche über alle gemounteten Pak-Dateien (z. B. antenna, wall, tower)
+SoD2MapViewer.exe --meshsearch "<gameDir>" tower 40
+
 # Bestehenden Actor-Component in-place patchen (1-basierter Export-Index; nur RelativeLocation/
 # RelativeRotation/RelativeScale3D werden überschrieben — bewährt für Teleport/Scale-Mods)
 SoD2MapViewer.exe --patchsmc <in.umap> <out.umap> <export1> <x> <y> <z> [pitch yaw roll] [sx sy sz]
 
-# Gepatchte .umap als Mod-Pak bauen (Entry-Pfad muss dem Original-Tile entsprechen)
+# Gepatchte .umap als Mod-Pak bauen (Entry-Pfad MUSS das "maps/"-Präfix enthalten,
+# sonst wird die Datei unter einem zweiten, unbenutzten Asset-Pfad abgelegt)
 SoD2MapViewer.exe --packumap <in.umap> <out.pak> maps/<region>/<region>/<tile>.umap
 
 # Roundtrip-Verifikation (Ergebnis muss byte-identisch sein)
@@ -211,7 +226,7 @@ SoD2MapViewer.exe --injectplatformauto "<gameDir>" [savePath] [sizeM] [yawDeg] [
 |---|---|
 | GUI | C# / WinForms (`net10.0-windows`) |
 | Pak-Mounting & Asset-Parsing | [CUE4Parse](https://github.com/FabianFG/CUE4Parse) (`EGame.GAME_StateOfDecay2`) |
-| LZ4 Linked Blocks | eigener sequenzieller Decoder (`app/Lz4Linked.cs`) — SoD2 nutzt LZ4-„Linked Blocks" (Rückverweise in die unkomprimierte Ausgabe des Vorgängerblocks); CUE4Parse dekodiert isoliert und scheitert daran. Damit: alle 888 Karten lesbar (`--smoke-all: ok=888 failed=0`) |
+| LZ4 Linked Blocks | eigener sequenzieller Decoder (`app/Lz4Linked.cs`) — SoD2 nutzt LZ4-„Linked Blocks" (Rückverweise in die unkomprimierte Ausgabe des Vorgängerblocks); CUE4Parse dekodiert isoliert und scheitert daran. Damit: alle 890 Karten lesbar (`--smoke-all: ok=890 failed=0`) |
 | Karten-Objekte | Actors via `RootComponent` → `Transform` (Fallback: `RelativeLocation`/`RelativeRotation`/`RelativeScale3D`) |
 | Vektor-Basemap | Ingame-`MapBackgroundData`-Assets (Straßen/Flüsse/Seen/Gebäude/Border), gerendert in `MapUIInfo_BP`-Farben (`app/BgMaps.cs`) — komplett offline |
 
@@ -220,6 +235,9 @@ SoD2MapViewer.exe --injectplatformauto "<gameDir>" [savePath] [sizeM] [yawDeg] [
 <details>
 <summary><b>Repo-Status / Versionshistorie</b></summary>
 
+- **v0.6.9** - **Fix: Mod-Pak-Einträge für Plattform-Injektion**: `DerivePakEntryPath` hatte das `maps/`-Präfix entfernt — der gepatchte Tile landete unter einem zweiten, ungenutzten Asset-Pfad und wurde nie geladen. Jetzt bleibt der Pfad korrekt (`maps/faustite/faustite/…`); mit `--where` verifiziert (Patch kommt aus dem Mod-Pak statt aus dem Vanilla-Chunk) und ingame getestet.
+- **v0.6.8** - **DE/EN-Sprachumschalter, Favoriten-Panel, Plattform-Fallback, UX-Details**: umschaltbare UI-Sprache über `lang_de.json`/`lang_en.json` mit automatischem Neustart; Favoriten-Panel unten (Karten/Objekte, Doppelklick, ziehbar); Mesh-Override-Fallback für Karten ohne scale-fähige Slab-Actoren (Pfad/Kollision/Bounds/Parent-Chain abgesichert, Review bestanden); „Figur anzeigen" hervorgehoben + `P`, Mesh-Viewer `V`, Modi abwählbar, dunkle Menüs/Dialoge, lesbares Canvas-HUD, `CellFormatting`-Fix für die Objekt-Tabelle.
+- **v0.6.7** - **Mini-Mesh-Viewer + Asset-Suche**: GUI-Dialog mit Software-3D-Render (Orbit/Zoom/Bounds), `--meshview`/`--meshsearch` CLI, Preset-Set; dazugehörige Kalibrierungen/UI-Fixes.
 - **v0.6.6** - **Plattform an Spieler-Position injizieren + In-Place-SMC-Patching (ingame verifiziert)**: Menü **Inject ▾ → „Plattform an Spieler-Position…"** platziert per Klick eine flache Betonplattform (Standard 30×30 m; Größe/Yaw/Höhenoffset einstellbar, Default **+50 cm** über Boden) an der zuletzt gespeicherten Spielerposition. Kachelwahl **dichte-basiert** (SMC-Nähe um das Ziel im bewiesenen Identitäts-Frame `world_save = RelLoc + WorldTileInfo.Position`), Boden-Höhe robust via **Median gefilterter Nachbar-SMCs** (±5-m-Plausibilitätsband um die Save-Z), Kandidatenwahl auf >150 m entfernte scale-fähige SMCs mit erlaubten Boden-Meshes (`concrete_slab_01`/`asphalt_cracked_01`), Mesh-Bounds live aus den Game-Assets. Patch nur von RelativeLocation/RelativeRotation/RelativeScale3D, **Roundtrip-Verifikation byte-identisch**, Pak-Erzeugung + nutzerbestätigte Installation. Ingame verifiziert: Plattform sichtbar, Character wird auf sie gesetzt. CLI: `--injectplatformauto`, `--playerpos`, `--patchsmc`, `--umaproundtrip`, `--packumap`. GUI: Actor-Punkte in der Kartenansicht deutlich lesbarer (sattes Blau, 5-px-Minimum, dunkle Kontur).
 - **v0.6.5** - **Neue Gruppe (Kopie + Identität, ingame verifiziert)**: Ein Save wird unter dem **nächsten freien Slot-Namen** geklont (`SaveGame_Vanilla_2` → `SaveGame_Vanilla_3.sav`) und die **Identitäts-GUIDs (`ID` + `GameId`) neu geschrieben** — das Spiel behandelt die Kopie als **eigene, spielbare Community** (im Spiel verifiziert). Weltzustand (Fahrzeuge, Items, Base) bleibt erhalten. **„Neue Gruppe…"**-Button in beiden Inject-Dialogen (Klon wird sofort ausgewählt, direkt reininjizierbar), CLI `--saveclone <save.sav> [dst.sav]`. Fail-safe: Self-Check (Reparse, GUID-Vergleich, Fahrzeuganzahl) — bei Fehlschlag wird die geschriebene Datei wieder gelöscht; existierende Ziele werden nie überschrieben. Bugfix: doppelte `_btnCopySave.Click`-Registrierung im Item-Inject-Dialog entfernt (Handler lief pro Klick zweimal).
 - **v0.6.4** - **Regionweite Site-Auswahl + persistente Item-Presets + Toolbar-Organisation**: Klick auf einen **Regions-Knoten** in der Map-Liste listet **alle Sites der Region** über alle Tiles (Label mit Tile-Name, aus den tgc-Entity-Pfaden abgeleitet); Auswahl einer fremden Tile lädt diese automatisch und springt zur Site. **Persistente Item-Presets** in `%LOCALAPPDATA%\SoD2MapViewer\item_presets.json`: „Preset speichern/löschen" im Inject-Dialog, **„Presets aus allen Saves"** scannt alle Savegames und legt fehlende Item-Klassen als Presets an (Cross-Save-kompatibel). **Toolbar** in vier logische Gruppen gegliedert (Game | Filter | Selection | Actions), „Enable editing" rechts neben „Feinjustierung (Drag)" mit rotem Label. Preset-Dropdowns alphabetisch sortiert.
@@ -256,14 +274,14 @@ Die gepackten Single-File-EXEs werden von einzelnen VirusTotal-Engines als gener
 
 **Wenn ungünstig:** Ordner-Variante ohne gepackte EXE nutzen — [SoD2MapViewer-framework-dependent-plain.zip](https://github.com/Orohal/SoD2MapV/releases/latest) (kleine EXE + DLLs, gleiche Funktion). Im eigenen Virenprogramm ggf. Ordner ausschließen.
 
-**Published Hashes (SHA256) - v0.6.6:**
+**Published Hashes (SHA256) - v0.6.9:**
 
 | Asset | SHA256 |
 | --- | --- |
-| `SoD2MapViewer-framework-dependent.zip` | `B5E2BB8AA2CDEFBE2AAF77B3513CD08261A9516B902EF61EBD403B1D63C56DC0` |
-| `SoD2MapViewer-framework-dependent-plain.zip` | `BD2672A3162C3FC13BA722952FB1D8F03AC6B018840A4683AC9CC33FC5867356` |
-| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `22B1ABDF44FAAA552DF241632B97B2350A6211B8145AF950E95F2C8C44FB41C8` |
-| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `C8D02E56F04E6012C27532549BAAE9BDCF0C834DD60AB32C31FF59A003EC3E4D` |
+| `SoD2MapViewer-framework-dependent.zip` | `732BDB810FA15CB162F271E0CABEFA465E6C4A9E761BF54464C169BB3563F5C2` |
+| `SoD2MapViewer-framework-dependent-plain.zip` | `A63DB43E0C0DCCC6B13369536BACBD0B8C1431C25BFD7E41527E5A8A4DA8B883` |
+| `SoD2MapViewer.exe` (single-file, in framework-dependent.zip) | `F13FB2B91175C8BA8A1C4F0378182F3B2D9750D701E39BEA644D7FA61226870A` |
+| `SoD2MapViewer.exe` (ungepackt, in plain.zip) | `696860C95F2CA3EC852DF7A3984F2AAF42F38E3E70B4411E51CD4D9607D284C5` |
 
 Historisch: v0.5.7-Artefakte siehe [Release v0.5.7](https://github.com/Orohal/SoD2MapV/releases/tag/v0.5.7). Die framework-dependent Single-File-EXE von **v0.4.0** (`9FE1E0954E269916B67EB5937D45A0874A51CBEB964C0DD369382542FFDD6C2A`) wurde von 9 VirusTotal-Engines generisch gemeldet (Packer-Heuristik der Single-File-Apphosts).
 

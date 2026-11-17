@@ -2,10 +2,12 @@
 
 ## Main window
 
-- **Map list (left):** all 888 maps grouped by region (Trumbull Valley, Cascade Hills, Drucker County, Meagher Valley, Providence Ridge, Other). Filter box expands matching groups.
+- **Map list (left):** all 890 maps grouped by region (Trumbull Valley, Cascade Hills, Drucker County, Meagher Valley, Providence Ridge, Other). Filter box expands matching groups.
 - **Canvas (center):** top-down view of the selected map's objects.
 - **Toolbar / menus:** editing toggle, modes, undo, export, injection, background map, sites overlay.
-- **Status bar:** current operation, counts, calibration info.
+- **Favorites panel (bottom):** all marked maps and objects; double-click loads the map or selects the object. Height adjustable via splitter.
+- **Status area (bottom):** timestamped event log + compact info row (mode, cursor coordinates with compass, zoom, selection count).
+- **Language button:** `🌐 DE` / `🌐 EN` — switching saves the choice and automatically restarts the viewer.
 
 ## Navigation
 
@@ -23,10 +25,13 @@ Enable with the **Enable editing** checkbox. Then:
 | Key | Action |
 |---|---|
 | Drag | Move selected object |
-| `M` / `R` / `S` | Mode: Move / Rotate / Scale |
+| `M` / `R` / `S` | Mode: Move / Rotate / Scale (press again to switch off) |
+| `P` | Show character / player position |
+| `V` | Open mesh viewer |
 | `Delete` | Mark object as deleted |
 | `Ctrl+Z` | Undo |
 | Right-click | Context menu (copy location, mode, delete) |
+| `? Hilfe` | German/English shortcut cheat sheet |
 
 Multi-select: `Ctrl`+click or drag-box (`Shift`+drag).
 

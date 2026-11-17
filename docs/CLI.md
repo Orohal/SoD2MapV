@@ -10,7 +10,7 @@ SoD2MapViewer.exe <mode> [args...]
 
 | Command | Description |
 |---|---|
-| `--smoke-all <gameDir>` | Parse all 888 maps, print ok/failed summary. |
+| `--smoke-all <gameDir>` | Parse all 890 maps, print ok/failed summary. |
 | `--smoke <gameDir>` | Parse the first maps, print objects with positions. |
 | `--diag <gameDir> <umapPath>` | Low-level codec diagnostics per block. |
 | `--umapinfo <gameDir> <file.umap> [filter] [hexOff] [hexLen]` | Pak structure of a `.umap` (summary, imports, exports, name-map sidecar). |
@@ -27,6 +27,9 @@ SoD2MapViewer.exe <mode> [args...]
 | `--bgfit <region>` | Auto-calibrate background against tgc site boxes. |
 | `--bgset <region> <ox> <oy> <scale>` | Set manual background transform. |
 | `--maptex LIST\|DUMP\|PROPS\|JSON` | Pak exploration helpers. |
+| `--meshview <gameDir> <asset> <out.png> [yawDeg] [pitchDeg]` | Render a shaded mesh PNG and print exact bounds (Size/Origin cm, vertices/triangles). |
+| `--meshsearch <gameDir> <filter> [limit]` | Search all mounted assets by short name or path (e.g. `antenna`, `wall`). |
+| `--where <gameDir> <assetPath>` | Show which pak an asset is actually loaded from (useful to verify mod overrides). |
 
 ## Savegames
 

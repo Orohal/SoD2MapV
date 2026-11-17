@@ -44,11 +44,11 @@ Each injected item needs one free backpack slot in the target survivor. Free up 
 - Use `--bgfit` for automatic calibration against tgc site boxes, or `--bgset` for manual values.
 - Overrides are stored in `%LOCALAPPDATA%\SoD2MapViewer\bgcalib_override.json`.
 
-## Published hashes (v0.6.3)
+## Published hashes (v0.6.9)
 
 | Asset | SHA256 |
 |---|---|
-| `SoD2MapViewer-framework-dependent.zip` | `846c1b932ebfb537168dbdde0865e580a9e72b6f3aa66d55000e25b69bd92709` |
-| `SoD2MapViewer-framework-dependent-plain.zip` | `9703c33946ddada7e0e5e1210ddb659d16f9c926031e6b89392c3972a2bd77fa` |
-| `SoD2MapViewer.exe` (single-file) | `8bed04a685c5c6f0c10f5df1cc1098d402a839c4d76b95e2881123959753386d` |
-| `SoD2MapViewer.exe` (plain) | `d06acdc7ebb52fd43489ff706dd530a140b6d3bc42f3ffbc0710ccd8ec831232` |
+| `SoD2MapViewer-framework-dependent.zip` | `732BDB810FA15CB162F271E0CABEFA465E6C4A9E761BF54464C169BB3563F5C2` |
+| `SoD2MapViewer-framework-dependent-plain.zip` | `A63DB43E0C0DCCC6B13369536BACBD0B8C1431C25BFD7E41527E5A8A4DA8B883` |
+| `SoD2MapViewer.exe` (single-file) | `F13FB2B91175C8BA8A1C4F0378182F3B2D9750D701E39BEA644D7FA61226870A` |
+| `SoD2MapViewer.exe` (plain) | `696860C95F2CA3EC852DF7A3984F2AAF42F38E3E70B4411E51CD4D9607D284C5` |

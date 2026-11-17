@@ -32,7 +32,7 @@ dotnet publish app/SoD2MapViewer.csproj -c Release -r win-x64 --self-contained f
 
 1. Start the app.
 2. Click **Choose game folder** and select your State of Decay 2 installation directory (the folder containing `StateOfDecay2\Content\Paks`).
-3. The app mounts all PAKs and lists 888 maps grouped by region.
+3. The app mounts all PAKs and lists 890 maps grouped by region.
 4. Select a map — it renders top-down.
 
 ## Configuration / data locations
