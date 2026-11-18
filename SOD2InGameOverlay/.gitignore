@@ -1,0 +1,30 @@
+# Build artifacts
+build/
+
+# Vendored dependency git metadata
+vendor/*/.git/
+vendor/*/.gitignore
+vendor/*/.gitattributes
+vendor/*/.editorconfig
+vendor/*/.github/
+vendor/*/.gitmodules
+
+# ImGui: keep core + Win32/DX11 backend only
+vendor/imgui/backends/*
+!vendor/imgui/backends/imgui_impl_win32.cpp
+!vendor/imgui/backends/imgui_impl_win32.h
+!vendor/imgui/backends/imgui_impl_dx11.cpp
+!vendor/imgui/backends/imgui_impl_dx11.h
+vendor/imgui/examples/
+vendor/imgui/docs/
+vendor/imgui/misc/
+vendor/imgui/imgui_demo.cpp
+
+# Kiero: keep only the two patched source files (+ license/info)
+vendor/kiero/examples/
+
+# MinHook: keep include + src only
+vendor/MinHook/build/
+vendor/MinHook/dll_resources/
+vendor/MinHook/CMakeLists.txt
+vendor/MinHook/cmake/
