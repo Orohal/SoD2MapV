@@ -1734,6 +1734,7 @@ public sealed class MainForm : Form
         }
 
         var failures = new List<string>();
+        var warnings = new List<string>();   // P13: ambiguous multi-hit patches
 
         // name -> object map for owner-frame conversion: child actors nested under a (rotated)
         // building prefab store transforms relative to it — see UmapPatcher.OwnerLocalLocation.
@@ -1758,17 +1759,26 @@ public sealed class MainForm : Form
                     carried++;
                 var r = UmapPatcher.PatchLocation(data, o, lx, ly, lz);
                 if (r.Error.Length > 0) failures.Add($"{o.Name}: move: {r.Error}");
+                if (r.Warning.Length > 0) warnings.Add($"{o.Name}: move: {r.Warning}");
             }
             if (o.EditedRotation)
             {
                 var r = UmapPatcher.PatchRotation(data, o, o.QX, o.QY, o.QZ, o.QW);
                 if (r.Error.Length > 0) failures.Add($"{o.Name}: rotate: {r.Error}");
+                if (r.Warning.Length > 0) warnings.Add($"{o.Name}: rotate: {r.Warning}");
             }
             if (o.EditedScale)
             {
                 var r = UmapPatcher.PatchScale(data, o, o.SX, o.SY, o.SZ);
                 if (r.Error.Length > 0) failures.Add($"{o.Name}: scale: {r.Error}");
+                if (r.Warning.Length > 0) warnings.Add($"{o.Name}: scale: {r.Warning}");
             }
+        }
+
+        if (warnings.Count > 0)
+        {
+            foreach (var w in warnings.Take(8)) SetStatus("WARN " + w);
+            if (warnings.Count > 8) SetStatus($"… und {warnings.Count - 8} weitere Warnungen");
         }
 
         if (failures.Count > 0)
@@ -1989,6 +1999,7 @@ public sealed class MainForm : Form
     };
 
     // +X = Norden, +Y = Osten (im Spiel verifiziert); 16-teilige Windrose.
+    // P22: duplicate of SOD2InGameOverlay/src/overlay.cpp:Compass — keep in sync.
     private static string CompassDirection(PointF p)
     {
         if (MathF.Abs(p.X) < 1f && MathF.Abs(p.Y) < 1f) return "–";

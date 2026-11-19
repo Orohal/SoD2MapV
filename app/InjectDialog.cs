@@ -403,6 +403,8 @@ public sealed class InjectDialog : Form
         double sx = x * 100 + dx * 100, sy = y * 100 + dy * 100, sz = z * 100 + dz * 100;
 
         var temp = Path.Combine(Path.GetTempPath(), "sod2_inject_" + Guid.NewGuid().ToString("N") + ".sav");
+        try   // P24: always clean up the temp save, even on unexpected errors
+        {
         _lblInfo.Text = "Injecting...";
         Cursor = Cursors.WaitCursor;
         var rc = Savegame.SaveInject(save.FullName, temp, classIdx, (float)sx, (float)sy, (float)sz, (float)yaw, -1, setGuid: true);
@@ -410,7 +412,6 @@ public sealed class InjectDialog : Form
         if (rc != 0)
         {
             _lblInfo.Text = "Injection failed (rc=" + rc + ").";
-            try { File.Delete(temp); } catch { }
             return;
         }
 
@@ -425,10 +426,8 @@ public sealed class InjectDialog : Form
         catch (Exception ex)
         {
             _lblInfo.Text = "Install fehlgeschlagen (Original aus Backup wiederhergestellt): " + ex.Message;
-            try { File.Delete(temp); } catch { }
             return;
         }
-        File.Delete(temp);
 
         var newCount = Savegame.ReadInfo(save.FullName)?.VehicleCount ?? -1;
         _probeIndex = newCount - 1;
@@ -452,6 +451,11 @@ public sealed class InjectDialog : Form
         {
             _lblInfo.Text = $"Injected as entry [{_probeIndex}] (count now {newCount}). Backup: {Path.GetFileName(backup)}";
             _btnDeleteProbe.Visible = true;
+        }
+        }
+        finally
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
         }
     }
 

@@ -17,138 +17,73 @@ public static class UmapPatcher
         public int Hits;          // number of patched pattern occurrences
         public long FirstOffset;  // file offset of the first patch
         public string Error = "";
+        public string Warning = "";   // P13: ambiguous multi-hit, no error but visible
     }
 
     /// <summary>Rewrites the component's location (X, Y, and Z when given) in <paramref name="data"/>.</summary>
     public static PatchResult PatchLocation(byte[] data, MapObject obj, float newX, float newY, float? newZ = null)
-    {
-        var res = new PatchResult();
-        if (!obj.HasTransform) { res.Error = "object has no transform"; return res; }
-        if (obj.ComponentSerialSize <= 0 || obj.ComponentSerialOffset + obj.ComponentSerialSize > data.Length)
-        { res.Error = "component serial range out of bounds"; return res; }
-
-        var pattern = new byte[12];
-        // search by the ORIGINAL (pre-edit) values — the pristine map bytes still contain them;
-        // X/Y/Z may already hold the moved values (in-place editing)
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(0, 4), obj.OrigX);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(4, 4), obj.OrigY);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(8, 4), obj.OrigZ);
-
-        var from = obj.ComponentSerialOffset;
-        var to = obj.ComponentSerialOffset + obj.ComponentSerialSize - pattern.Length;
-
-        var hits = new List<long>();
-        for (long i = from; i <= to; i++)
-        {
-            if (data[i] != pattern[0]) continue;
-            var match = true;
-            for (int k = 1; k < pattern.Length; k++)
-                if (data[i + k] != pattern[k]) { match = false; break; }
-            if (match) hits.Add(i);
-        }
-
-        if (hits.Count == 0)
-        {
-            res.Error = $"location pattern (X={obj.OrigX:0.##}, Y={obj.OrigY:0.##}, Z={obj.OrigZ:0.##}) not found in component data";
-            return res;
-        }
-
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(0, 4), newX);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(4, 4), newY);
-        if (newZ.HasValue) BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(8, 4), newZ.Value);
-        foreach (var h in hits)
-            Array.Copy(pattern, 0, data, h, pattern.Length);
-
-        res.Hits = hits.Count;
-        res.FirstOffset = hits[0];
-        return res;
-    }
+        => PatchFloats(data, obj,
+            new[] { obj.OrigX, obj.OrigY, obj.OrigZ },
+            new[] { newX, newY, newZ ?? obj.OrigZ },
+            $"location (X={obj.OrigX:0.##}, Y={obj.OrigY:0.##}, Z={obj.OrigZ:0.##})");
 
     /// <summary>Rewrites the component's rotation quaternion (QX, QY, QZ, QW) in <paramref name="data"/>.</summary>
     public static PatchResult PatchRotation(byte[] data, MapObject obj, float qx, float qy, float qz, float qw)
-    {
-        var res = new PatchResult();
-        if (!obj.HasTransform) { res.Error = "object has no transform"; return res; }
-        if (obj.ComponentSerialSize <= 0 || obj.ComponentSerialOffset + obj.ComponentSerialSize > data.Length)
-        { res.Error = "component serial range out of bounds"; return res; }
-
-        var pattern = new byte[16];
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(0, 4), obj.OrigQX);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(4, 4), obj.OrigQY);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(8, 4), obj.OrigQZ);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(12, 4), obj.OrigQW);
-
-        var from = obj.ComponentSerialOffset;
-        var to = obj.ComponentSerialOffset + obj.ComponentSerialSize - pattern.Length;
-
-        var hits = new List<long>();
-        for (long i = from; i <= to; i++)
-        {
-            if (data[i] != pattern[0]) continue;
-            var match = true;
-            for (int k = 1; k < pattern.Length; k++)
-                if (data[i + k] != pattern[k]) { match = false; break; }
-            if (match) hits.Add(i);
-        }
-
-        if (hits.Count == 0)
-        {
-            res.Error = $"rotation pattern (QX={obj.OrigQX:0.##}, QY={obj.OrigQY:0.##}, QZ={obj.OrigQZ:0.##}, QW={obj.OrigQW:0.##}) not found in component data";
-            return res;
-        }
-
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(0, 4), qx);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(4, 4), qy);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(8, 4), qz);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(12, 4), qw);
-        foreach (var h in hits)
-            Array.Copy(pattern, 0, data, h, pattern.Length);
-
-        res.Hits = hits.Count;
-        res.FirstOffset = hits[0];
-        return res;
-    }
+        => PatchFloats(data, obj,
+            new[] { obj.OrigQX, obj.OrigQY, obj.OrigQZ, obj.OrigQW },
+            new[] { qx, qy, qz, qw },
+            $"rotation (QX={obj.OrigQX:0.##}, QY={obj.OrigQY:0.##}, QZ={obj.OrigQZ:0.##}, QW={obj.OrigQW:0.##})");
 
     /// <summary>Rewrites the component's scale (SX, SY, SZ) in <paramref name="data"/>.</summary>
     public static PatchResult PatchScale(byte[] data, MapObject obj, float sx, float sy, float sz)
+        => PatchFloats(data, obj,
+            new[] { obj.OrigSX, obj.OrigSY, obj.OrigSZ },
+            new[] { sx, sy, sz },
+            $"scale (SX={obj.OrigSX:0.##}, SY={obj.OrigSY:0.##}, SZ={obj.OrigSZ:0.##})");
+
+    /// <summary>
+    /// Single implementation for location/rotation/scale: find the pristine float tuple
+    /// inside the component's serial range and replace every occurrence (P12).
+    /// Search by ORIGINAL values — the in-memory X/Y/... may already be edited.
+    /// </summary>
+    private static PatchResult PatchFloats(byte[] data, MapObject obj,
+                                           float[] original, float[] replacement, string kind)
     {
         var res = new PatchResult();
         if (!obj.HasTransform) { res.Error = "object has no transform"; return res; }
         if (obj.ComponentSerialSize <= 0 || obj.ComponentSerialOffset + obj.ComponentSerialSize > data.Length)
         { res.Error = "component serial range out of bounds"; return res; }
 
-        var pattern = new byte[12];
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(0, 4), obj.OrigSX);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(4, 4), obj.OrigSY);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(8, 4), obj.OrigSZ);
+        var pattern = new byte[original.Length * 4];
+        for (int i = 0; i < original.Length; i++)
+            BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(i * 4, 4), original[i]);
 
         var from = obj.ComponentSerialOffset;
         var to = obj.ComponentSerialOffset + obj.ComponentSerialSize - pattern.Length;
-
         var hits = new List<long>();
-        for (long i = from; i <= to; i++)
+        for (long p = from; p <= to; p++)
         {
-            if (data[i] != pattern[0]) continue;
-            var match = true;
+            if (data[p] != pattern[0]) continue;
+            bool match = true;
             for (int k = 1; k < pattern.Length; k++)
-                if (data[i + k] != pattern[k]) { match = false; break; }
-            if (match) hits.Add(i);
+                if (data[p + k] != pattern[k]) { match = false; break; }
+            if (match) hits.Add(p);
         }
-
         if (hits.Count == 0)
         {
-            res.Error = $"scale pattern (SX={obj.OrigSX:0.##}, SY={obj.OrigSY:0.##}, SZ={obj.OrigSZ:0.##}) not found in component data";
+            res.Error = $"{kind} pattern not found in component data";
             return res;
         }
 
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(0, 4), sx);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(4, 4), sy);
-        BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(8, 4), sz);
+        for (int i = 0; i < replacement.Length; i++)
+            BinaryPrimitives.WriteSingleLittleEndian(pattern.AsSpan(i * 4, 4), replacement[i]);
         foreach (var h in hits)
             Array.Copy(pattern, 0, data, h, pattern.Length);
 
         res.Hits = hits.Count;
         res.FirstOffset = hits[0];
+        if (hits.Count > 1)
+            res.Warning = $"{kind}: {hits.Count} identische Treffer – alle wurden geändert (P13)";
         return res;
     }
 

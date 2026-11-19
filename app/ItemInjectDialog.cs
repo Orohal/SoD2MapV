@@ -652,10 +652,12 @@ public sealed class ItemInjectDialog : Form
 
         if (IsGameRunning())
         {
-            var r = MessageBox.Show(this,
-                "State of Decay 2 scheint zu laufen. Das Savegame sollte nur im Hauptmenü/bei beendetem Spiel geändert werden.\n\nTrotzdem fortfahren?",
-                "Spiel läuft", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-            if (r != DialogResult.Yes) return;
+            // P23: same policy as the vehicle dialog — no override, the game
+            // overwrites the save on exit and would undo the injection.
+            MessageBox.Show(this,
+                "State of Decay 2 läuft. Bitte das Spiel beenden — es überschreibt das Savegame beim Beenden.",
+                "Spiel läuft", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
         }
 
         var tmpOut = Path.Combine(Path.GetTempPath(), "sod2_iteminject_" + Guid.NewGuid().ToString("N") + ".sav");

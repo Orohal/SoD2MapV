@@ -74,6 +74,26 @@ internal static class Program
         Check("out-of-bounds rejected", r2.Error.Length > 0 && r2.Hits == 0,
             $"hits={r2.Hits} error={r2.Error}");
 
+        Console.WriteLine("UmapPatcher.PatchLocation multi-hit (P13):");
+        var multi = new byte[32];
+        foreach (int off in new[] { 4, 20 })
+        {
+            BitConverter.GetBytes(7f).CopyTo(multi, off);
+            BitConverter.GetBytes(8f).CopyTo(multi, off + 4);
+            BitConverter.GetBytes(9f).CopyTo(multi, off + 8);
+        }
+        var multiObj = new MapObject
+        {
+            Name = "MultiActor", HasTransform = true,
+            OrigX = 7f, OrigY = 8f, OrigZ = 9f,
+            ComponentSerialOffset = 4, ComponentSerialSize = 28,
+        };
+        var rm = UmapPatcher.PatchLocation(multi, multiObj, 1f, 2f, 3f);
+        Check("two hits + warning", rm.Hits == 2 && rm.Warning.Length > 0,
+            $"hits={rm.Hits} warning={rm.Warning}");
+        Check("both occurrences rewritten",
+            BitConverter.ToSingle(multi, 4) == 1f && BitConverter.ToSingle(multi, 20) == 1f);
+
         Console.WriteLine();
         Console.WriteLine($"Ergebnis: {_passed} bestanden, {_failed} fehlgeschlagen");
         return _failed == 0 ? 0 : 1;

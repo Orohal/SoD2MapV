@@ -692,18 +692,19 @@ namespace SoD2MapViewer;
             if (p.X < -30 || p.Y < -30 || p.X > Width + 30 || p.Y > Height + 30) continue;
 
             var cat = ClassCategory.From(o.ClassName);
-            var col = ColorFor(cat);
-            if (i == _hover || i == _selected || _multi.Contains(i))
-                col = Color.FromArgb(255, col);
-            if (o.Deleted)
-                col = Color.FromArgb(120, 120, 120); // grayed out for deleted
-            var b = new SolidBrush(col);
+            // P14a: cache the common brush; allocate only for the few highlighted objects.
+            bool plain = !(i == _hover || i == _selected || _multi.Contains(i) || o.Deleted);
+            Brush b = plain
+                ? BrushFor(cat)
+                : new SolidBrush(o.Deleted
+                    ? Color.FromArgb(120, 120, 120)
+                    : Color.FromArgb(255, ColorFor(cat)));
             var size = dot;
             if (i == _selected) size = dot * 2f + 4f;
             else if (i == _hover) size = dot * 1.5f + 2f;
             int dsz = Math.Max(2, (int)size);
-            using (b)
-                g.FillRectangle(b, p.X - dsz / 2, p.Y - dsz / 2, dsz, dsz);
+            g.FillRectangle(b, p.X - dsz / 2, p.Y - dsz / 2, dsz, dsz);
+            if (!plain) b.Dispose();   // never dispose a cached brush
             g.DrawRectangle(dotOutline, p.X - dsz / 2, p.Y - dsz / 2, dsz, dsz);
 
             if (o.Deleted)

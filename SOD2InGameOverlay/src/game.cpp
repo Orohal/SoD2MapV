@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <unordered_map>
 
 uintptr_t Game::ModuleBase() { return reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr)); }
 
@@ -135,26 +136,23 @@ static void SeedScan(const FVector& seed, float tol, bool fullScan) {
     LogF("SeedScan: raw hits=%d", hitCount);
     if (hitCount == 0) return;
 
-    // Group by rounded value (to 0.1 cm).
-    struct Group { int count; uintptr_t addr; FVector v; };
-    static Group groups[4096];
-    int groupCount = 0;
+    // P14c: group by quantized value (0.1 cm) via hash map instead of the
+    // previous O(hits * groups) linear scan (up to 20k * 4096 comparisons).
+    struct Group { int count = 0; uintptr_t addr = 0; FVector v{}; };
+    std::unordered_map<uint64_t, Group> groups;
+    groups.reserve(4096);
     for (int i = 0; i < hitCount; i++) {
-        float rx = std::round(hits[i].v.X * 10) / 10;
-        float ry = std::round(hits[i].v.Y * 10) / 10;
-        float rz = std::round(hits[i].v.Z * 10) / 10;
-        int gi = -1;
-        for (int g = 0; g < groupCount; g++) {
-            if (groups[g].v.X == rx && groups[g].v.Y == ry && groups[g].v.Z == rz) { gi = g; break; }
-        }
-        if (gi < 0 && groupCount < 4096) {
-            gi = groupCount++;
-            groups[gi] = { 0, hits[i].addr, { rx, ry, rz } };
-        }
-        if (gi >= 0) {
-            groups[gi].count++;
-            groups[gi].addr = hits[i].addr; // last address seen for this value
-        }
+        int ix = static_cast<int>(std::lround(hits[i].v.X * 10));
+        int iy = static_cast<int>(std::lround(hits[i].v.Y * 10));
+        int iz = static_cast<int>(std::lround(hits[i].v.Z * 10));
+        uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(ix)) << 42)
+                     ^ (static_cast<uint64_t>(static_cast<uint32_t>(iy)) << 21)
+                     ^ static_cast<uint32_t>(iz);
+        Group& g = groups[key];
+        if (g.count == 0)
+            g = { 0, hits[i].addr, { ix / 10.0f, iy / 10.0f, iz / 10.0f } };
+        g.count++;
+        g.addr = hits[i].addr; // last address seen for this value
     }
 
     auto roundness = [](const FVector& v) -> int {
@@ -169,22 +167,23 @@ static void SeedScan(const FVector& seed, float tol, bool fullScan) {
     // clusters as candidates: the live player coordinate is shared by many
     // components (capsule/mesh/controller) and thus has a high count. Static
     // breadcrumbs have low counts and go stale -> excluded.
-    for (int g = 0; g < groupCount; g++) {
-        if (groups[g].addr < 0x18000000000ULL) continue;
-        float dx = groups[g].v.X - seed.X;
-        float dy = groups[g].v.Y - seed.Y;
-        float dz = groups[g].v.Z - seed.Z;
+    for (const auto& kv : groups) {
+        const Group& grp = kv.second;
+        if (grp.addr < 0x18000000000ULL) continue;
+        float dx = grp.v.X - seed.X;
+        float dy = grp.v.Y - seed.Y;
+        float dz = grp.v.Z - seed.Z;
         float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
         if (dist > 30000.0f) continue; // 300 m: save may lag behind live pos after char rotation
         // Insert sorted by count descending into top candidates.
         if (g_candidateCount < 16) {
             int k = g_candidateCount++;
-            while (k > 0 && g_candidates[k-1].cnt < groups[g].count) {
+            while (k > 0 && g_candidates[k-1].cnt < grp.count) {
                 g_candidates[k] = g_candidates[k-1]; k--;
             }
-            g_candidates[k] = { groups[g].addr, groups[g].count };
-        } else if (groups[g].count > g_candidates[15].cnt) {
-            g_candidates[15] = { groups[g].addr, groups[g].count };
+            g_candidates[k] = { grp.addr, grp.count };
+        } else if (grp.count > g_candidates[15].cnt) {
+            g_candidates[15] = { grp.addr, grp.count };
         }
     }
 

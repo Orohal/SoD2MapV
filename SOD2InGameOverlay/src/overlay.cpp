@@ -9,6 +9,8 @@ static bool  s_show    = true;
 static bool  s_meters  = true;
 static bool  s_velocity = true;
 
+// P22: duplicate of MainForm.CompassDirection (C# app) — keep N/O convention
+// (+X = Norden, +Y = Osten) in sync; C++/C# cannot share this directly.
 static const char* Compass(float x, float y) {
     static const char* names[] = {
         "N", "NNO", "NO", "ONO", "O", "OSO", "SO", "SSO",
