@@ -55,27 +55,37 @@ internal static class Program
         {
             // Usage: --bgset <regionKey> <sx> <sy> <ox> <oy>  or  --bgset <regionKey> <assetName> <sx> <sy> <ox> <oy>
             // (writes bgcalib_override.json next to the exe)
-            if (args.Length < 6) { Console.WriteLine("usage: --bgset <region|region|asset> <sx> <sy> <ox> <oy>  OR  --bgset <region> <assetName> <sx> <sy> <ox> <oy>"); return 1; }
-            if (args.Length >= 7)
+            const string usage = "usage: --bgset <region> <sx> <sy> <ox> <oy>  OR  --bgset <region> <assetName> <sx> <sy> <ox> <oy>";
+            if (args.Length < 6) { Console.Error.WriteLine(usage); return 2; }
+            try
             {
-                var reg = args[1]; var asset = args[2];
-                double sx = double.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture);
-                double sy = double.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture);
-                double ox = double.Parse(args[5], System.Globalization.CultureInfo.InvariantCulture);
-                double oy = double.Parse(args[6], System.Globalization.CultureInfo.InvariantCulture);
-                BgCalib.SetOverride(reg, sx, sy, ox, oy, asset);
-                Console.WriteLine($"[bgset] {reg}|{asset}: sx={sx} sy={sy} ox={ox} oy={oy}  -> {BgCalib.OverridePath()}");
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                static bool Num(string s, System.Globalization.NumberStyles st,
+                                IFormatProvider p, out double v)
+                    => double.TryParse(s, st, p, out v);
+
+                int start = args.Length >= 7 ? 3 : 2;
+                string reg = args[1], asset = args.Length >= 7 ? args[2] : "";
+                double[] v = new double[4];
+                for (int i = 0; i < 4; i++)
+                {
+                    if (!Num(args[start + i], System.Globalization.NumberStyles.Float, inv, out v[i]))
+                    {
+                        Console.Error.WriteLine($"[bgset] ungültige Zahl: '{args[start + i]}'");
+                        Console.Error.WriteLine(usage);
+                        return 2;
+                    }
+                }
+                if (asset.Length > 0) BgCalib.SetOverride(reg, v[0], v[1], v[2], v[3], asset);
+                else BgCalib.SetOverride(reg, v[0], v[1], v[2], v[3]);
+                Console.WriteLine($"[bgset] {reg}{(asset.Length > 0 ? "|" + asset : "")}: " +
+                                  $"sx={v[0]} sy={v[1]} ox={v[2]} oy={v[3]}  -> {BgCalib.OverridePath()}");
                 return 0;
             }
+            catch (Exception e)
             {
-                var reg = args[1];
-                double sx = double.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture);
-                double sy = double.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture);
-                double ox = double.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture);
-                double oy = double.Parse(args[5], System.Globalization.CultureInfo.InvariantCulture);
-                BgCalib.SetOverride(reg, sx, sy, ox, oy);
-                Console.WriteLine($"[bgset] {reg}: sx={sx} sy={sy} ox={ox} oy={oy}  -> {BgCalib.OverridePath()}");
-                return 0;
+                Console.Error.WriteLine("[bgset] " + e.Message);
+                return 2;
             }
         }
         if (args.Length >= 1 && args[0] == "--bgrender")
@@ -139,6 +149,13 @@ internal static class Program
         {
             // fully offline render: embedded fandom basemap + parsed objects — verifies the
             // calibrated world rect of each region's basemap without touching the network
+            if (args.Length < 4)
+            {
+                Console.Error.WriteLine("usage: --fandomrender <gameDir> <mapFilter> <outPng> [scale]");
+                return 2;
+            }
+            try
+            {
             var inv = System.Globalization.CultureInfo.InvariantCulture;
             var gameDir = args[1];
             var mapFilter = args[2];
@@ -174,6 +191,11 @@ internal static class Program
             var spanXY3 = Math.Max(maxX3 - minX3, maxY3 - minY3) + 2 * pad3;
             var scale3 = scaleOverride != 0 ? (float)scaleOverride : 3600f / spanXY3;
             var pxW3 = (int)(spanXY3 * scale3);
+            if (pxW3 <= 0 || pxW3 > 16384)
+            {
+                Console.Error.WriteLine($"[fandomrender] ungültige Bildgröße: {pxW3}px (max 16384)");
+                return 2;
+            }
             using var bmp3 = new Bitmap(pxW3, pxW3);
             using var g3 = Graphics.FromImage(bmp3);
             g3.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
@@ -203,6 +225,12 @@ internal static class Program
             bmp3.Save(outPng, System.Drawing.Imaging.ImageFormat.Png);
             Console.WriteLine($"[fandomrender] {outPng} ({pxW3}x{pxW3}) region={region3.Key} fandom={fMap3.Resource}");
             return 0;
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine("[fandomrender] " + e.Message);
+                return 2;
+            }
         }
         if (args.Length >= 1 && args[0] == "--saveprops")
         {
@@ -933,6 +961,10 @@ internal static class Program
                 return 2;
             }
         }
+        // P11: PerMonitorV2 must be set before ApplicationConfiguration.Initialize()
+        // — otherwise Windows bitmap-scales a blurry UI on 125%/150% displays.
+        System.Windows.Forms.Application.SetHighDpiMode(
+            System.Windows.Forms.HighDpiMode.PerMonitorV2);
         ApplicationConfiguration.Initialize();
         Application.Run(new MainForm());
         return 0;

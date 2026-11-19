@@ -17,7 +17,7 @@ internal static class L10n
             if (_strings != null && _strings.TryGetValue(key, out var v) && v != null)
                 return v;
         }
-        catch { }
+        catch (Exception ex) { AppLog.Warn("L10n.T", ex); }
         return fallback;
     }
 
@@ -36,8 +36,9 @@ internal static class L10n
             var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
             _strings = dict ?? new Dictionary<string, string>(StringComparer.Ordinal);
         }
-        catch
+        catch (Exception ex)
         {
+            AppLog.Warn("L10n.Load", ex);
             _strings = new Dictionary<string, string>(StringComparer.Ordinal);
         }
     }
@@ -49,6 +50,6 @@ internal static class L10n
             if (session != null)
                 session.Language = Language;
         }
-        catch { }
+        catch (Exception ex) { AppLog.Warn("L10n.Save", ex); }
     }
 }

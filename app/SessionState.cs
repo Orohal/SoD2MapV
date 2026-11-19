@@ -37,7 +37,7 @@ internal static class SessionState
             if (File.Exists(PathFile))
                 return JsonSerializer.Deserialize<SessionStateData>(File.ReadAllText(PathFile)) ?? new();
         }
-        catch { }
+        catch (Exception ex) { AppLog.Warn("SessionState.Load", ex); }
         return new();
     }
 
@@ -45,9 +45,9 @@ internal static class SessionState
     {
         try
         {
-            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(PathFile)!);
-            File.WriteAllText(PathFile, JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
+            SafeFile.WriteAtomicText(PathFile,
+                JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
         }
-        catch { }
+        catch (Exception ex) { AppLog.Warn("SessionState.Save", ex); }
     }
 }

@@ -6,10 +6,12 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.6.9</Version>
-    <!-- CUE4Parse pins Microsoft.Bcl.Memory 9.0.0 and SixLabors.ImageSharp 3.1.12, whose known
-         advisories (NU190*) are not actionable here without breaking the parser. -->
-    <NuGetAudit>false</NuGetAudit>
+    <Version>0.7.1</Version>
+    <!-- P07: audit is ON again. Known advisories in CUE4Parse's pinned
+         Microsoft.Bcl.Memory 9.0.0 / ImageSharp 3.1.12 are time-boxed waived
+         until 2026-12-19 — see docs/NuGet-Audit-Waiver.md. Do not extend
+         blindly; re-check when CUE4Parse updates. -->
+    <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

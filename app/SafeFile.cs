@@ -46,4 +46,23 @@ internal static class SafeFile
             catch { }
         }
     }
+
+    /// <summary>Writes text atomically (stage in the target directory, then replace/move).</summary>
+    public static void WriteAtomicText(string path, string content)
+    {
+        var dir = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        Directory.CreateDirectory(dir);
+        var staged = Path.Combine(dir, "." + Path.GetFileName(path) + ".stage-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            File.WriteAllText(staged, content);
+            if (File.Exists(path)) File.Replace(staged, path, null, ignoreMetadataErrors: true);
+            else File.Move(staged, path);
+        }
+        finally
+        {
+            try { if (File.Exists(staged)) File.Delete(staged); }
+            catch { }
+        }
+    }
 }

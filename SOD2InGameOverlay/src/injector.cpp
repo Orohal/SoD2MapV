@@ -50,7 +50,7 @@ int wmain(int argc, wchar_t** argv) {
     // Default: SOD2Overlay.dll next to this EXE; optional: explicit path as argv[1].
     wchar_t dllPath[MAX_PATH]{};
     if (argc > 1) {
-        wcsncpy(dllPath, argv[1], MAX_PATH - 1);
+        wcsncpy_s(dllPath, MAX_PATH, argv[1], MAX_PATH - 1);   // P17: guaranteed NUL
     } else {
         GetModuleFileNameW(nullptr, dllPath, MAX_PATH);
         wchar_t* slash = wcsrchr(dllPath, L'\\');
@@ -98,7 +98,8 @@ int wmain(int argc, wchar_t** argv) {
     }
 
     wprintf(L"[inject] %s in PID %u injiziert.\n", dllPath, pid);
-    if (WaitForSingleObject(thread, 5000) == WAIT_OBJECT_0) {
+    const bool finished = WaitForSingleObject(thread, 5000) == WAIT_OBJECT_0;
+    if (finished) {
         DWORD exitCode = 0;
         GetExitCodeThread(thread, &exitCode);
         if (exitCode == 0) {
@@ -112,7 +113,9 @@ int wmain(int argc, wchar_t** argv) {
         wprintf(L"[inject] LoadLibraryW thread laeuft noch (Timeout).\n");
     }
     CloseHandle(thread);
-    VirtualFreeEx(h, remote, 0, MEM_RELEASE);
+    // P17: never free the remote buffer while LoadLibraryW may still be using it.
+    if (finished) VirtualFreeEx(h, remote, 0, MEM_RELEASE);
+    else wprintf(L"[inject] Remote-Puffer bewusst nicht freigegeben (Thread aktiv).\n");
     CloseHandle(h);
     return 0;
 }

@@ -27,6 +27,7 @@ public static class UiTheme
         form.BackColor = Surface;
         form.ForeColor = Text;
         form.Font = UiFont;
+        form.AutoScaleMode = AutoScaleMode.Dpi;   // P11: consistent scaling on all dialogs
     }
 
     /// <summary>Recursively theme all controls of a dialog (one call instead of touching every control).</summary>

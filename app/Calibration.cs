@@ -30,10 +30,10 @@ public static class Calibration
         _cache![Norm(savePath)] = e;
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(_cache, new JsonSerializerOptions { WriteIndented = true }));
+            SafeFile.WriteAtomicText(FilePath,
+                JsonSerializer.Serialize(_cache, new JsonSerializerOptions { WriteIndented = true }));
         }
-        catch { /* best effort */ }
+        catch (Exception ex) { AppLog.Warn("Calibration.Set", ex); }
     }
 
     private static void Load()
@@ -50,7 +50,7 @@ public static class Calibration
                         _cache[kv.Key] = kv.Value;
             }
         }
-        catch { /* start empty */ }
+        catch (Exception ex) { AppLog.Warn("Calibration.Load", ex); }
     }
 
     private static string Norm(string p) => Path.GetFullPath(p).ToLowerInvariant();

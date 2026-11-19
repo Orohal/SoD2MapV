@@ -5,6 +5,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>SoD2MapViewer.SelfTest</AssemblyName>
+    <!-- Same time-boxed waiver as the app (docs/NuGet-Audit-Waiver.md) -->
+    <NoWarn>$(NoWarn);NU1902;NU1903</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\app\SoD2MapViewer.csproj" />
