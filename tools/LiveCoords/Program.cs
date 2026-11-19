@@ -1,6 +1,8 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -12,6 +14,19 @@ namespace LiveCoords;
 /// </summary>
 internal static class Program
 {
+    /// <summary>Find the running game process (Shipping EXE, not the elevated loader).</summary>
+    private static int FindGamePid()
+    {
+        // Prefer the actual game binary; the launcher "StateOfDecay2.exe" runs
+        // elevated and OpenProcess would fail with access denied.
+        var game = Process.GetProcessesByName("StateOfDecay2-Win64-Shipping")
+                          .OrderByDescending(p => p.StartTime).FirstOrDefault();
+        if (game != null) return game.Id;
+        var loader = Process.GetProcessesByName("StateOfDecay2")
+                            .OrderByDescending(p => p.StartTime).FirstOrDefault();
+        return loader?.Id ?? 0;
+    }
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -74,7 +89,12 @@ internal static class Program
         if (args.Length >= 2 && args[0] == "--addr")
         {
             long address = Convert.ToInt64(args[1].Replace("0x", ""), 16);
-            int pid = args.Length > 2 ? int.Parse(args[2], CultureInfo.InvariantCulture) : 9640;
+            int pid = args.Length > 2 ? int.Parse(args[2], CultureInfo.InvariantCulture) : FindGamePid();
+            if (pid == 0)
+            {
+                Console.Error.WriteLine("[addr] kein SoD2-Prozess gefunden");
+                return 1;
+            }
             Application.Run(new OverlayForm(pid, address));
             return 0;
         }
