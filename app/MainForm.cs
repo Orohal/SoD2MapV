@@ -1772,7 +1772,21 @@ public sealed class MainForm : Form
         }
 
         if (failures.Count > 0)
-            SetStatus($"export: {failures.Count} object(s) could not be patched — details in the dialog");
+        {
+            // P02: never write a silently incomplete mod pak
+            var detail = string.Join(Environment.NewLine, failures.Take(12));
+            if (failures.Count > 12)
+                detail += Environment.NewLine + $"… und {failures.Count - 12} weitere";
+            var answer = MessageBox.Show(this,
+                $"{failures.Count} Objekt(e) konnten nicht gepatcht werden:" +
+                Environment.NewLine + Environment.NewLine + detail +
+                Environment.NewLine + Environment.NewLine +
+                "Trotzdem ein unvollständiges Mod-.pak exportieren?",
+                "Export – Patch-Fehler", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes) return;
+            SetStatus($"export: {failures.Count} object(s) unpatched — proceeding by user request");
+        }
 
         string mountPoint, rel;
         try

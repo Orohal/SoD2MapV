@@ -671,8 +671,7 @@ public sealed class ItemInjectDialog : Form
             }
 
             var bak = sav + ".bak-" + DateTime.Now.ToString("yyyyMMddHHmmss");
-            File.Copy(sav, bak, overwrite: false);
-            File.Copy(tmpOut, sav, overwrite: true);
+            SafeFile.ReplaceWithBackup(tmpOut, sav, bak);   // P01: atomic + rollback
             if (_customSave != null && string.Equals(_customSave.FullName, sav, StringComparison.OrdinalIgnoreCase))
                 _customSave = new FileInfo(sav);
 

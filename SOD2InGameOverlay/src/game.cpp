@@ -1,9 +1,11 @@
 #include "game.h"
 #include "log.h"
 #include <Windows.h>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 uintptr_t Game::ModuleBase() { return reinterpret_cast<uintptr_t>(GetModuleHandle(nullptr)); }
 
@@ -22,10 +24,15 @@ static uintptr_t SafePtr(uintptr_t addr) {
     return CanRead(addr, sizeof(uintptr_t)) ? *reinterpret_cast<uintptr_t*>(addr) : 0;
 }
 
-// Live coordinate address found by the seed scan. Once locked, we poll it.
-static volatile uintptr_t g_coordAddr = 0;
-static volatile bool g_scanDone = true;   // true = idle/ready, false = scan running
-static volatile bool g_hasResult = false;
+// Cross-thread state (ScanThread writes, render thread reads) MUST be atomic.
+// 'volatile' is not a synchronisation primitive in C++ and caused a data race.
+static std::atomic<uintptr_t> g_coordAddr{ 0 };
+static std::atomic<bool>       g_scanDone{ true };   // true = idle/ready, false = scan running
+static std::atomic<bool>       g_hasResult{ false };
+
+// NOTE: g_candidates / g_hotRegions / g_lastGood below are ScanThread-only.
+// Only the three atomics above (plus the locked address) are published to the
+// render thread, so no further locking is required.
 
 // Top candidate addresses tracked simultaneously; the live one keeps changing.
 struct TrackAddr { uintptr_t addr; int cnt; };
@@ -72,25 +79,25 @@ static void SeedScan(const FVector& seed, float tol, bool fullScan) {
     const size_t chunk = 1 << 20;
     const size_t overlap = 32;
 
-    // validate=true: check each 4 KiB page with VirtualQuery before reading
-    // (used for cached hot regions that may have been unmapped by the game).
-    // validate=false: caller already validated the region (full scan) -> fast.
-    auto scanRegion = [&](uintptr_t start, uintptr_t end, bool validate) {
-        const uintptr_t PAGE = 0x1000;
+    // P04: read each 4 KiB page through ReadProcessMemory instead of
+    // dereferencing it. RPM fails cleanly if the game frees or reprotects a
+    // page between VirtualQuery and the read (TOCTOU) — no access violation
+    // inside the game. This replaces both the validated and the "fast" path.
+    auto scanRegion = [&](uintptr_t start, uintptr_t end) {
+        constexpr uintptr_t PAGE = 0x1000;
+        alignas(16) unsigned char buf[PAGE];
         for (uintptr_t pos = start; pos + 12 <= end && hitCount < MAXHITS; pos += PAGE) {
             uintptr_t hi = std::min<uintptr_t>(end, pos + PAGE);
-            if (validate) {
-                MEMORY_BASIC_INFORMATION mbi{};
-                if (!VirtualQuery((LPCVOID)pos, &mbi, sizeof(mbi))) continue;
-                if (mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) continue;
-                if (!(mbi.Protect & (PAGE_READONLY|PAGE_READWRITE|PAGE_WRITECOPY|
-                                     PAGE_EXECUTE_READ|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY))) continue;
-            }
-            for (uintptr_t p = pos; p + 12 <= hi && hitCount < MAXHITS; p += 4) {
-                FVector v = *reinterpret_cast<const FVector*>(p);
+            SIZE_T want = static_cast<SIZE_T>(hi - pos);
+            SIZE_T got = 0;
+            if (!ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(pos),
+                                   buf, want, &got) || got < 12) continue;
+            for (size_t off = 0; off + 12 <= got && hitCount < MAXHITS; off += 4) {
+                FVector v{};
+                std::memcpy(&v, buf + off, sizeof(v));
                 if (!std::isfinite(v.X) || !std::isfinite(v.Y) || !std::isfinite(v.Z)) continue;
                 if (FVecNear(v, seed, tol)) {
-                    hits[hitCount++] = { p, v };
+                    hits[hitCount++] = { pos + off, v };
                     if (hitCount >= MAXHITS) break;
                 }
             }
@@ -109,7 +116,7 @@ static void SeedScan(const FVector& seed, float tol, bool fullScan) {
             if (mbi.State == MEM_COMMIT &&
                 !(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) &&
                 (mbi.Protect & (PAGE_READONLY|PAGE_READWRITE|PAGE_WRITECOPY|PAGE_EXECUTE_READ|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY))) {
-                scanRegion(start, end, false);   // region already validated above -> fast
+                scanRegion(start, end);   // RPM validates every page as it reads
                 // Remember large writable heap regions for fast re-scans.
                 // Use region properties, not hit count (which hits MAXHITS early).
                 bool writable = (mbi.Protect & (PAGE_READWRITE|PAGE_WRITECOPY|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY)) != 0;
@@ -122,7 +129,7 @@ static void SeedScan(const FVector& seed, float tol, bool fullScan) {
         LogF("SeedScan: hot regions=%d", g_hotCount);
     } else {
         for (int r = 0; r < g_hotCount; r++)
-            scanRegion(g_hotRegions[r].base, g_hotRegions[r].base + g_hotRegions[r].size, true);  // cached regions -> validate
+            scanRegion(g_hotRegions[r].base, g_hotRegions[r].base + g_hotRegions[r].size);  // cached regions -> re-validated by RPM
     }
 
     LogF("SeedScan: raw hits=%d", hitCount);
@@ -249,13 +256,19 @@ PlayerState Game::Read() {
     PlayerState out{};
 
     // Only display the locked value. No polling, no re-scan, no feedback loop.
-    if (g_coordAddr && CanRead(g_coordAddr, sizeof(FVector))) {
-        FVector v = *reinterpret_cast<const FVector*>(g_coordAddr);
-        if (std::isfinite(v.X) && std::isfinite(v.Y) && std::isfinite(v.Z) &&
+    // P04: ReadProcessMemory also protects this read against a freed hot region.
+    const uintptr_t addr = g_coordAddr.load();
+    if (addr) {
+        FVector v{};
+        SIZE_T got = 0;
+        if (ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<LPCVOID>(addr),
+                              &v, sizeof(v), &got) &&
+            got == sizeof(v) &&
+            std::isfinite(v.X) && std::isfinite(v.Y) && std::isfinite(v.Z) &&
             std::fabs(v.X) < 500000 && std::fabs(v.Y) < 500000 &&
             (std::fabs(v.X) + std::fabs(v.Y) + std::fabs(v.Z)) > 1.0f) {
             out.Location = v;
-            out.root = g_coordAddr;
+            out.root = addr;
             out.valid = true;
         }
     }

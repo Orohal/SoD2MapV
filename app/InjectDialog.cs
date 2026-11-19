@@ -414,12 +414,20 @@ public sealed class InjectDialog : Form
             return;
         }
 
-        // backup + install
+        // backup + atomic install (P01: rollback on failure)
         var backupDir = Path.Combine(save.DirectoryName!, "Backups");
         Directory.CreateDirectory(backupDir);
         var backup = Path.Combine(backupDir, save.Name + ".bak-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"));
-        File.Copy(save.FullName, backup, overwrite: true);
-        File.Copy(temp, save.FullName, overwrite: true);
+        try
+        {
+            SafeFile.ReplaceWithBackup(temp, save.FullName, backup);
+        }
+        catch (Exception ex)
+        {
+            _lblInfo.Text = "Install fehlgeschlagen (Original aus Backup wiederhergestellt): " + ex.Message;
+            try { File.Delete(temp); } catch { }
+            return;
+        }
         File.Delete(temp);
 
         var newCount = Savegame.ReadInfo(save.FullName)?.VehicleCount ?? -1;
