@@ -6,3 +6,13 @@ ref/
 publish/
 release/
 .opencode
+
+# Lokale Reverse-Engineering-Helfer — keine Teile von SoD2MapV.
+# AutoScylla und x64dbgMpc sind eigene Repos, ScyllaBuild ist nur eine
+# Referenz-Kopie (GPL-3.0) und darf hier nicht hinein.
+/AutoScylla/
+/ImportRecon/
+/PackedTestExe/
+/ProcDumpPE/
+/ScyllaBuild/
+/x64dbgMpc/
