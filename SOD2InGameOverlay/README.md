@@ -27,11 +27,17 @@ Klonte beim ersten Lauf Kiero, MinHook und ImGui nach `vendor/`, konfiguriert CM
      die neuen Koordinaten im Fenster stehen, weiterlaufen.
    - Der Button zeigt währenddessen „Scan läuft... (~40 s)"; danach erscheinen N/O/H.
 
-**Warum nur auf Anfrage?** SoD2 hat Abwehrmaßnahmen gegen permanentes Auslesen des Prozesses;
-ein Dauer-Scan (Watcher + Timestamp-Poll + Re-Scan) führte zu Self-Exits des Spiels und hoher
-CPU-Last. Der Scan läuft deshalb **nur auf Knopfdruck** im Hintergrund-Thread — danach ist Ruhe.
-Für echtes Live-Tracking müsste das Spiel vollständig disassembliert werden (Offsets werden vom
-3-stufigen Loader verschoben). Das ist bewusst nicht Teil dieses Standes.
+**Warum nur auf Anfrage?** SoD2 hat **Online-Co-op** und damit ein Anti-Cheat-/Integritäts-
+System, das wiederholtes Auslesen des Prozessspeichers als Manipulation interpretiert. Ein
+Dauer-Scan (Watcher + Timestamp-Poll + Re-Scan) führte zu Self-Exits des Spiels (teils mit
+`unreal-v0-*.dmp`, teils sauber ohne Dump) und hoher CPU-Last. Der Scan läuft deshalb **nur auf
+Knopfdruck** im Hintergrund-Thread — danach ist Ruhe und das Spiel bleibt unangetastet.
+
+Zusätzlich verschleiert der 3-stufige Loader die UE4-Strukturen: statische Offsets
+(`UWorld+0x140` = GameInstance) sind im entpackten Dump korrekt, im Live-Prozess aber `null`.
+Für echtes Live-Tracking müsste das Spiel vollständig disassembliert und die Laufzeit-Offsets
+über eine externe, nicht-intrusive Methode bestimmt werden. Das ist bewusst nicht Teil dieses
+Standes.
 
 Optional: `Sod2Injector.exe "C:\pfad\zu\SOD2Overlay.dll"`.
 
