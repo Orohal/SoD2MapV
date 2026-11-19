@@ -15,6 +15,10 @@ internal sealed class SessionStateData
     public string? PrimarySelectedName { get; set; }
     public List<string> FavoriteMaps { get; set; } = new();
     public List<string> FavoriteObjects { get; set; } = new();
+    /// <summary>Map paths (.umap) that were edited at least once (shown red in the map filter).</summary>
+    public List<string> ModifiedMaps { get; set; } = new();
+    /// <summary>Chronological edit log: what was done (moved/rotated/scaled/deleted).</summary>
+    public List<string> History { get; set; } = new();
     public int BottomSplitHeight { get; set; } = 200;
     public int FavSplitDistance { get; set; } = 80;
     public string? Language { get; set; } = "de";

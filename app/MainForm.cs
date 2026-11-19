@@ -53,6 +53,10 @@ public sealed class MainForm : Form
     private readonly List<(string Label, int Index, string Tile)> _siteEntries = new(); // Tile = "" -> current tile (_canvas.Sites), else tile map path (region-wide list)
     private int _pendingSiteIndex = -1; // site to select after the pending tile load finishes
     private readonly Stack<UndoEntry> _undo = new();
+    /// <summary>Map paths edited at least once this session (red in the map filter).</summary>
+    private readonly HashSet<string> _modifiedMaps = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Structured edit history: what was done, von -&gt; nach.</summary>
+    private readonly ListBox _historyList = null!;
     private SessionStateData _session = null!;
     private List<string>? _pendingRestoreSelectionNames;
     private string? _pendingRestorePrimaryName;
@@ -88,6 +92,9 @@ public sealed class MainForm : Form
         _session = SessionState.Load();
         L10n.Language = string.IsNullOrWhiteSpace(_session.Language) ? "de" : _session.Language!;
         L10n.Load();
+
+        // Restore modified-map markers and the edit history from the last session.
+        foreach (var p in _session.ModifiedMaps) _modifiedMaps.Add(p);
 
         Text = $"State of Decay 2 — Map Viewer (v{typeof(MainForm).Assembly.GetName().Version?.ToString(3) ?? "?"})";
         Size = new Size(1400, 900);
@@ -478,6 +485,34 @@ public sealed class MainForm : Form
         _favPanel.Controls.Add(_favList);
         _favPanel.Controls.Add(favHeader);
 
+        // History panel (right of the favorites): chronological "what was done" log.
+        var historyPanel = new Panel { Dock = DockStyle.Fill, BackColor = UiTheme.SurfaceAlt };
+        var historyHeader = new Panel { Dock = DockStyle.Top, Height = 26, BackColor = Color.FromArgb(26, 28, 33) };
+        historyHeader.Controls.Add(UiTheme.Label(L10n.T("history.title", "↺ History (was wurde gemacht)"), bold: true));
+        _historyList = new ListBox
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyle.None,
+            BackColor = UiTheme.SurfaceAlt,
+            ForeColor = Color.FromArgb(195, 200, 210),
+            Font = UiTheme.DataFont,
+            IntegralHeight = false,
+        };
+        historyPanel.Controls.Add(_historyList);
+        historyPanel.Controls.Add(historyHeader);
+
+        var favHistorySplit = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical,
+            SplitterDistance = 260,
+            Panel1MinSize = 120,
+            Panel2MinSize = 120,
+            BackColor = UiTheme.SurfaceAlt,
+        };
+        favHistorySplit.Panel1.Controls.Add(_favPanel);
+        favHistorySplit.Panel2.Controls.Add(historyPanel);
+
         _bottomSplit = new SplitContainer
         {
             Dock = DockStyle.Bottom,
@@ -488,7 +523,7 @@ public sealed class MainForm : Form
             BackColor = UiTheme.SurfaceAlt,
         };
         _bottomSplit.SplitterDistance = Math.Clamp(_session.FavSplitDistance, 40, _bottomSplit.Height - 60);
-        _bottomSplit.Panel1.Controls.Add(_favPanel);
+        _bottomSplit.Panel1.Controls.Add(favHistorySplit);
         _bottomSplit.Panel2.Controls.Add(bottom);
 
         Controls.Add(outer);
@@ -501,6 +536,7 @@ public sealed class MainForm : Form
         UpdateModeButtons();
         UpdateInfo();
         RefreshFavoritesPanel();
+        RefreshHistoryList();
 
         // Set splitter distances once the form's actual size is known
         Load += (s, e) =>
@@ -622,7 +658,12 @@ public sealed class MainForm : Form
                 _favoriteUpdating = true;
                 foreach (var m in g.maps)
                 {
-                    node.Nodes.Add(new TreeNode(m) { Tag = m, Checked = _session.FavoriteMaps.Contains(m) });
+                    node.Nodes.Add(new TreeNode(m)
+                    {
+                        Tag = m,
+                        Checked = _session.FavoriteMaps.Contains(m),
+                        ForeColor = _modifiedMaps.Contains(m) ? Color.FromArgb(255, 90, 90) : Color.FromArgb(110, 210, 120),  // red = edited, green = untouched
+                    });
                     shown++;
                 }
                 node.Checked = g.maps.Count > 0 && g.maps.All(_session.FavoriteMaps.Contains);
@@ -640,7 +681,12 @@ public sealed class MainForm : Form
                 _favoriteUpdating = true;
                 foreach (var m in other.maps)
                 {
-                    node.Nodes.Add(new TreeNode(m) { Tag = m, Checked = _session.FavoriteMaps.Contains(m) });
+                    node.Nodes.Add(new TreeNode(m)
+                    {
+                        Tag = m,
+                        Checked = _session.FavoriteMaps.Contains(m),
+                        ForeColor = _modifiedMaps.Contains(m) ? Color.FromArgb(255, 90, 90) : Color.FromArgb(110, 210, 120),  // red = edited, green = untouched
+                    });
                     shown++;
                 }
                 node.Checked = other.maps.Count > 0 && other.maps.All(_session.FavoriteMaps.Contains);
@@ -664,6 +710,7 @@ public sealed class MainForm : Form
             _session.LastGameDir = _loader.GameDirectory;
             _session.LastObjectFilter = _search?.Text;
             _session.LastMapFilter = _mapFilter?.Text;
+            _session.ModifiedMaps = _modifiedMaps.ToList();
             if (_bottomSplit != null && !_bottomSplit.IsDisposed)
             {
                 _session.BottomSplitHeight = _bottomSplit.Height;
@@ -1131,6 +1178,38 @@ public sealed class MainForm : Form
         return item;
     }
 
+    /// <summary>Append a structured entry to the visible history and mark the map edited.</summary>
+    private void AddHistory(string action, string detail)
+    {
+        var line = $"{DateTime.Now:HH:mm:ss}  {action}: {detail}";
+        _session.History.Add(line);
+        if (_session.History.Count > 200) _session.History.RemoveAt(0);  // cap
+        RefreshHistoryList();
+        SessionState.Save(_session);
+    }
+
+    private void RefreshHistoryList()
+    {
+        _historyList.BeginUpdate();
+        _historyList.Items.Clear();
+        foreach (var h in _session.History) _historyList.Items.Add(h);
+        if (_session.History.Count > 0) _historyList.SelectedIndex = _historyList.Items.Count - 1;
+        _historyList.EndUpdate();
+    }
+
+    /// <summary>Mark the currently loaded map as edited (red in the map filter).</summary>
+    private void MarkCurrentMapModified()
+    {
+        var p = _map?.Path;
+        if (string.IsNullOrEmpty(p)) return;
+        if (_modifiedMaps.Add(p!) || !_session.ModifiedMaps.Contains(p!))
+        {
+            if (!_session.ModifiedMaps.Contains(p!)) _session.ModifiedMaps.Add(p!);
+            SessionState.Save(_session);
+            ApplyMapFilter();  // refresh colors
+        }
+    }
+
     private void CanvasObjectMoved(int idx, float oldX, float oldY)
     {
         if (!IsVisibleIndex(idx)) return;
@@ -1139,6 +1218,8 @@ public sealed class MainForm : Form
         _undo.Push(Entry(item));
         o.Edited = true;
         _source.ResetItem(idx);
+        AddHistory("move", $"{o.Name}  ({oldX/100:0.##}, {oldY/100:0.##}) -> ({o.X/100:0.##}, {o.Y/100:0.##}) m");
+        MarkCurrentMapModified();
         SetStatus($"moved {o.Name}: ({oldX / 100:0.##}, {oldY / 100:0.##}) m   |   undo: {_undo.Count}  (Ctrl+Z)");
     }
 
@@ -1153,6 +1234,8 @@ public sealed class MainForm : Form
             _visible[m.Idx].Edited = true;
         }
         _undo.Push(new UndoEntry { Items = items });
+        AddHistory("move-group", $"{items.Count} Objekte zusammen verschoben (Hausgruppe)");
+        MarkCurrentMapModified();
         SetStatus($"moved {items.Count} objects together (house group)   |   undo: {_undo.Count}  (Ctrl+Z)");
         foreach (var m in moves)
             _source.ResetItem(m.Idx);
@@ -1169,6 +1252,8 @@ public sealed class MainForm : Form
         _source.ResetItem(idx);
         var yaw = YawDeg(o.QX, o.QY, o.QZ, o.QW);
         var oldYaw = YawDeg(oldQX, oldQY, oldQZ, oldQW);
+        AddHistory("rotate", $"{o.Name}  {oldYaw:0.#}° -> {yaw:0.#}°");
+        MarkCurrentMapModified();
         SetStatus($"rotated {o.Name}: {oldYaw:0.#}° -> {yaw:0.#}°   |   undo: {_undo.Count}  (Ctrl+Z)");
     }
 
@@ -1181,6 +1266,8 @@ public sealed class MainForm : Form
         _undo.Push(Entry(item));
         o.EditedScale = true;
         _source.ResetItem(idx);
+        AddHistory("scale", $"{o.Name}  ({oldSX:0.##},{oldSY:0.##},{oldSZ:0.##}) -> ({o.SX:0.##},{o.SY:0.##},{o.SZ:0.##})");
+        MarkCurrentMapModified();
         SetStatus($"scaled {o.Name}: ({oldSX:0.##},{oldSY:0.##},{oldSZ:0.##}) -> ({o.SX:0.##},{o.SY:0.##},{o.SZ:0.##})   |   undo: {_undo.Count}  (Ctrl+Z)");
     }
 
@@ -1193,6 +1280,8 @@ public sealed class MainForm : Form
         _undo.Push(Entry(item));
         o.Deleted = true;
         _source.ResetItem(idx);
+        AddHistory("delete", o.Name);
+        MarkCurrentMapModified();
         SetStatus($"deleted {o.Name} (component data will be zeroed on export)   |   undo: {_undo.Count}  (Ctrl+Z)");
     }
 
