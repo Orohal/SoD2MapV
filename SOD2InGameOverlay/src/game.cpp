@@ -24,7 +24,8 @@ static uintptr_t SafePtr(uintptr_t addr) {
 
 // Live coordinate address found by the seed scan. Once locked, we poll it.
 static volatile uintptr_t g_coordAddr = 0;
-static volatile bool g_scanDone = false;
+static volatile bool g_scanDone = true;   // true = idle/ready, false = scan running
+static volatile bool g_hasResult = false;
 
 // Top candidate addresses tracked simultaneously; the live one keeps changing.
 struct TrackAddr { uintptr_t addr; int cnt; };
@@ -71,10 +72,21 @@ static void SeedScan(const FVector& seed, float tol, bool fullScan) {
     const size_t chunk = 1 << 20;
     const size_t overlap = 32;
 
-    auto scanRegion = [&](uintptr_t start, uintptr_t end) {
-        for (uintptr_t pos = start; pos + 12 <= end && hitCount < MAXHITS;) {
-            uintptr_t want = (chunk < end - pos) ? chunk : (end - pos);
-            for (uintptr_t p = pos; p + 12 <= pos + want && hitCount < MAXHITS; p += 4) {
+    // validate=true: check each 4 KiB page with VirtualQuery before reading
+    // (used for cached hot regions that may have been unmapped by the game).
+    // validate=false: caller already validated the region (full scan) -> fast.
+    auto scanRegion = [&](uintptr_t start, uintptr_t end, bool validate) {
+        const uintptr_t PAGE = 0x1000;
+        for (uintptr_t pos = start; pos + 12 <= end && hitCount < MAXHITS; pos += PAGE) {
+            uintptr_t hi = std::min<uintptr_t>(end, pos + PAGE);
+            if (validate) {
+                MEMORY_BASIC_INFORMATION mbi{};
+                if (!VirtualQuery((LPCVOID)pos, &mbi, sizeof(mbi))) continue;
+                if (mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) continue;
+                if (!(mbi.Protect & (PAGE_READONLY|PAGE_READWRITE|PAGE_WRITECOPY|
+                                     PAGE_EXECUTE_READ|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY))) continue;
+            }
+            for (uintptr_t p = pos; p + 12 <= hi && hitCount < MAXHITS; p += 4) {
                 FVector v = *reinterpret_cast<const FVector*>(p);
                 if (!std::isfinite(v.X) || !std::isfinite(v.Y) || !std::isfinite(v.Z)) continue;
                 if (FVecNear(v, seed, tol)) {
@@ -82,7 +94,6 @@ static void SeedScan(const FVector& seed, float tol, bool fullScan) {
                     if (hitCount >= MAXHITS) break;
                 }
             }
-            pos += (want > overlap) ? (want - overlap) : want;
         }
     };
 
@@ -98,7 +109,7 @@ static void SeedScan(const FVector& seed, float tol, bool fullScan) {
             if (mbi.State == MEM_COMMIT &&
                 !(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) &&
                 (mbi.Protect & (PAGE_READONLY|PAGE_READWRITE|PAGE_WRITECOPY|PAGE_EXECUTE_READ|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY))) {
-                scanRegion(start, end);
+                scanRegion(start, end, false);   // region already validated above -> fast
                 // Remember large writable heap regions for fast re-scans.
                 // Use region properties, not hit count (which hits MAXHITS early).
                 bool writable = (mbi.Protect & (PAGE_READWRITE|PAGE_WRITECOPY|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY)) != 0;
@@ -111,7 +122,7 @@ static void SeedScan(const FVector& seed, float tol, bool fullScan) {
         LogF("SeedScan: hot regions=%d", g_hotCount);
     } else {
         for (int r = 0; r < g_hotCount; r++)
-            scanRegion(g_hotRegions[r].base, g_hotRegions[r].base + g_hotRegions[r].size);
+            scanRegion(g_hotRegions[r].base, g_hotRegions[r].base + g_hotRegions[r].size, true);  // cached regions -> validate
     }
 
     LogF("SeedScan: raw hits=%d", hitCount);
@@ -157,7 +168,7 @@ static void SeedScan(const FVector& seed, float tol, bool fullScan) {
         float dy = groups[g].v.Y - seed.Y;
         float dz = groups[g].v.Z - seed.Z;
         float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
-        if (dist > 5000.0f) continue; // near seed only
+        if (dist > 30000.0f) continue; // 300 m: save may lag behind live pos after char rotation
         // Insert sorted by count descending into top candidates.
         if (g_candidateCount < 16) {
             int k = g_candidateCount++;
@@ -189,15 +200,16 @@ static void SeedScan(const FVector& seed, float tol, bool fullScan) {
             // First scan: pick closest to the save seed (player is near the save).
             if (d < bestDist) { bestDist = d; chosen = a; chosenVal = v; }
         } else {
-            // Re-scan: skip the exact-old value (stale), pick the nearest MOVER
-            // within a plausible movement radius (<= 10000 cm in 2.5 s).
-            if (d < 5.0f || d > 10000.0f) continue;
+            // Re-scan: skip the exact-old value (stale), pick the nearest
+            // candidate within the search window.
+            if (d < 5.0f || d > 30000.0f) continue;
             if (d < bestDist) { bestDist = d; chosen = a; chosenVal = v; }
         }
     }
     if (chosen) {
         g_coordAddr = chosen;
         g_lastGood = chosenVal; g_haveLast = true;
+        g_hasResult = true;
         LogF("SeedScan: LOCKED addr=0x%llX dist=%.1f val=(%.1f,%.1f,%.1f)",
              (unsigned long long)chosen, bestDist, chosenVal.X, chosenVal.Y, chosenVal.Z);
     } else {
@@ -205,36 +217,44 @@ static void SeedScan(const FVector& seed, float tol, bool fullScan) {
     }
 }
 
-// Background thread: ONE full scan. The result is a one-time measurement;
-// no periodic re-scan (that cost 363% CPU and killed the render thread).
+// ON-DEMAND scan. No watcher, no timestamp polling, no automatic re-scan.
+// SoD2 has anti-reading measures; a continuous scanner both triggers those
+// and burns CPU. The user requests a scan explicitly ("Scan jetzt" button).
 static DWORD WINAPI ScanThread(LPVOID) {
     FVector seed{};
     if (!ReadSeed(seed)) {
-        LogF("SeedScan: could not read seed file");
+        LogF("Scan: could not read seed file");
         g_scanDone = true;
         return 0;
     }
-    SeedScan(seed, 3000.0f, true);
-    LogF("ScanThread: done");
+    LogF("Scan: requested, seed=(%.1f,%.1f,%.1f)", seed.X, seed.Y, seed.Z);
+    g_hasResult = false;
+    SeedScan(seed, 10000.0f, true);
     g_scanDone = true;
+    LogF("Scan: finished");
     return 0;
 }
+
+void Game::RequestScan() {
+    if (!g_scanDone) return;           // already scanning
+    g_scanDone = false;
+    HANDLE h = CreateThread(nullptr, 0, ScanThread, nullptr, 0, nullptr);
+    if (h) CloseHandle(h);
+}
+
+bool Game::IsScanning() { return !g_scanDone; }
+bool Game::HasResult()  { return g_hasResult; }
 
 PlayerState Game::Read() {
     PlayerState out{};
 
-    if (!g_scanDone) {
-        static bool started = false;
-        if (!started) {
-            started = true;
-            HANDLE h = CreateThread(nullptr, 0, ScanThread, nullptr, 0, nullptr);
-            if (h) CloseHandle(h);
-        }
-    }
-
+    // Only display the locked value. No polling, no re-scan, no feedback loop.
     if (g_coordAddr && CanRead(g_coordAddr, sizeof(FVector))) {
-        out.Location = *reinterpret_cast<const FVector*>(g_coordAddr);
-        if (std::isfinite(out.Location.X) && std::fabs(out.Location.X) < 500000) {
+        FVector v = *reinterpret_cast<const FVector*>(g_coordAddr);
+        if (std::isfinite(v.X) && std::isfinite(v.Y) && std::isfinite(v.Z) &&
+            std::fabs(v.X) < 500000 && std::fabs(v.Y) < 500000 &&
+            (std::fabs(v.X) + std::fabs(v.Y) + std::fabs(v.Z)) > 1.0f) {
+            out.Location = v;
             out.root = g_coordAddr;
             out.valid = true;
         }

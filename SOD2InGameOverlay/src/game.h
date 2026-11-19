@@ -28,4 +28,10 @@ namespace Game {
 
     uintptr_t ModuleBase();
     PlayerState Read();
+
+    // On-demand scan: only called when the user clicks "Scan jetzt".
+    // No background polling, no watcher, no automatic re-scan.
+    void RequestScan();
+    bool IsScanning();
+    bool HasResult();
 }

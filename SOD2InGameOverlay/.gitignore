@@ -1,5 +1,7 @@
 # Build artifacts
 build/
+__pycache__/
+*.pyc
 
 # Vendored dependency git metadata
 vendor/*/.git/

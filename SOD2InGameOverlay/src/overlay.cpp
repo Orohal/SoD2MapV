@@ -51,6 +51,15 @@ void OverlayDraw() {
     }
 
     ImGui::Separator();
+    if (Game::IsScanning()) {
+        ImGui::TextColored(ImVec4(1.f, 0.8f, 0.3f, 1.f), "Scan laeuft... (~40 s)");
+    } else if (ImGui::Button("Scan jetzt")) {
+        Game::RequestScan();
+    }
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.f), "nur auf Anfrage");
+
+    ImGui::Separator();
     ImGui::Checkbox("Meter", &s_meters);
     ImGui::SameLine();
     ImGui::Checkbox("Velocity", &s_velocity);
