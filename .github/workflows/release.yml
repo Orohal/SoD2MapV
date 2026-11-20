@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release-Tag, z. B. v0.7.3'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Version und Tag pruefen
+        shell: pwsh
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $csproj = [xml](Get-Content 'app/SoD2MapViewer.csproj' -Raw)
+          $version = $csproj.Project.PropertyGroup.Version
+          $tag = if ($env:EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_TAG } else { $env:REF_NAME }
+          if ([string]::IsNullOrWhiteSpace($tag)) { throw 'Kein Tag vorhanden' }
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw "Ungueltiges Tag: $tag" }
+          if ($tag -ne "v$version") { throw "Tag $tag passt nicht zu csproj-Version $version" }
+          "TAG=$tag" >> $env:GITHUB_ENV
+          "VERSION=$version" >> $env:GITHUB_ENV
+          Write-Host "Release $tag (csproj $version)"
+
+      - name: Build (Release)
+        run: dotnet build app/SoD2MapViewer.csproj -c Release --nologo
+
+      - name: SelfTest (Gate)
+        run: dotnet run --project tests/SoD2MapViewer.SelfTest/SelfTest.csproj -c Release --no-launch-profile
+
+      - name: Paketieren (ohne PDB) + SHA256
+        shell: pwsh
+        run: |
+          $src = (Resolve-Path 'app/bin/Release/net10.0-windows').Path
+          $stage = Join-Path $env:RUNNER_TEMP 'SoD2MapV-stage'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Get-ChildItem $src -Recurse -File | Where-Object { $_.Extension -ne '.pdb' } | ForEach-Object {
+            $rel = $_.FullName.Substring($src.Length + 1)
+            $dst = Join-Path $stage $rel
+            New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
+            Copy-Item -LiteralPath $_.FullName -Destination $dst -Force
+          }
+          $zipName = "SoD2MapV-$env:TAG.zip"
+          $zip = Join-Path $env:GITHUB_WORKSPACE $zipName
+          Compress-Archive -Path "$stage\*" -DestinationPath $zip -CompressionLevel Optimal -Force
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $zipName" | Out-File -FilePath (Join-Path $env:GITHUB_WORKSPACE 'SHA256SUMS.txt') -Encoding ascii
+          Write-Host "Paket: $zipName"
+
+      - name: GitHub Release erstellen
+        shell: pwsh
+        run: |
+          gh release create $env:TAG `
+            "SoD2MapV-$env:TAG.zip" "SHA256SUMS.txt" `
+            --title "$env:TAG - SoD2MapV Viewer/Editor" `
+            --generate-notes

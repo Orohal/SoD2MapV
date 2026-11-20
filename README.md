@@ -67,6 +67,17 @@ auch manuell prüfen und die Release-Seite im Browser öffnen.
   auf `github.com/Orohal/SoD2MapV/releases` begrenzt.
 - Einstellung wird in `session.json` gespeichert (`CheckUpdatesOnStartup`, Default `true`).
 
+## CI / Releases (GitHub Actions)
+
+- **`.github/workflows/ci.yml`** — bei Push/PR auf `main` sowie manuell: Build in Release
+  und SelfTest (19 Checks). Fehlschlag blockiert den Merge.
+- **`.github/workflows/release.yml`** — bei Tag `vX.Y.Z` (oder manuell mit Tag-Input):
+  derselbe Build+Test, dann Prüfung **csproj-Version == Tag**, ZIP ohne `.pdb` und
+  `SHA256SUMS.txt`. Danach `gh release create` mit automatischen Release-Notes.
+- Releases entstehen damit **in einer sauberen GitHub-Umgebung** — unabhängig von
+  lokalen SDK-Pfaden oder Umgebungsvariablen. Keine Secrets nötig
+  (`GITHUB_TOKEN` mit `contents: write` nur im Release-Job).
+
 ## To do
 
 1. **Feinschliff / Polish:** Viele kleine Verfeinerungen, Bugfixes und UX-Polish; Fokus auf Stabilität, Konsistenz und Detailarbeit im Editor, Export und UI.
