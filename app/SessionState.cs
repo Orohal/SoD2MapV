@@ -22,6 +22,8 @@ internal sealed class SessionStateData
     public int BottomSplitHeight { get; set; } = 200;
     public int FavSplitDistance { get; set; } = 80;
     public string? Language { get; set; } = "de";
+    /// <summary>Variant A update check: query GitHub on startup (no download). User-switchable.</summary>
+    public bool CheckUpdatesOnStartup { get; set; } = true;
 }
 
 internal static class SessionState

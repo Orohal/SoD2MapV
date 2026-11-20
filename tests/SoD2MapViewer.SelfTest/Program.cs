@@ -94,6 +94,14 @@ internal static class Program
         Check("both occurrences rewritten",
             BitConverter.ToSingle(multi, 4) == 1f && BitConverter.ToSingle(multi, 20) == 1f);
 
+        Console.WriteLine("UpdateChecker (Variant A):");
+        Check("v0.7.1 -> 0.7.1", UpdateChecker.ParseVersion("v0.7.1") == new Version(0, 7, 1));
+        Check("0.8.0 -> 0.8.0", UpdateChecker.ParseVersion("0.8.0") == new Version(0, 8, 0));
+        Check("v0.7.2-beta -> 0.7.2", UpdateChecker.ParseVersion("v0.7.2-beta") == new Version(0, 7, 2));
+        Check("unbekannt -> null", UpdateChecker.ParseVersion("foo") is null);
+        Check("0.7.2 ist neuer", UpdateChecker.IsNewer(new Version(0, 7, 2), new Version(0, 7, 1)));
+        Check("0.7.1 ist nicht neuer", !UpdateChecker.IsNewer(new Version(0, 7, 1), new Version(0, 7, 1)));
+
         Console.WriteLine();
         Console.WriteLine($"Ergebnis: {_passed} bestanden, {_failed} fehlgeschlagen");
         return _failed == 0 ? 0 : 1;

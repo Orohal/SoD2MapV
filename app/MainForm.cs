@@ -401,6 +401,13 @@ public sealed class MainForm : Form
             Application.Restart();
         };
 
+        var btnUpdate = UiTheme.Button(L10n.T("toolbar.update", "Update?"));
+        btnUpdate.Click += (_, _) =>
+        {
+            using var dlg = new UpdateDialog(_session, ScheduleSessionSave, checkImmediately: true);
+            dlg.ShowDialog(this);
+        };
+
         rowMain.Controls.AddRange(new Control[]
         {
             UiTheme.Label(L10n.T("toolbar.game", "Spiel"), bold: true), btnOpen,
@@ -415,7 +422,7 @@ public sealed class MainForm : Form
         {
             UiTheme.Label(L10n.T("toolbar.mode", "Modus"), bold: true), _btnModeMove, _btnModeRotate, _btnModeScale, _cmbSnap,
             UiTheme.Label(L10n.T("toolbar.view", "Ansicht"), bold: true), _chkBg, _chkSites, _chkEditBg, _chkEdit, btnHelp,
-            UiTheme.Label(L10n.T("toolbar.language", "Sprache"), bold: true), btnLang,
+            UiTheme.Label(L10n.T("toolbar.language", "Sprache"), bold: true), btnLang, btnUpdate,
         });
         // C23: tooltips for every toolbar action.
         _tips.SetToolTip(btnOpen, "Spielordner mit den .pak-Dateien wählen");
@@ -426,6 +433,7 @@ public sealed class MainForm : Form
         _tips.SetToolTip(btnMeshViewer, "Mesh-Viewer öffnen (V)");
         _tips.SetToolTip(btnHelp, "Tastenkürzel und Hilfe anzeigen");
         _tips.SetToolTip(btnLang, "Sprache wechseln (DE/EN) – startet den Viewer neu");
+        _tips.SetToolTip(btnUpdate, "Auf neue Version prüfen (nur Anzeige, kein Download)");
         _tips.SetToolTip(_btnModeMove, "Objekte verschieben (M, nochmal = aus)");
         _tips.SetToolTip(_btnModeRotate, "Objekte drehen (R, nochmal = aus)");
         _tips.SetToolTip(_btnModeScale, "Objekte skalieren (S, nochmal = aus)");
@@ -578,6 +586,17 @@ public sealed class MainForm : Form
             if (omax < omin) omax = omin;
             outer.SplitterDistance = Math.Clamp(360, omin, omax);
             UiTheme.ApplyGrid(_grid);
+        };
+
+        // Variant A: optionale Updateprüfung beim Start — nur Anzeige, kein Download.
+        Shown += async (_, _) =>
+        {
+            if (!_session.CheckUpdatesOnStartup) return;
+            var (info, _) = await UpdateChecker.CheckAsync();
+            if (info == null || !UpdateChecker.IsNewer(info.LatestVersion, UpdateChecker.CurrentVersion))
+                return;   // offline oder aktuell → keine Störung
+            using var dlg = new UpdateDialog(_session, ScheduleSessionSave, prefetched: info);
+            dlg.ShowDialog(this);
         };
 
         // restore session (filters + game dir) before first init
