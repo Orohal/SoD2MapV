@@ -18,6 +18,8 @@
     <PackageReference Include="CUE4Parse" Version="1.2.2.202611" />
     <PackageReference Include="CUE4Parse-Conversion" Version="1.2.2.202611" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <!-- C11: BgMaps/FandomMaps use Newtonsoft directly — declare instead of relying on CUE4Parse -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 
   <!-- Offline basemap: fandom blank-map webps are embedded, nothing is fetched at runtime -->

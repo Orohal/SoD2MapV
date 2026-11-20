@@ -18,13 +18,20 @@ using CUE4Parse.UE4.Versions;
 namespace SoD2MapViewer;
 
 /// <summary>Reads the game's .pak archives and parses cooked .umap levels into MapModels.</summary>
-public sealed class MapLoader
+public sealed class MapLoader : IDisposable
 {
     private DefaultFileProvider? _provider;
     public DefaultFileProvider Provider => _provider ?? throw new InvalidOperationException("not initialized");
 
     public string GameDirectory = "";
     public readonly List<string> MapPaths = new();
+
+    /// <summary>C25: release mounted pak file handles when switching game dir / closing.</summary>
+    public void Dispose()
+    {
+        _provider?.Dispose();
+        _provider = null;
+    }
 
     public sealed class InitResult
     {
@@ -82,6 +89,11 @@ public sealed class MapLoader
         => Provider.SubmitKey(new FGuid(guid), new FAesKey(key));
 
     /// <summary>Full decoded bytes of a pak entry (.umap = uasset+uexp in one file for SoD2).</summary>
+    /// <summary>
+    /// C21: returns the whole decompressed image as one byte[] (Large Object Heap for
+    /// large maps). This is an accepted trade-off: UmapPatcher does byte-level surgery
+    /// with random access; a stream-based redesign would be needed to avoid it.
+    /// </summary>
     public byte[] ReadMapBytes(string mapPath)
     {
         if (Provider[mapPath] is FPakEntry pe && Lz4Linked.NeedsLinkedDecode(pe))

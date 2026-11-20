@@ -291,6 +291,8 @@ public static class PlatformInjector
     }
 
     /// <summary>Schneller RelLoc-Scan: zählt nahe SMCs (2D, &lt;= radiusCm) und ermittelt nächste Distanz (2D) zum Ziel.</summary>
+    /// <summary>C22: cheap density probe (SMC count + nearest distance) used for tile picking,
+    /// not a candidate scan. Kept separate from ScanCandidates intentionally.</summary>
     public static (int nearby, float nearest) ScanSmcDensityFast(byte[] tileBytes, float targetLocalX, float targetLocalY, float radiusCm = 6000f)
     {
         try
@@ -560,6 +562,7 @@ public static class PlatformInjector
         return info;
     }
 
+    /// <summary>C22: converts one already-parsed export into a Candidate; no scanning.</summary>
     private static Candidate? BuildCandidate(ScanInfo info, int exportIndex, float targetLocalX, float targetLocalY)
     {
         int serSize = BitConverter.ToInt32(info.Exports[exportIndex], 24);
@@ -603,6 +606,8 @@ public static class PlatformInjector
         return false;
     }
 
+    /// <summary>C22: full candidate scan — parses exports and builds a ranked list.
+    /// The overload below adds mesh-name / extra-allow filters.</summary>
     public static List<Candidate> ScanCandidates(byte[] tileBytes, float targetLocalX, float targetLocalY)
         => ScanCandidates(tileBytes, targetLocalX, targetLocalY, null, null);
 

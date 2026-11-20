@@ -25,12 +25,26 @@ public sealed class MapObject
 
     public bool HasTransform { get; set; }
 
+    // C19: read-only consistency probe — useful for validation without mutating data.
+    public bool HasFiniteTransform =>
+        float.IsFinite(X) && float.IsFinite(Y) && float.IsFinite(Z) &&
+        float.IsFinite(QX) && float.IsFinite(QY) && float.IsFinite(QZ) && float.IsFinite(QW) &&
+        float.IsFinite(SX) && float.IsFinite(SY) && float.IsFinite(SZ);
+
     // Original (pre-edit) transform as loaded — the UmapPatcher uses these to locate the
     // location bytes inside the pristine map data, while X/Y/... hold the (possibly moved)
     // current values. Both stay equal until the object is edited.
-    public float OrigX, OrigY, OrigZ;
-    public float OrigQX, OrigQY, OrigQZ, OrigQW;
-    public float OrigSX, OrigSY, OrigSZ;
+    // C19: properties (not public fields) keep the patcher's pristine values encapsulated.
+    public float OrigX { get; set; }
+    public float OrigY { get; set; }
+    public float OrigZ { get; set; }
+    public float OrigQX { get; set; }
+    public float OrigQY { get; set; }
+    public float OrigQZ { get; set; }
+    public float OrigQW { get; set; }
+    public float OrigSX { get; set; }
+    public float OrigSY { get; set; }
+    public float OrigSZ { get; set; }
 
     // internal bookkeeping for the patcher (fields on purpose: not bound to the grid)
     public int ExportIndex = -1;          // actor export index in the package's ExportMap

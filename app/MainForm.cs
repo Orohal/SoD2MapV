@@ -11,7 +11,7 @@ namespace SoD2MapViewer;
 
 public sealed class MainForm : Form
 {
-    private readonly MapLoader _loader = new();
+    private MapLoader _loader = new();   // C25: replaceable so old providers can be disposed
     private static readonly string DefaultGameDir = @"D:\Games\State of Decay 2\StateOfDecay2";
 
     private readonly TreeView _mapTree = null!;
@@ -58,6 +58,9 @@ public sealed class MainForm : Form
     /// <summary>Structured edit history: what was done, von -&gt; nach.</summary>
     private readonly ListBox _historyList = null!;
     private SessionStateData _session = null!;
+    // C17: debounce session writes — edits fire many times per drag.
+    private readonly System.Windows.Forms.Timer _sessionSaveTimer = new() { Interval = 500 };
+    private readonly ToolTip _tips = new();   // C23
     private List<string>? _pendingRestoreSelectionNames;
     private string? _pendingRestorePrimaryName;
 
@@ -90,6 +93,8 @@ public sealed class MainForm : Form
     public MainForm()
     {
         _session = SessionState.Load();
+        _sessionSaveTimer.Tick += (_, _) => { _sessionSaveTimer.Stop(); SaveSessionStateLight(); };
+        FormClosed += (_, _) => { _sessionSaveTimer.Stop(); SaveSessionState(); _loader.Dispose(); };
         L10n.Language = string.IsNullOrWhiteSpace(_session.Language) ? "de" : _session.Language!;
         L10n.Load();
 
@@ -313,7 +318,7 @@ public sealed class MainForm : Form
         _chkEdit.CheckedChanged += (s, e) => { _canvas.EditingEnabled = _chkEdit.Checked; UpdateInfo(); };
 
         var btnExport = UiTheme.Button(L10n.T("toolbar.export", "Mod-.pak exportieren..."));
-        btnExport.Click += (s, e) => ExportModPak();
+        btnExport.Click += async (s, e) => await ExportModPakAsync();
         var btnAdjustZ = UiTheme.Button(L10n.T("toolbar.height", "Höhe anpassen (Z)…"));
         btnAdjustZ.Click += (s, e) => AdjustSelectionHeight();
         var btnChar = UiTheme.Button("📍 " + L10n.T("toolbar.showCharacter", "Figur anzeigen (P)"));
@@ -412,6 +417,20 @@ public sealed class MainForm : Form
             UiTheme.Label(L10n.T("toolbar.view", "Ansicht"), bold: true), _chkBg, _chkSites, _chkEditBg, _chkEdit, btnHelp,
             UiTheme.Label(L10n.T("toolbar.language", "Sprache"), bold: true), btnLang,
         });
+        // C23: tooltips for every toolbar action.
+        _tips.SetToolTip(btnOpen, "Spielordner mit den .pak-Dateien wählen");
+        _tips.SetToolTip(btnChar, "Spielerposition aus dem Save anzeigen (P)");
+        _tips.SetToolTip(btnExport, "Änderungen als Mod-.pak exportieren");
+        _tips.SetToolTip(btnAdjustZ, "Höhe (Z) der Auswahl anpassen");
+        _tips.SetToolTip(btnUndo, "Letzte Änderung rückgängig machen (Ctrl+Z)");
+        _tips.SetToolTip(btnMeshViewer, "Mesh-Viewer öffnen (V)");
+        _tips.SetToolTip(btnHelp, "Tastenkürzel und Hilfe anzeigen");
+        _tips.SetToolTip(btnLang, "Sprache wechseln (DE/EN) – startet den Viewer neu");
+        _tips.SetToolTip(_btnModeMove, "Objekte verschieben (M, nochmal = aus)");
+        _tips.SetToolTip(_btnModeRotate, "Objekte drehen (R, nochmal = aus)");
+        _tips.SetToolTip(_btnModeScale, "Objekte skalieren (S, nochmal = aus)");
+        _tips.SetToolTip(_chkEdit, "Bearbeitung aktivieren/deaktivieren");
+
         // WinForms docks the last-added control first: main / actions / tools from top to bottom.
         top.Controls.Add(rowTools);
         top.Controls.Add(rowActions);
@@ -736,6 +755,13 @@ public sealed class MainForm : Form
 
     private void SaveSessionState() => SaveSessionStateLight();
 
+    /// <summary>C17: coalesce rapid edit notifications into one disk write.</summary>
+    private void ScheduleSessionSave()
+    {
+        _sessionSaveTimer.Stop();
+        _sessionSaveTimer.Start();
+    }
+
     private void RestoreLastMapSelection()
     {
         var path = _session.LastMapPath;
@@ -808,6 +834,8 @@ public sealed class MainForm : Form
         };
         if (dlg.ShowDialog(this) == DialogResult.OK)
         {
+            _loader.Dispose();              // C25: release old pak handles
+            _loader = new MapLoader();
             _loader.GameDirectory = dlg.SelectedPath;
             BeginInitGame();
         }
@@ -1185,7 +1213,7 @@ public sealed class MainForm : Form
         _session.History.Add(line);
         if (_session.History.Count > 200) _session.History.RemoveAt(0);  // cap
         RefreshHistoryList();
-        SessionState.Save(_session);
+        ScheduleSessionSave();
     }
 
     private void RefreshHistoryList()
@@ -1205,7 +1233,7 @@ public sealed class MainForm : Form
         if (_modifiedMaps.Add(p!) || !_session.ModifiedMaps.Contains(p!))
         {
             if (!_session.ModifiedMaps.Contains(p!)) _session.ModifiedMaps.Add(p!);
-            SessionState.Save(_session);
+            ScheduleSessionSave();
             ApplyMapFilter();  // refresh colors
         }
     }
@@ -1636,7 +1664,7 @@ public sealed class MainForm : Form
     /// in-game map display follows, without the user having to load and edit that map manually.
     /// Returns the patched (path, data) pairs; empty when no markers moved or nothing matched.
     /// </summary>
-    private List<(string Path, byte[] Data)> BuildSitesUmapPatches(List<TgcPatcher.MarkerMove> markers)
+    private async Task<List<(string Path, byte[] Data)>> BuildSitesUmapPatches(List<TgcPatcher.MarkerMove> markers)
     {
         var result = new List<(string, byte[])>();
         if (markers.Count == 0 || _map == null || _map.Error != null) return result;
@@ -1669,7 +1697,7 @@ public sealed class MainForm : Form
         {
             try
             {
-                var model = _loader.LoadMapAsync(c).GetAwaiter().GetResult();
+                var model = await _loader.LoadMapAsync(c);   // C9: no UI-thread blocking
                 if (model.Error != null) continue;
                 var data = _loader.ReadMapBytes(c);
                 var offX = model.HasWorldTileOffset ? model.WorldTileOffsetX : 0f;
@@ -1707,7 +1735,7 @@ public sealed class MainForm : Form
         PakWriter.Write(path, mountPoint, pak);
     }
 
-    private void ExportModPak()
+    private async Task ExportModPakAsync()
     {
         if (_map == null || _map.Error != null)
         {
@@ -1832,7 +1860,7 @@ public sealed class MainForm : Form
             var entries = new List<PakWriter.Entry> { new() { Path = rel, Data = data } };
 
             // auto multi-map: moved site markers -> patch region site umap(s) into the same pak
-            var siteMaps = BuildSitesUmapPatches(tgcPatch?.Markers ?? new List<TgcPatcher.MarkerMove>());
+            var siteMaps = await BuildSitesUmapPatches(tgcPatch?.Markers ?? new List<TgcPatcher.MarkerMove>());
             foreach (var (sp, sd) in siteMaps)
             {
                 try

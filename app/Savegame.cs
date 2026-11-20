@@ -49,7 +49,7 @@ public static class Savegame
         }
 
         var outPath = Path.Combine(Path.GetTempPath(), Path.GetFileNameWithoutExtension(path) + ".gvas");
-        File.WriteAllBytes(outPath, data);
+        SafeFile.WriteAtomicBytes(outPath, data);   // C2: atomic CLI output write
         Console.WriteLine($"[save] decompressed -> {outPath}");
 
         if (filter.Length == 0) return 0;
@@ -967,7 +967,7 @@ public static class Savegame
         BitConverter.GetBytes(props.Length).CopyTo(outFile, 0x261);
         Array.Copy(block, 0, outFile, HeaderEnd, block.Length);
         Array.Copy(original, HeaderEnd + originalCompressedLen, outFile, HeaderEnd + block.Length, FooterSize);
-        File.WriteAllBytes(outPath, outFile);
+        SafeFile.WriteAtomicBytes(outPath, outFile);   // C2: atomic CLI output write
         return (block.Length, outFile.Length);
     }
 
@@ -1378,7 +1378,7 @@ public static class Savegame
         BitConverter.GetBytes(data.Length).CopyTo(outFile, 0x261);
         Array.Copy(block, 0, outFile, HeaderEnd, block.Length);
         Array.Copy(bytes, HeaderEnd + compressedLen, outFile, HeaderEnd + block.Length, FooterSize);
-        File.WriteAllBytes(outPath, outFile);
+        SafeFile.WriteAtomicBytes(outPath, outFile);   // C2: atomic CLI output write
         Console.WriteLine($"[saveitems] wrote {outPath}: file {outFile.Length:N0} B, block {block.Length:N0} B, props {data.Length:N0} B (+{total}), survivor={activeId}");
 
         // ---- self-check: re-decode and re-parse ----

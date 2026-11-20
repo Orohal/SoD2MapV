@@ -7,8 +7,10 @@ namespace SoD2MapViewer;
 
 internal static class L10n
 {
-    private static Dictionary<string, string> _strings = new(StringComparer.Ordinal);
+    // C24: atomic reference swap is enough for the read-mostly dictionary.
+    private static volatile Dictionary<string, string> _strings = new(StringComparer.Ordinal);
     public static string Language { get; set; } = "de";
+    public static event Action? LanguageChanged;
 
     public static string T(string key, string fallback)
     {
@@ -35,6 +37,7 @@ internal static class L10n
             var json = File.ReadAllText(path);
             var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
             _strings = dict ?? new Dictionary<string, string>(StringComparer.Ordinal);
+            LanguageChanged?.Invoke();
         }
         catch (Exception ex)
         {

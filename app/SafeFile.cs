@@ -47,6 +47,26 @@ internal static class SafeFile
         }
     }
 
+    /// <summary>Writes bytes atomically (stage in the target directory, then replace/move).
+    /// No backup — used for CLI output files, unlike the savegame dialogs.</summary>
+    public static void WriteAtomicBytes(string path, byte[] content)
+    {
+        var dir = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        Directory.CreateDirectory(dir);
+        var staged = Path.Combine(dir, "." + Path.GetFileName(path) + ".stage-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            File.WriteAllBytes(staged, content);
+            if (File.Exists(path)) File.Replace(staged, path, null, ignoreMetadataErrors: true);
+            else File.Move(staged, path);
+        }
+        finally
+        {
+            try { if (File.Exists(staged)) File.Delete(staged); }
+            catch { }
+        }
+    }
+
     /// <summary>Writes text atomically (stage in the target directory, then replace/move).</summary>
     public static void WriteAtomicText(string path, string content)
     {
