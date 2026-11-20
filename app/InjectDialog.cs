@@ -407,12 +407,24 @@ public sealed class InjectDialog : Form
         {
         _lblInfo.Text = "Injecting...";
         Cursor = Cursors.WaitCursor;
-        var rc = Savegame.SaveInject(save.FullName, temp, classIdx, (float)sx, (float)sy, (float)sz, (float)yaw, -1, setGuid: true);
-        Cursor = Cursors.Default;
-        if (rc != 0)
+        // SaveInject schreibt Details auf Console.Error — in einer WinExe sonst unsichtbar.
+        // Kurz abfangen, damit dem User die echte Ursache statt nur "rc=3" angezeigt wird.
+        string injectDetail = "";
+        var oldErr = Console.Error;
+        using (var capture = new System.IO.StringWriter())
         {
-            _lblInfo.Text = "Injection failed (rc=" + rc + ").";
-            return;
+            Console.SetError(capture);
+            int rc;
+            try { rc = Savegame.SaveInject(save.FullName, temp, classIdx, (float)sx, (float)sy, (float)sz, (float)yaw, -1, setGuid: true); }
+            finally { Console.SetError(oldErr); }
+            injectDetail = capture.ToString().Trim();
+            Cursor = Cursors.Default;
+            if (rc != 0)
+            {
+                _lblInfo.Text = "Injection failed (rc=" + rc + ")" +
+                                (injectDetail.Length > 0 ? ": " + injectDetail : ".");
+                return;
+            }
         }
 
         // backup + atomic install (P01: rollback on failure)

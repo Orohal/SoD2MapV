@@ -1032,16 +1032,31 @@ public static class Savegame
         // templateIndex < 0 = auto-pick the first alive entry (non-zero VehicleGuid)
         if (templateIndex < 0)
         {
+            int firstUsable = -1;
             for (var i = 0; i < saves.Children.Count; i++)
             {
                 var g = saves.Children[i].Children.FirstOrDefault(c => c.Name == "VehicleGuid");
                 if (g == null || g.DataEnd - g.DataStart != 16) continue;
+                if (firstUsable < 0) firstUsable = i;
                 var alive = false;
                 for (var b = 0; b < 16; b++) { if (data[g.DataStart + b] != 0) { alive = true; break; } }
                 if (alive) { templateIndex = i; break; }
             }
             if (templateIndex < 0)
-            { Console.Error.WriteLine("[saveinject] auto-template: no entry with non-zero VehicleGuid found"); return 3; }
+            {
+                if (setGuid && firstUsable >= 0)
+                {
+                    // Save has no active vehicle (all GUID=0). A structurally complete
+                    // entry is still a valid template: setGuid assigns a fresh GUID,
+                    // which is exactly what makes the new vehicle spawn.
+                    templateIndex = firstUsable;
+                    Console.Error.WriteLine($"[saveinject] kein aktives Fahrzeug (alle VehicleGuid=0) - verwende Template {templateIndex} mit neuer GUID");
+                }
+                else
+                {
+                    Console.Error.WriteLine("[saveinject] auto-template: no entry with non-zero VehicleGuid found"); return 3;
+                }
+            }
         }
         if (templateIndex >= saves.Children.Count)
         { Console.Error.WriteLine($"[saveinject] templateIndex {templateIndex} out of range (0..{saves.Children.Count - 1})"); return 3; }
